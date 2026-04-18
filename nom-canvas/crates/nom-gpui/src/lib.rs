@@ -11,6 +11,7 @@ pub mod platform;
 pub mod renderer;
 pub mod scene;
 pub mod scene_builder;
+pub mod scene_traversal;
 pub mod shaders;
 pub mod styled;
 pub mod text_layout;

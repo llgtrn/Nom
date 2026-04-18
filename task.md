@@ -334,13 +334,21 @@
 - ✅ Reranker — RerankStrategy×3 + PostProcessor dedup (9 tests)
 - ✅ LlvmEmit — LlvmOp×10 dispatch + LlvmBlock + LlvmFunction IR (9 tests)
 
-## Open Items — Wave ABQ targets
+## Wave ABQ (2026-04-19) — COMMITTED ✅ (HEAD cd4484d, +46 tests)
 
-- ❌ **nom-graph deeper** — ExecutionPlan caching + node dependency ordering tests
-- ❌ **nom-collab deeper** — CRDT operation history + conflict resolution tests
-- ❌ **nom-telemetry deeper** — MetricCollector + SpanTracer + histogram tests
-- ❌ **nom-lint deeper** — LintRule pass/fail + severity + auto-fix stub tests
-- ❌ **nom-memoize deeper** — LRU eviction + cache hit/miss ratio + TTL tests
+- ✅ PlanCache — ExecutionCache LRU + Kahn topological sort + cycle detection (10 tests)
+- ✅ CrdtHistory — CrdtOp + CrdtHistory + ConflictResolver last-write-wins (9 tests)
+- ✅ MetricsDeep — Histogram p50 buckets + SpanTracer (9 tests)
+- ✅ LintRules — LintSeverity×4 + LintRule pattern check + auto-fix (9 tests)
+- ✅ LruCache — CacheStats hit-rate + CacheEntry TTL + capacity eviction (9 tests)
+
+## Open Items — Wave ABR targets
+
+- ❌ **nom-editor deeper** — MultiCursor + point/range navigation + display map
+- ❌ **nom-gpui deeper** — SceneGraph traversal + atlas slot + text layout tests
+- ❌ **nom-panels deeper** — PanelState + ResizeHandle + layout persistence
+- ❌ **nom-theme deeper** — ColorToken + SpacingToken + design system validation
+- ❌ **nom-blocks deeper** — BlockEvent + HistoryStack + undo/redo tests
 
 ---
 

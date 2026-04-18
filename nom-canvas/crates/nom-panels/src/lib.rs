@@ -1,5 +1,6 @@
 #![deny(unsafe_code)]
 pub mod bottom;
+pub mod layout_state;
 pub mod center;
 pub mod command_palette;
 pub mod dock;

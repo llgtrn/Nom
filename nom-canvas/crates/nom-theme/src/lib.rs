@@ -2,6 +2,7 @@
 pub mod animation;
 pub mod fonts;
 pub mod icons;
+pub mod token_system;
 pub mod tokens;
 pub mod typography;
 pub use animation::{AnimationRegistry, AnimationToken, EasingKind};

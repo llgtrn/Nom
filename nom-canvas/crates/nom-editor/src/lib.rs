@@ -1,6 +1,7 @@
 #![deny(unsafe_code)]
 pub mod buffer;
 pub mod clipboard;
+pub mod multi_cursor;
 pub mod commands;
 pub mod completion;
 pub mod cursor;

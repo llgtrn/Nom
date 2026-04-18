@@ -34,6 +34,9 @@ pub mod embed;
 #[allow(missing_docs)]
 pub mod frame;
 pub mod graph_node;
+/// Block event history — undo/redo stack.
+#[allow(missing_docs)]
+pub mod history;
 /// LaTeX formula block.
 #[allow(missing_docs)]
 pub mod latex;
