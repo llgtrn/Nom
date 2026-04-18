@@ -56,7 +56,12 @@ pub fn invert(diff: &BlockDiff) -> Option<BlockDiff> {
     match diff {
         BlockDiff::Added(r) => Some(BlockDiff::Removed(r.clone())),
         BlockDiff::Removed(r) => Some(BlockDiff::Added(r.clone())),
-        BlockDiff::Modified { id, field, old, new } => Some(BlockDiff::Modified {
+        BlockDiff::Modified {
+            id,
+            field,
+            old,
+            new,
+        } => Some(BlockDiff::Modified {
             id: id.clone(),
             field: field.clone(),
             old: new.clone(),
@@ -124,6 +129,14 @@ pub fn diff_blocks(old: &[DiffEntry], new: &[DiffEntry]) -> Vec<BlockDiff> {
                     new: entry.id.kind.clone(),
                 });
             }
+            if old_entry.id.word != entry.id.word {
+                diffs.push(BlockDiff::Modified {
+                    id: entry.id.clone(),
+                    field: "word".to_string(),
+                    old: old_entry.id.word.clone(),
+                    new: entry.id.word.clone(),
+                });
+            }
         }
     }
 
@@ -159,6 +172,7 @@ pub fn apply_diff(blocks: &mut Vec<DiffEntry>, diff: &[BlockDiff]) {
                                 entry.meta.version = v;
                             }
                         }
+                        "word" => entry.id.word = new.clone(),
                         _ => {} // forward-compatible: ignore unknown fields
                     }
                 }
@@ -193,7 +207,10 @@ mod tests {
         let old = vec![entry("a"), entry("b")];
         let new = old.clone();
         let diffs = diff_blocks(&old, &new);
-        assert!(diffs.is_empty(), "identical lists must produce no diffs, got: {diffs:?}");
+        assert!(
+            diffs.is_empty(),
+            "identical lists must produce no diffs, got: {diffs:?}"
+        );
     }
 
     /// diff detects an added block (present in new, absent from old).
@@ -379,7 +396,11 @@ mod tests {
         let mut blocks = vec![entry("exists")];
         let diff = vec![BlockDiff::Added(NomtuRef::new("exists", "w", "concept"))];
         apply_diff(&mut blocks, &diff);
-        assert_eq!(blocks.len(), 1, "must not duplicate an already-present entry");
+        assert_eq!(
+            blocks.len(),
+            1,
+            "must not duplicate an already-present entry"
+        );
     }
 
     /// BlockDiff::Added and Removed variants hold the correct NomtuRef.
@@ -489,8 +510,13 @@ mod tests {
         let old = vec![entry_kind("kblock", "verb")];
         let new = vec![entry_kind("kblock", "concept")];
         let diffs = diff_blocks(&old, &new);
-        let kind_diff = diffs.iter().find(|d| matches!(d, BlockDiff::Modified { field, .. } if field == "kind"));
-        assert!(kind_diff.is_some(), "kind change must be detected, diffs: {diffs:?}");
+        let kind_diff = diffs
+            .iter()
+            .find(|d| matches!(d, BlockDiff::Modified { field, .. } if field == "kind"));
+        assert!(
+            kind_diff.is_some(),
+            "kind change must be detected, diffs: {diffs:?}"
+        );
         assert!(matches!(
             kind_diff.unwrap(),
             BlockDiff::Modified { old, new, .. } if old == "verb" && new == "concept"
@@ -503,7 +529,9 @@ mod tests {
         let new = vec![entry("stable-kind")];
         let diffs = diff_blocks(&old, &new);
         assert!(
-            !diffs.iter().any(|d| matches!(d, BlockDiff::Modified { field, .. } if field == "kind")),
+            !diffs
+                .iter()
+                .any(|d| matches!(d, BlockDiff::Modified { field, .. } if field == "kind")),
             "unchanged kind must not produce a kind diff"
         );
     }
@@ -535,8 +563,12 @@ mod tests {
         let new_entry = DiffEntry::with_meta(NomtuRef::new("dual", "w", "concept"), new_meta);
 
         let diffs = diff_blocks(&[old_entry], &[new_entry]);
-        let has_author = diffs.iter().any(|d| matches!(d, BlockDiff::Modified { field, .. } if field == "author"));
-        let has_kind = diffs.iter().any(|d| matches!(d, BlockDiff::Modified { field, .. } if field == "kind"));
+        let has_author = diffs
+            .iter()
+            .any(|d| matches!(d, BlockDiff::Modified { field, .. } if field == "author"));
+        let has_kind = diffs
+            .iter()
+            .any(|d| matches!(d, BlockDiff::Modified { field, .. } if field == "kind"));
         assert!(has_author, "author change must be detected");
         assert!(has_kind, "kind change must be detected");
     }
@@ -547,7 +579,9 @@ mod tests {
         let new_entry = DiffEntry::new(NomtuRef::new("wdiff", "world", "verb"));
         let diffs = diff_blocks(&[old_entry], &[new_entry]);
         assert!(
-            !diffs.iter().any(|d| matches!(d, BlockDiff::Modified { field, .. } if field == "kind")),
+            !diffs
+                .iter()
+                .any(|d| matches!(d, BlockDiff::Modified { field, .. } if field == "kind")),
             "same kind with different word must not produce kind diff"
         );
     }
@@ -562,7 +596,9 @@ mod tests {
             new: "4".to_string(),
         };
         let inv = invert(&diff).unwrap();
-        assert!(matches!(&inv, BlockDiff::Modified { id: inv_id, .. } if inv_id.id == "preserve-me"));
+        assert!(
+            matches!(&inv, BlockDiff::Modified { id: inv_id, .. } if inv_id.id == "preserve-me")
+        );
     }
 
     #[test]
@@ -577,7 +613,11 @@ mod tests {
             .iter()
             .filter(|d| matches!(d, BlockDiff::Modified { field, .. } if field == "kind"))
             .collect();
-        assert_eq!(kind_diffs.len(), 2, "two kind changes must be detected, got: {diffs:?}");
+        assert_eq!(
+            kind_diffs.len(),
+            2,
+            "two kind changes must be detected, got: {diffs:?}"
+        );
     }
 
     #[test]

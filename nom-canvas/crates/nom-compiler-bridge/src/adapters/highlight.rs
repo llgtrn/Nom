@@ -34,8 +34,8 @@ fn tok_text_len(tok: &nom_concept::Tok) -> usize {
         Tok::Works => 5,
         Tok::When => 4,
         Tok::Favor => 5,
-        Tok::AtLeast => 8,  // "at-least"
-        Tok::AtMost => 7,   // "at-most"
+        Tok::AtLeast => 8, // "at-least"
+        Tok::AtMost => 7,  // "at-most"
         Tok::Retry => 5,
         Tok::Format => 6,
         Tok::Accesses => 8,

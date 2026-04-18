@@ -546,7 +546,10 @@ mod tests {
         // Choose damping so zeta >= 1: damping = 2*omega = 2*sqrt(100) = 20.
         let v = easing::spring_value(100.0, 20.0, 1.0);
         // Overdamped does not oscillate — value must be in [0, 1].
-        assert!((0.0..=1.0).contains(&v), "overdamped spring value out of range: {v}");
+        assert!(
+            (0.0..=1.0).contains(&v),
+            "overdamped spring value out of range: {v}"
+        );
     }
 
     #[test]
@@ -586,7 +589,10 @@ mod tests {
         // ease_out_quint accelerates more steeply than ease_out at early progress.
         let quint = easing::ease_out_quint()(0.5);
         let quad = easing::ease_out()(0.5);
-        assert!(quint > quad, "ease_out_quint({quint}) should exceed ease_out({quad}) at t=0.5");
+        assert!(
+            quint > quad,
+            "ease_out_quint({quint}) should exceed ease_out({quad}) at t=0.5"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -604,9 +610,18 @@ mod tests {
     fn reduced_motion_always_returns_one_regardless_of_elapsed() {
         let anim = Animation::new(Duration::from_secs(5), easing::linear());
         // Even at t=0, reduced motion jumps to 1.0.
-        assert_eq!(anim.delta_with_motion(Duration::ZERO, MotionPreference::Reduced), 1.0);
-        assert_eq!(anim.delta_with_motion(Duration::from_millis(1), MotionPreference::Reduced), 1.0);
-        assert_eq!(anim.delta_with_motion(Duration::from_secs(10), MotionPreference::Reduced), 1.0);
+        assert_eq!(
+            anim.delta_with_motion(Duration::ZERO, MotionPreference::Reduced),
+            1.0
+        );
+        assert_eq!(
+            anim.delta_with_motion(Duration::from_millis(1), MotionPreference::Reduced),
+            1.0
+        );
+        assert_eq!(
+            anim.delta_with_motion(Duration::from_secs(10), MotionPreference::Reduced),
+            1.0
+        );
     }
 
     // -----------------------------------------------------------------------

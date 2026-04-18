@@ -26,6 +26,8 @@ pub struct FrameBlock {
     pub height: f32,
     /// Z-order stacking index (higher = in front).
     pub z_index: i32,
+    /// Rotation of the frame in radians (counter-clockwise, applied around centre). Defaults to 0.0.
+    pub rotation: f32,
 }
 
 impl FrameBlock {
@@ -43,6 +45,7 @@ impl FrameBlock {
             width: 0.0,
             height: 0.0,
             z_index: 0,
+            rotation: 0.0,
         }
     }
 
@@ -62,8 +65,15 @@ impl FrameBlock {
     }
 
     /// Append a child entity reference to this frame.
-    pub fn add_child(&mut self, child: NomtuRef) {
+    ///
+    /// Returns `Err("cycle detected")` if the child's `id` matches this frame's own entity `id`
+    /// or is already present in the children list (immediate-cycle guard).
+    pub fn add_child(&mut self, child: NomtuRef) -> Result<(), &'static str> {
+        if child.id == self.entity.id || self.children.iter().any(|c| c.id == child.id) {
+            return Err("cycle detected");
+        }
         self.children.push(child);
+        Ok(())
     }
 
     /// Remove the first child whose `id` matches the given value. Returns `true` if removed.
@@ -129,16 +139,16 @@ mod tests {
     #[test]
     fn frame_add_child_increments_count() {
         let mut f = FrameBlock::new(entity("f4"), "label");
-        f.add_child(entity("c1"));
-        f.add_child(entity("c2"));
+        f.add_child(entity("c1")).unwrap();
+        f.add_child(entity("c2")).unwrap();
         assert_eq!(f.child_count(), 2);
     }
 
     #[test]
     fn frame_remove_child_existing() {
         let mut f = FrameBlock::new(entity("f5"), "label");
-        f.add_child(entity("c1"));
-        f.add_child(entity("c2"));
+        f.add_child(entity("c1")).unwrap();
+        f.add_child(entity("c2")).unwrap();
         let removed = f.remove_child("c1");
         assert!(removed);
         assert_eq!(f.child_count(), 1);
@@ -148,7 +158,7 @@ mod tests {
     #[test]
     fn frame_remove_child_missing_returns_false() {
         let mut f = FrameBlock::new(entity("f6"), "label");
-        f.add_child(entity("c1"));
+        f.add_child(entity("c1")).unwrap();
         let removed = f.remove_child("not-present");
         assert!(!removed);
         assert_eq!(f.child_count(), 1);
@@ -192,7 +202,7 @@ mod tests {
     #[test]
     fn frame_remove_only_child_leaves_empty() {
         let mut f = FrameBlock::new(entity("f12"), "label");
-        f.add_child(entity("only"));
+        f.add_child(entity("only")).unwrap();
         f.remove_child("only");
         assert_eq!(f.child_count(), 0);
     }
@@ -204,7 +214,7 @@ mod tests {
     fn frame_100_children_correct_count() {
         let mut f = FrameBlock::new(entity("f-big"), "large frame");
         for i in 0..100u32 {
-            f.add_child(NomtuRef::new(format!("child-{i}"), "item", "concept"));
+            f.add_child(NomtuRef::new(format!("child-{i}"), "item", "concept")).unwrap();
         }
         assert_eq!(f.child_count(), 100);
     }
@@ -213,7 +223,7 @@ mod tests {
     #[test]
     fn frame_remove_nonexistent_child_is_noop() {
         let mut f = FrameBlock::new(entity("f-noop"), "label");
-        f.add_child(entity("c1"));
+        f.add_child(entity("c1")).unwrap();
         let result = f.remove_child("does-not-exist");
         assert!(!result);
         assert_eq!(f.child_count(), 1, "existing children must be untouched");
@@ -267,14 +277,18 @@ mod tests {
     #[test]
     fn frame_flat_zero_children_has_depth_zero() {
         let f = FrameBlock::new(entity("flat"), "flat frame");
-        assert_eq!(f.child_count(), 0, "flat frame must report 0 children = depth 0");
+        assert_eq!(
+            f.child_count(),
+            0,
+            "flat frame must report 0 children = depth 0"
+        );
     }
 
     /// A frame with exactly 1 child has depth 1.
     #[test]
     fn frame_one_child_has_depth_one() {
         let mut f = FrameBlock::new(entity("parent"), "parent frame");
-        f.add_child(entity("child"));
+        f.add_child(entity("child")).unwrap();
         assert_eq!(f.child_count(), 1, "single child = depth 1");
     }
 
@@ -485,8 +499,8 @@ mod tests {
         f.y = 50.0;
         f.width = 200.0;
         f.height = 200.0;
-        f.add_child(entity("c1"));
-        f.add_child(entity("c2"));
+        f.add_child(entity("c1")).unwrap();
+        f.add_child(entity("c2")).unwrap();
         assert_eq!(f.child_count(), 2);
         assert_eq!(f.bounds(), (50.0, 50.0, 200.0, 200.0));
     }

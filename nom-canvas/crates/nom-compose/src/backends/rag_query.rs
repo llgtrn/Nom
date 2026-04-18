@@ -317,12 +317,24 @@ mod tests {
     fn rag_max_k_clamping_top_k_larger_than_chunks() {
         let mut store = InMemoryStore::new();
         let chunks = vec![
-            RagChunk { id: "a".into(), text: "one".into(), score: 0.5 },
-            RagChunk { id: "b".into(), text: "two".into(), score: 0.8 },
+            RagChunk {
+                id: "a".into(),
+                text: "one".into(),
+                score: 0.5,
+            },
+            RagChunk {
+                id: "b".into(),
+                text: "two".into(),
+                score: 0.8,
+            },
         ];
         let out = RagQueryBackend::compose(
             RagQueryInput {
-                entity: NomtuRef { id: "e1".into(), word: "q".into(), kind: "verb".into() },
+                entity: NomtuRef {
+                    id: "e1".into(),
+                    word: "q".into(),
+                    kind: "verb".into(),
+                },
                 query: "test".into(),
                 top_k: 10, // more than available chunks
                 chunks,
@@ -338,13 +350,29 @@ mod tests {
     fn rag_relevance_ordering_score_descending() {
         let mut store = InMemoryStore::new();
         let chunks = vec![
-            RagChunk { id: "low".into(), text: "least".into(), score: 0.1 },
-            RagChunk { id: "high".into(), text: "most".into(), score: 0.95 },
-            RagChunk { id: "mid".into(), text: "middle".into(), score: 0.5 },
+            RagChunk {
+                id: "low".into(),
+                text: "least".into(),
+                score: 0.1,
+            },
+            RagChunk {
+                id: "high".into(),
+                text: "most".into(),
+                score: 0.95,
+            },
+            RagChunk {
+                id: "mid".into(),
+                text: "middle".into(),
+                score: 0.5,
+            },
         ];
         let out = RagQueryBackend::compose(
             RagQueryInput {
-                entity: NomtuRef { id: "e2".into(), word: "rank".into(), kind: "noun".into() },
+                entity: NomtuRef {
+                    id: "e2".into(),
+                    word: "rank".into(),
+                    kind: "noun".into(),
+                },
                 query: "relevance".into(),
                 top_k: 3,
                 chunks,
@@ -360,12 +388,18 @@ mod tests {
     #[test]
     fn rag_answer_contains_query_and_context() {
         let mut store = InMemoryStore::new();
-        let chunks = vec![
-            RagChunk { id: "c1".into(), text: "important context".into(), score: 0.9 },
-        ];
+        let chunks = vec![RagChunk {
+            id: "c1".into(),
+            text: "important context".into(),
+            score: 0.9,
+        }];
         let out = RagQueryBackend::compose(
             RagQueryInput {
-                entity: NomtuRef { id: "e3".into(), word: "find".into(), kind: "verb".into() },
+                entity: NomtuRef {
+                    id: "e3".into(),
+                    word: "find".into(),
+                    kind: "verb".into(),
+                },
                 query: "my specific query".into(),
                 top_k: 1,
                 chunks,
@@ -382,7 +416,11 @@ mod tests {
         let mut store = InMemoryStore::new();
         let out = RagQueryBackend::compose(
             RagQueryInput {
-                entity: NomtuRef { id: "e4".into(), word: "find".into(), kind: "verb".into() },
+                entity: NomtuRef {
+                    id: "e4".into(),
+                    word: "find".into(),
+                    kind: "verb".into(),
+                },
                 query: "no corpus query".into(),
                 top_k: 5,
                 chunks: vec![],
@@ -397,12 +435,18 @@ mod tests {
     #[test]
     fn rag_top_k_zero_returns_no_chunks() {
         let mut store = InMemoryStore::new();
-        let chunks = vec![
-            RagChunk { id: "a".into(), text: "ignored".into(), score: 1.0 },
-        ];
+        let chunks = vec![RagChunk {
+            id: "a".into(),
+            text: "ignored".into(),
+            score: 1.0,
+        }];
         let out = RagQueryBackend::compose(
             RagQueryInput {
-                entity: NomtuRef { id: "e5".into(), word: "skip".into(), kind: "verb".into() },
+                entity: NomtuRef {
+                    id: "e5".into(),
+                    word: "skip".into(),
+                    kind: "verb".into(),
+                },
                 query: "zero".into(),
                 top_k: 0,
                 chunks,
@@ -418,7 +462,11 @@ mod tests {
         let mut store = InMemoryStore::new();
         let out = RagQueryBackend::compose(
             RagQueryInput {
-                entity: NomtuRef { id: "q1".into(), word: "search".into(), kind: "verb".into() },
+                entity: NomtuRef {
+                    id: "q1".into(),
+                    word: "search".into(),
+                    kind: "verb".into(),
+                },
                 query: "".into(),
                 top_k: 5,
                 chunks: vec![],
@@ -433,12 +481,24 @@ mod tests {
     fn rag_query_nonempty_query_returns_results() {
         let mut store = InMemoryStore::new();
         let chunks = vec![
-            RagChunk { id: "r1".into(), text: "result one".into(), score: 0.8 },
-            RagChunk { id: "r2".into(), text: "result two".into(), score: 0.5 },
+            RagChunk {
+                id: "r1".into(),
+                text: "result one".into(),
+                score: 0.8,
+            },
+            RagChunk {
+                id: "r2".into(),
+                text: "result two".into(),
+                score: 0.5,
+            },
         ];
         let out = RagQueryBackend::compose(
             RagQueryInput {
-                entity: NomtuRef { id: "q2".into(), word: "find".into(), kind: "verb".into() },
+                entity: NomtuRef {
+                    id: "q2".into(),
+                    word: "find".into(),
+                    kind: "verb".into(),
+                },
                 query: "something".into(),
                 top_k: 2,
                 chunks,
@@ -453,12 +513,18 @@ mod tests {
     fn rag_query_results_have_scores() {
         // Verifies that chunks with non-zero scores appear in output.
         let mut store = InMemoryStore::new();
-        let chunks = vec![
-            RagChunk { id: "s1".into(), text: "scored chunk".into(), score: 0.75 },
-        ];
+        let chunks = vec![RagChunk {
+            id: "s1".into(),
+            text: "scored chunk".into(),
+            score: 0.75,
+        }];
         let out = RagQueryBackend::compose(
             RagQueryInput {
-                entity: NomtuRef { id: "q3".into(), word: "score".into(), kind: "noun".into() },
+                entity: NomtuRef {
+                    id: "q3".into(),
+                    word: "score".into(),
+                    kind: "noun".into(),
+                },
                 query: "scored".into(),
                 top_k: 1,
                 chunks,
@@ -475,12 +541,24 @@ mod tests {
         // Compose does not panic when scores are at boundary values.
         let mut store = InMemoryStore::new();
         let chunks = vec![
-            RagChunk { id: "min".into(), text: "zero score".into(), score: 0.0 },
-            RagChunk { id: "max".into(), text: "one score".into(), score: 1.0 },
+            RagChunk {
+                id: "min".into(),
+                text: "zero score".into(),
+                score: 0.0,
+            },
+            RagChunk {
+                id: "max".into(),
+                text: "one score".into(),
+                score: 1.0,
+            },
         ];
         let out = RagQueryBackend::compose(
             RagQueryInput {
-                entity: NomtuRef { id: "q4".into(), word: "boundary".into(), kind: "noun".into() },
+                entity: NomtuRef {
+                    id: "q4".into(),
+                    word: "boundary".into(),
+                    kind: "noun".into(),
+                },
                 query: "boundary".into(),
                 top_k: 2,
                 chunks,
@@ -505,7 +583,11 @@ mod tests {
             .collect();
         let out = RagQueryBackend::compose(
             RagQueryInput {
-                entity: NomtuRef { id: "q5".into(), word: "limit".into(), kind: "verb".into() },
+                entity: NomtuRef {
+                    id: "q5".into(),
+                    word: "limit".into(),
+                    kind: "verb".into(),
+                },
                 query: "top".into(),
                 top_k: 3,
                 chunks,
@@ -520,13 +602,29 @@ mod tests {
     fn rag_query_results_sorted_by_score_desc() {
         let mut store = InMemoryStore::new();
         let chunks = vec![
-            RagChunk { id: "x".into(), text: "x".into(), score: 0.2 },
-            RagChunk { id: "y".into(), text: "y".into(), score: 0.9 },
-            RagChunk { id: "z".into(), text: "z".into(), score: 0.5 },
+            RagChunk {
+                id: "x".into(),
+                text: "x".into(),
+                score: 0.2,
+            },
+            RagChunk {
+                id: "y".into(),
+                text: "y".into(),
+                score: 0.9,
+            },
+            RagChunk {
+                id: "z".into(),
+                text: "z".into(),
+                score: 0.5,
+            },
         ];
         let out = RagQueryBackend::compose(
             RagQueryInput {
-                entity: NomtuRef { id: "q6".into(), word: "sort".into(), kind: "verb".into() },
+                entity: NomtuRef {
+                    id: "q6".into(),
+                    word: "sort".into(),
+                    kind: "verb".into(),
+                },
                 query: "order".into(),
                 top_k: 3,
                 chunks,
@@ -544,7 +642,11 @@ mod tests {
         let mut store = InMemoryStore::new();
         let out = RagQueryBackend::compose(
             RagQueryInput {
-                entity: NomtuRef { id: "q7".into(), word: "empty".into(), kind: "noun".into() },
+                entity: NomtuRef {
+                    id: "q7".into(),
+                    word: "empty".into(),
+                    kind: "noun".into(),
+                },
                 query: "anything".into(),
                 top_k: 5,
                 chunks: vec![],
@@ -558,12 +660,18 @@ mod tests {
     #[test]
     fn rag_query_single_document_single_result() {
         let mut store = InMemoryStore::new();
-        let chunks = vec![
-            RagChunk { id: "only".into(), text: "sole document".into(), score: 0.6 },
-        ];
+        let chunks = vec![RagChunk {
+            id: "only".into(),
+            text: "sole document".into(),
+            score: 0.6,
+        }];
         let out = RagQueryBackend::compose(
             RagQueryInput {
-                entity: NomtuRef { id: "q8".into(), word: "single".into(), kind: "adj".into() },
+                entity: NomtuRef {
+                    id: "q8".into(),
+                    word: "single".into(),
+                    kind: "adj".into(),
+                },
                 query: "sole".into(),
                 top_k: 5,
                 chunks,
@@ -579,13 +687,29 @@ mod tests {
     fn rag_query_multiple_documents_ranked() {
         let mut store = InMemoryStore::new();
         let chunks = vec![
-            RagChunk { id: "alpha".into(), text: "alpha text".into(), score: 0.3 },
-            RagChunk { id: "beta".into(),  text: "beta text".into(),  score: 0.7 },
-            RagChunk { id: "gamma".into(), text: "gamma text".into(), score: 0.55 },
+            RagChunk {
+                id: "alpha".into(),
+                text: "alpha text".into(),
+                score: 0.3,
+            },
+            RagChunk {
+                id: "beta".into(),
+                text: "beta text".into(),
+                score: 0.7,
+            },
+            RagChunk {
+                id: "gamma".into(),
+                text: "gamma text".into(),
+                score: 0.55,
+            },
         ];
         let out = RagQueryBackend::compose(
             RagQueryInput {
-                entity: NomtuRef { id: "q9".into(), word: "rank".into(), kind: "verb".into() },
+                entity: NomtuRef {
+                    id: "q9".into(),
+                    word: "rank".into(),
+                    kind: "verb".into(),
+                },
                 query: "text".into(),
                 top_k: 3,
                 chunks,
@@ -603,12 +727,24 @@ mod tests {
         // Chunks with low scores are still included when top_k allows.
         let mut store = InMemoryStore::new();
         let chunks = vec![
-            RagChunk { id: "partial".into(), text: "partial match".into(), score: 0.05 },
-            RagChunk { id: "full".into(),    text: "full match".into(),    score: 0.95 },
+            RagChunk {
+                id: "partial".into(),
+                text: "partial match".into(),
+                score: 0.05,
+            },
+            RagChunk {
+                id: "full".into(),
+                text: "full match".into(),
+                score: 0.95,
+            },
         ];
         let out = RagQueryBackend::compose(
             RagQueryInput {
-                entity: NomtuRef { id: "q10".into(), word: "partial".into(), kind: "adj".into() },
+                entity: NomtuRef {
+                    id: "q10".into(),
+                    word: "partial".into(),
+                    kind: "adj".into(),
+                },
                 query: "match".into(),
                 top_k: 2,
                 chunks,
@@ -625,7 +761,11 @@ mod tests {
         let mut store = InMemoryStore::new();
         let out = RagQueryBackend::compose(
             RagQueryInput {
-                entity: NomtuRef { id: "q11".into(), word: "nothing".into(), kind: "noun".into() },
+                entity: NomtuRef {
+                    id: "q11".into(),
+                    word: "nothing".into(),
+                    kind: "noun".into(),
+                },
                 query: "no results".into(),
                 top_k: 5,
                 chunks: vec![],
@@ -641,12 +781,18 @@ mod tests {
     fn rag_query_metadata_preserved() {
         // Verifies the output artifact hash is stored and answer contains the query.
         let mut store = InMemoryStore::new();
-        let chunks = vec![
-            RagChunk { id: "meta".into(), text: "metadata chunk".into(), score: 0.88 },
-        ];
+        let chunks = vec![RagChunk {
+            id: "meta".into(),
+            text: "metadata chunk".into(),
+            score: 0.88,
+        }];
         let out = RagQueryBackend::compose(
             RagQueryInput {
-                entity: NomtuRef { id: "q12".into(), word: "meta".into(), kind: "noun".into() },
+                entity: NomtuRef {
+                    id: "q12".into(),
+                    word: "meta".into(),
+                    kind: "noun".into(),
+                },
                 query: "preserve metadata".into(),
                 top_k: 1,
                 chunks,
@@ -665,12 +811,24 @@ mod tests {
     fn rag_query_two_documents_both_indexed() {
         let mut store = InMemoryStore::new();
         let chunks = vec![
-            RagChunk { id: "doc-a".into(), text: "document alpha".into(), score: 0.6 },
-            RagChunk { id: "doc-b".into(), text: "document beta".into(),  score: 0.4 },
+            RagChunk {
+                id: "doc-a".into(),
+                text: "document alpha".into(),
+                score: 0.6,
+            },
+            RagChunk {
+                id: "doc-b".into(),
+                text: "document beta".into(),
+                score: 0.4,
+            },
         ];
         let out = RagQueryBackend::compose(
             RagQueryInput {
-                entity: NomtuRef { id: "aj1".into(), word: "two".into(), kind: "noun".into() },
+                entity: NomtuRef {
+                    id: "aj1".into(),
+                    word: "two".into(),
+                    kind: "noun".into(),
+                },
                 query: "both documents".into(),
                 top_k: 2,
                 chunks,
@@ -678,7 +836,11 @@ mod tests {
             &mut store,
             &LogProgressSink,
         );
-        assert_eq!(out.chunks_used.len(), 2, "both documents must appear in output");
+        assert_eq!(
+            out.chunks_used.len(),
+            2,
+            "both documents must appear in output"
+        );
         assert!(out.chunks_used.contains(&"doc-a".to_string()));
         assert!(out.chunks_used.contains(&"doc-b".to_string()));
     }
@@ -695,7 +857,11 @@ mod tests {
             .collect();
         let out = RagQueryBackend::compose(
             RagQueryInput {
-                entity: NomtuRef { id: "aj2".into(), word: "top3".into(), kind: "noun".into() },
+                entity: NomtuRef {
+                    id: "aj2".into(),
+                    word: "top3".into(),
+                    kind: "noun".into(),
+                },
                 query: "top three".into(),
                 top_k: 3,
                 chunks,
@@ -703,20 +869,40 @@ mod tests {
             &mut store,
             &LogProgressSink,
         );
-        assert_eq!(out.chunks_used.len(), 3, "top_k=3 must return exactly 3 results");
+        assert_eq!(
+            out.chunks_used.len(),
+            3,
+            "top_k=3 must return exactly 3 results"
+        );
     }
 
     #[test]
     fn rag_query_documents_ranked_by_relevance() {
         let mut store = InMemoryStore::new();
         let chunks = vec![
-            RagChunk { id: "rank-c".into(), text: "c".into(), score: 0.3 },
-            RagChunk { id: "rank-a".into(), text: "a".into(), score: 0.9 },
-            RagChunk { id: "rank-b".into(), text: "b".into(), score: 0.6 },
+            RagChunk {
+                id: "rank-c".into(),
+                text: "c".into(),
+                score: 0.3,
+            },
+            RagChunk {
+                id: "rank-a".into(),
+                text: "a".into(),
+                score: 0.9,
+            },
+            RagChunk {
+                id: "rank-b".into(),
+                text: "b".into(),
+                score: 0.6,
+            },
         ];
         let out = RagQueryBackend::compose(
             RagQueryInput {
-                entity: NomtuRef { id: "aj3".into(), word: "rank".into(), kind: "verb".into() },
+                entity: NomtuRef {
+                    id: "aj3".into(),
+                    word: "rank".into(),
+                    kind: "verb".into(),
+                },
                 query: "ranking".into(),
                 top_k: 3,
                 chunks,
@@ -736,12 +922,24 @@ mod tests {
         // The top_k=1 must return the higher-scored entry.
         let mut store = InMemoryStore::new();
         let chunks = vec![
-            RagChunk { id: "dup".into(), text: "original".into(), score: 0.5 },
-            RagChunk { id: "dup".into(), text: "duplicate".into(), score: 0.9 },
+            RagChunk {
+                id: "dup".into(),
+                text: "original".into(),
+                score: 0.5,
+            },
+            RagChunk {
+                id: "dup".into(),
+                text: "duplicate".into(),
+                score: 0.9,
+            },
         ];
         let out = RagQueryBackend::compose(
             RagQueryInput {
-                entity: NomtuRef { id: "aj4".into(), word: "dup".into(), kind: "noun".into() },
+                entity: NomtuRef {
+                    id: "aj4".into(),
+                    word: "dup".into(),
+                    kind: "noun".into(),
+                },
                 query: "dedup".into(),
                 top_k: 1,
                 chunks,
@@ -749,7 +947,11 @@ mod tests {
             &mut store,
             &LogProgressSink,
         );
-        assert_eq!(out.chunks_used.len(), 1, "top_k=1 must return only one result");
+        assert_eq!(
+            out.chunks_used.len(),
+            1,
+            "top_k=1 must return only one result"
+        );
         assert_eq!(out.chunks_used[0], "dup", "the dup id must appear");
     }
 
@@ -758,12 +960,24 @@ mod tests {
         // Simulate kind-filtered retrieval by providing only chunks matching the kind.
         let mut store = InMemoryStore::new();
         let chunks = vec![
-            RagChunk { id: "verb-1".into(), text: "run fast".into(),  score: 0.8 },
-            RagChunk { id: "verb-2".into(), text: "jump high".into(), score: 0.6 },
+            RagChunk {
+                id: "verb-1".into(),
+                text: "run fast".into(),
+                score: 0.8,
+            },
+            RagChunk {
+                id: "verb-2".into(),
+                text: "jump high".into(),
+                score: 0.6,
+            },
         ];
         let out = RagQueryBackend::compose(
             RagQueryInput {
-                entity: NomtuRef { id: "aj5".into(), word: "filter".into(), kind: "verb".into() },
+                entity: NomtuRef {
+                    id: "aj5".into(),
+                    word: "filter".into(),
+                    kind: "verb".into(),
+                },
                 query: "verb filter".into(),
                 top_k: 2,
                 chunks,
@@ -779,9 +993,15 @@ mod tests {
     fn rag_query_embedding_dimension_positive() {
         // compose_with_dag derives a 16-element QueryVec — verify top_k default is positive.
         let backend = RagQueryBackend::default();
-        assert!(backend.top_k.is_none(), "default top_k is None (uses 5 internally)");
+        assert!(
+            backend.top_k.is_none(),
+            "default top_k is None (uses 5 internally)"
+        );
         // top_k override must be positive when set.
-        let b2 = RagQueryBackend { top_k: Some(3), ..Default::default() };
+        let b2 = RagQueryBackend {
+            top_k: Some(3),
+            ..Default::default()
+        };
         assert_eq!(b2.top_k, Some(3));
         assert!(b2.top_k.unwrap() > 0, "top_k must be positive");
     }
@@ -791,29 +1011,53 @@ mod tests {
         // Two identical queries over the same chunks must produce the same artifact hash.
         let mut store = InMemoryStore::new();
         let make_input = || RagQueryInput {
-            entity: NomtuRef { id: "aj6".into(), word: "cache".into(), kind: "noun".into() },
+            entity: NomtuRef {
+                id: "aj6".into(),
+                word: "cache".into(),
+                kind: "noun".into(),
+            },
             query: "repeated query".into(),
             top_k: 2,
             chunks: vec![
-                RagChunk { id: "c1".into(), text: "first".into(), score: 0.7 },
-                RagChunk { id: "c2".into(), text: "second".into(), score: 0.4 },
+                RagChunk {
+                    id: "c1".into(),
+                    text: "first".into(),
+                    score: 0.7,
+                },
+                RagChunk {
+                    id: "c2".into(),
+                    text: "second".into(),
+                    score: 0.4,
+                },
             ],
         };
         let out1 = RagQueryBackend::compose(make_input(), &mut store, &LogProgressSink);
         let out2 = RagQueryBackend::compose(make_input(), &mut store, &LogProgressSink);
-        assert_eq!(out1.artifact_hash, out2.artifact_hash, "same input must yield the same hash");
-        assert_eq!(out1.answer, out2.answer, "same input must yield the same answer");
+        assert_eq!(
+            out1.artifact_hash, out2.artifact_hash,
+            "same input must yield the same hash"
+        );
+        assert_eq!(
+            out1.answer, out2.answer,
+            "same input must yield the same answer"
+        );
     }
 
     #[test]
     fn rag_query_answer_non_empty_for_nonempty_chunks() {
         let mut store = InMemoryStore::new();
-        let chunks = vec![
-            RagChunk { id: "nonempty".into(), text: "substantial text".into(), score: 0.75 },
-        ];
+        let chunks = vec![RagChunk {
+            id: "nonempty".into(),
+            text: "substantial text".into(),
+            score: 0.75,
+        }];
         let out = RagQueryBackend::compose(
             RagQueryInput {
-                entity: NomtuRef { id: "aj7".into(), word: "check".into(), kind: "verb".into() },
+                entity: NomtuRef {
+                    id: "aj7".into(),
+                    word: "check".into(),
+                    kind: "verb".into(),
+                },
                 query: "has content".into(),
                 top_k: 1,
                 chunks,
@@ -821,7 +1065,10 @@ mod tests {
             &mut store,
             &LogProgressSink,
         );
-        assert!(!out.answer.is_empty(), "answer must not be empty when chunks are non-empty");
+        assert!(
+            !out.answer.is_empty(),
+            "answer must not be empty when chunks are non-empty"
+        );
     }
 
     #[test]
@@ -829,30 +1076,65 @@ mod tests {
         let mut store = InMemoryStore::new();
         let out = RagQueryBackend::compose(
             RagQueryInput {
-                entity: NomtuRef { id: "aj8".into(), word: "store".into(), kind: "noun".into() },
+                entity: NomtuRef {
+                    id: "aj8".into(),
+                    word: "store".into(),
+                    kind: "noun".into(),
+                },
                 query: "artifact storage".into(),
                 top_k: 1,
-                chunks: vec![RagChunk { id: "s1".into(), text: "stored".into(), score: 0.5 }],
+                chunks: vec![RagChunk {
+                    id: "s1".into(),
+                    text: "stored".into(),
+                    score: 0.5,
+                }],
             },
             &mut store,
             &LogProgressSink,
         );
-        assert!(store.exists(&out.artifact_hash), "compose must persist artifact in store");
+        assert!(
+            store.exists(&out.artifact_hash),
+            "compose must persist artifact in store"
+        );
     }
 
     #[test]
     fn rag_query_top_1_from_5_returns_highest_score() {
         let mut store = InMemoryStore::new();
         let chunks = vec![
-            RagChunk { id: "low1".into(), text: "l1".into(), score: 0.1 },
-            RagChunk { id: "low2".into(), text: "l2".into(), score: 0.2 },
-            RagChunk { id: "best".into(), text: "best".into(), score: 0.95 },
-            RagChunk { id: "low3".into(), text: "l3".into(), score: 0.3 },
-            RagChunk { id: "low4".into(), text: "l4".into(), score: 0.05 },
+            RagChunk {
+                id: "low1".into(),
+                text: "l1".into(),
+                score: 0.1,
+            },
+            RagChunk {
+                id: "low2".into(),
+                text: "l2".into(),
+                score: 0.2,
+            },
+            RagChunk {
+                id: "best".into(),
+                text: "best".into(),
+                score: 0.95,
+            },
+            RagChunk {
+                id: "low3".into(),
+                text: "l3".into(),
+                score: 0.3,
+            },
+            RagChunk {
+                id: "low4".into(),
+                text: "l4".into(),
+                score: 0.05,
+            },
         ];
         let out = RagQueryBackend::compose(
             RagQueryInput {
-                entity: NomtuRef { id: "aj9".into(), word: "best".into(), kind: "adj".into() },
+                entity: NomtuRef {
+                    id: "aj9".into(),
+                    word: "best".into(),
+                    kind: "adj".into(),
+                },
                 query: "find best".into(),
                 top_k: 1,
                 chunks,
@@ -861,6 +1143,9 @@ mod tests {
             &LogProgressSink,
         );
         assert_eq!(out.chunks_used.len(), 1);
-        assert_eq!(out.chunks_used[0], "best", "must return the highest-scored chunk");
+        assert_eq!(
+            out.chunks_used[0], "best",
+            "must return the highest-scored chunk"
+        );
     }
 }

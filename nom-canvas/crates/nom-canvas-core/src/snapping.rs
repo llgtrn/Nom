@@ -497,7 +497,10 @@ mod tests {
             "position must be unchanged when far from all elements, got x={}",
             result.x
         );
-        assert!(result.guides.is_empty(), "no guides should fire when no snap");
+        assert!(
+            result.guides.is_empty(),
+            "no guides should fire when no snap"
+        );
     }
 
     #[test]
@@ -517,7 +520,10 @@ mod tests {
             "right-edge snap: expected x=102, got {}",
             result.x
         );
-        assert!(!result.guides.is_empty(), "vertical guide must fire for x snap");
+        assert!(
+            !result.guides.is_empty(),
+            "vertical guide must fire for x snap"
+        );
     }
 
     #[test]
@@ -545,7 +551,11 @@ mod tests {
     fn snap_grid_on_snaps_within_threshold() {
         // x=1 is 1px from grid line at 0 (within SNAP_THRESHOLD=8) → snaps to 0.
         let result = snap_with_guides([1.0, 0.0], [5.0, 5.0], &[], true);
-        assert!((result.x).abs() < 1e-6, "x=1 should snap to grid 0, got {}", result.x);
+        assert!(
+            (result.x).abs() < 1e-6,
+            "x=1 should snap to grid 0, got {}",
+            result.x
+        );
     }
 
     #[test]
@@ -613,8 +623,14 @@ mod tests {
         assert!(vguide.is_some(), "vertical guide must fire");
         let g = vguide.unwrap();
         // from should be <= min y of both elements (50), to should be >= max y (220).
-        assert!(g.from <= 200.0 + 1e-5, "guide from must be at or above moving element y");
-        assert!(g.to >= 70.0 - 1e-5, "guide to must be at or below target bottom");
+        assert!(
+            g.from <= 200.0 + 1e-5,
+            "guide from must be at or above moving element y"
+        );
+        assert!(
+            g.to >= 70.0 - 1e-5,
+            "guide to must be at or below target bottom"
+        );
     }
 
     // ── additional snap tests ────────────────────────────────────────────────
@@ -624,8 +640,16 @@ mod tests {
         // With GRID_SIZE=20 and input already on a grid multiple, value is unchanged.
         // At grid multiples, snap_to_grid is identity.
         let snapped = snap_to_grid([60.0, 80.0]);
-        assert!((snapped[0] - 60.0).abs() < 1e-5, "60 is on 20px grid, got {}", snapped[0]);
-        assert!((snapped[1] - 80.0).abs() < 1e-5, "80 is on 20px grid, got {}", snapped[1]);
+        assert!(
+            (snapped[0] - 60.0).abs() < 1e-5,
+            "60 is on 20px grid, got {}",
+            snapped[0]
+        );
+        assert!(
+            (snapped[1] - 80.0).abs() < 1e-5,
+            "80 is on 20px grid, got {}",
+            snapped[1]
+        );
     }
 
     #[test]
@@ -683,8 +707,16 @@ mod tests {
         // No nearby objects → position unchanged.
         let origin = [123.0_f32, 456.0_f32];
         let result = snap_with_guides(origin, [30.0, 30.0], &[], false);
-        assert!((result.x - origin[0]).abs() < 1e-5, "x unchanged, got {}", result.x);
-        assert!((result.y - origin[1]).abs() < 1e-5, "y unchanged, got {}", result.y);
+        assert!(
+            (result.x - origin[0]).abs() < 1e-5,
+            "x unchanged, got {}",
+            result.x
+        );
+        assert!(
+            (result.y - origin[1]).abs() < 1e-5,
+            "y unchanged, got {}",
+            result.y
+        );
         assert!(result.guides.is_empty(), "no guides when no objects");
     }
 
@@ -734,7 +766,10 @@ mod tests {
             "within threshold: must snap to x=100, got {}",
             result.x
         );
-        assert!(!result.guides.is_empty(), "snap guide must fire within threshold");
+        assert!(
+            !result.guides.is_empty(),
+            "snap guide must fire within threshold"
+        );
     }
 
     #[test]
@@ -773,16 +808,32 @@ mod tests {
     fn snap_to_grid_zero_size_no_panic() {
         // Snap at [0.0, 0.0] must not panic and must return [0.0, 0.0].
         let snapped = snap_to_grid([0.0, 0.0]);
-        assert!(snapped[0].abs() < 1e-5, "origin snaps to origin, got {}", snapped[0]);
-        assert!(snapped[1].abs() < 1e-5, "origin snaps to origin, got {}", snapped[1]);
+        assert!(
+            snapped[0].abs() < 1e-5,
+            "origin snaps to origin, got {}",
+            snapped[0]
+        );
+        assert!(
+            snapped[1].abs() < 1e-5,
+            "origin snaps to origin, got {}",
+            snapped[1]
+        );
     }
 
     #[test]
     fn snap_disabled_no_grid_no_guides() {
         // grid_snap=false, no other elements: result is unchanged with no guides.
         let result = snap_with_guides([37.5, 82.3], [15.0, 15.0], &[], false);
-        assert!((result.x - 37.5).abs() < 1e-5, "x unchanged, got {}", result.x);
-        assert!((result.y - 82.3).abs() < 1e-4, "y unchanged, got {}", result.y);
+        assert!(
+            (result.x - 37.5).abs() < 1e-5,
+            "x unchanged, got {}",
+            result.x
+        );
+        assert!(
+            (result.y - 82.3).abs() < 1e-4,
+            "y unchanged, got {}",
+            result.y
+        );
         assert!(result.guides.is_empty(), "no guides when disabled");
     }
 
@@ -793,9 +844,17 @@ mod tests {
     fn snap_to_grid_large_canvas_correct() {
         // 100001 / 20 = 5000.05 → rounds to 5000 → 100000
         let snapped = snap_to_grid([100001.0, -99999.0]);
-        assert!((snapped[0] - 100000.0).abs() < 1e-1, "large +x: {}", snapped[0]);
+        assert!(
+            (snapped[0] - 100000.0).abs() < 1e-1,
+            "large +x: {}",
+            snapped[0]
+        );
         // -99999 / 20 = -4999.95 → rounds to -5000 → -100000
-        assert!((snapped[1] - (-100000.0)).abs() < 1e-1, "large -y: {}", snapped[1]);
+        assert!(
+            (snapped[1] - (-100000.0)).abs() < 1e-1,
+            "large -y: {}",
+            snapped[1]
+        );
     }
 
     /// Both X and Y snap guides fire simultaneously when both axes are within threshold.
@@ -904,7 +963,8 @@ mod tests {
             let snapped = snap_to_grid([target + 3.0, 0.0]);
             assert!(
                 (snapped[0] - target).abs() < 1e-5,
-                "target={target}: snapped.x={}", snapped[0]
+                "target={target}: snapped.x={}",
+                snapped[0]
             );
         }
     }
@@ -916,7 +976,10 @@ mod tests {
         // No snap must fire; result equals input position.
         assert!((result.x - 15.0).abs() < 1e-6, "x unchanged: {}", result.x);
         assert!((result.y - 15.0).abs() < 1e-6, "y unchanged: {}", result.y);
-        assert!(result.guides.is_empty(), "guides must be empty when disabled");
+        assert!(
+            result.guides.is_empty(),
+            "guides must be empty when disabled"
+        );
     }
 
     /// Re-enabling snap (grid_snap=true) after a disabled call correctly snaps the point.

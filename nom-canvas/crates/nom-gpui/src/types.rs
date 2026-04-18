@@ -1413,10 +1413,26 @@ mod tests {
             Size::new(Pixels(100.0), Pixels(100.0)),
         );
         let inset = b.expand(Pixels(-10.0)); // negative expand = inset
-        assert_eq!(inset.origin.x, Pixels(10.0), "inset origin.x must shift right by 10");
-        assert_eq!(inset.origin.y, Pixels(10.0), "inset origin.y must shift down by 10");
-        assert_eq!(inset.size.width, Pixels(80.0), "inset width must shrink by 20 (2*10)");
-        assert_eq!(inset.size.height, Pixels(80.0), "inset height must shrink by 20 (2*10)");
+        assert_eq!(
+            inset.origin.x,
+            Pixels(10.0),
+            "inset origin.x must shift right by 10"
+        );
+        assert_eq!(
+            inset.origin.y,
+            Pixels(10.0),
+            "inset origin.y must shift down by 10"
+        );
+        assert_eq!(
+            inset.size.width,
+            Pixels(80.0),
+            "inset width must shrink by 20 (2*10)"
+        );
+        assert_eq!(
+            inset.size.height,
+            Pixels(80.0),
+            "inset height must shrink by 20 (2*10)"
+        );
     }
 
     #[test]
@@ -1428,10 +1444,26 @@ mod tests {
             Size::new(Pixels(50.0), Pixels(30.0)),
         );
         let outset = b.expand(Pixels(5.0));
-        assert_eq!(outset.origin.x, Pixels(15.0), "outset origin.x must shift left by 5");
-        assert_eq!(outset.origin.y, Pixels(5.0), "outset origin.y must shift up by 5");
-        assert_eq!(outset.size.width, Pixels(60.0), "outset width must grow by 10 (2*5)");
-        assert_eq!(outset.size.height, Pixels(40.0), "outset height must grow by 10 (2*5)");
+        assert_eq!(
+            outset.origin.x,
+            Pixels(15.0),
+            "outset origin.x must shift left by 5"
+        );
+        assert_eq!(
+            outset.origin.y,
+            Pixels(5.0),
+            "outset origin.y must shift up by 5"
+        );
+        assert_eq!(
+            outset.size.width,
+            Pixels(60.0),
+            "outset width must grow by 10 (2*5)"
+        );
+        assert_eq!(
+            outset.size.height,
+            Pixels(40.0),
+            "outset height must grow by 10 (2*5)"
+        );
     }
 
     #[test]
@@ -1443,8 +1475,16 @@ mod tests {
         );
         let inset = b.expand(Pixels(-10.0));
         // Size should be zero (degenerate point at center).
-        assert_eq!(inset.size.width, Pixels(0.0), "inset by half collapses width to 0");
-        assert_eq!(inset.size.height, Pixels(0.0), "inset by half collapses height to 0");
+        assert_eq!(
+            inset.size.width,
+            Pixels(0.0),
+            "inset by half collapses width to 0"
+        );
+        assert_eq!(
+            inset.size.height,
+            Pixels(0.0),
+            "inset by half collapses height to 0"
+        );
         assert_eq!(inset.origin.x, Pixels(10.0), "collapsed origin is center x");
         assert_eq!(inset.origin.y, Pixels(10.0), "collapsed origin is center y");
     }
@@ -1476,7 +1516,10 @@ mod tests {
         let circle_radius = Pixels(50.0);
         let c = Corners::all(circle_radius);
         for corner in [c.top_left, c.top_right, c.bottom_right, c.bottom_left] {
-            assert_eq!(corner, circle_radius, "all corners must equal circle radius");
+            assert_eq!(
+                corner, circle_radius,
+                "all corners must equal circle radius"
+            );
         }
     }
 
@@ -1485,9 +1528,18 @@ mod tests {
         // s=0 collapses hue, so to_rgba must return r==g==b==l.
         let c = Hsla::new(300.0, 0.0, 0.6, 1.0); // hue=300 (purple) but s=0
         let (r, g, b, _a) = c.to_rgba();
-        assert!((r - 0.6).abs() < 1e-5, "R must equal lightness 0.6, got {r}");
-        assert!((g - 0.6).abs() < 1e-5, "G must equal lightness 0.6, got {g}");
-        assert!((b - 0.6).abs() < 1e-5, "B must equal lightness 0.6, got {b}");
+        assert!(
+            (r - 0.6).abs() < 1e-5,
+            "R must equal lightness 0.6, got {r}"
+        );
+        assert!(
+            (g - 0.6).abs() < 1e-5,
+            "G must equal lightness 0.6, got {g}"
+        );
+        assert!(
+            (b - 0.6).abs() < 1e-5,
+            "B must equal lightness 0.6, got {b}"
+        );
     }
 
     #[test]
@@ -1496,7 +1548,10 @@ mod tests {
         // Pure red: h=0, s=1, l=0.5 → R=1.0, G≈0, B≈0.
         let c = Hsla::new(0.0, 1.0, 0.5, 1.0);
         let (r, g, b, _a) = c.to_rgba();
-        assert!((r - 1.0).abs() < 1e-5, "R must be 1.0 for fully saturated red, got {r}");
+        assert!(
+            (r - 1.0).abs() < 1e-5,
+            "R must be 1.0 for fully saturated red, got {r}"
+        );
         assert!(g < 1e-4, "G must be ~0 for fully saturated red, got {g}");
         assert!(b < 1e-4, "B must be ~0 for fully saturated red, got {b}");
     }
@@ -1568,7 +1623,10 @@ mod tests {
             Size::new(Pixels(100.0), Pixels(80.0)),
         );
         let same = b.expand(Pixels(0.0));
-        assert_eq!(same, b, "expand by 0 (inset/outset by 0) must return identical bounds");
+        assert_eq!(
+            same, b,
+            "expand by 0 (inset/outset by 0) must return identical bounds"
+        );
     }
 
     #[test]
@@ -1668,7 +1726,10 @@ mod tests {
     #[test]
     fn point_distance_to_same_point_is_zero() {
         let p = Point::new(Pixels(5.0), Pixels(5.0));
-        assert!((p.distance(p) - 0.0).abs() < 1e-6, "distance from point to itself must be 0");
+        assert!(
+            (p.distance(p) - 0.0).abs() < 1e-6,
+            "distance from point to itself must be 0"
+        );
     }
 
     #[test]

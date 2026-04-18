@@ -1,9 +1,8 @@
 #![deny(unsafe_code)]
 
-use crate::dispatch::BackendKind;
 use crate::vendor_trait::MediaVendor;
 
-/// Fallback level — 9router 3-tier pattern.
+/// Fallback level — router 3-tier pattern.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum FallbackLevel {
     Primary = 0,
@@ -45,7 +44,7 @@ impl ProviderRouter {
     }
 
     /// Find the best vendor for a backend kind (lowest level = highest priority).
-    pub fn route(&self, kind: &BackendKind) -> Option<&dyn MediaVendor> {
+    pub fn route(&self, kind: &str) -> Option<&dyn MediaVendor> {
         self.vendors
             .iter()
             .filter(|e| e.vendor.supports(kind))
@@ -65,7 +64,7 @@ impl ProviderRouter {
     ///   cfg(test) guard inside — callers should pass `false` in unit tests).
     pub fn compose_with_fallback(
         &self,
-        kind: &BackendKind,
+        kind: &str,
         input: &str,
         progress: &dyn Fn(f32),
         try_fallbacks: bool,
@@ -76,7 +75,7 @@ impl ProviderRouter {
             .filter(|e| e.vendor.supports(kind))
             .collect();
         if entries.is_empty() {
-            return Err(format!("no vendor registered for kind: {}", kind.name()));
+            return Err(format!("no vendor registered for kind: {}", kind));
         }
         entries.sort_by_key(|e| e.level as u8);
 
@@ -101,7 +100,7 @@ impl ProviderRouter {
         Err(last_err)
     }
 
-    pub fn vendors_for(&self, kind: &BackendKind) -> Vec<&dyn MediaVendor> {
+    pub fn vendors_for(&self, kind: &str) -> Vec<&dyn MediaVendor> {
         let mut entries: Vec<&VendorEntry> = self
             .vendors
             .iter()
@@ -135,24 +134,24 @@ mod tests {
         r.register(
             StubVendor {
                 name: "fallback",
-                kind: BackendKind::Video,
+                kind: "video".to_string(),
             },
             FallbackLevel::Secondary,
         );
         r.register(
             StubVendor {
                 name: "primary",
-                kind: BackendKind::Video,
+                kind: "video".to_string(),
             },
             FallbackLevel::Primary,
         );
-        let v = r.route(&BackendKind::Video).unwrap();
+        let v = r.route("video").unwrap();
         assert_eq!(v.name(), "primary");
     }
     #[test]
     fn router_returns_none_for_unsupported() {
         let r = ProviderRouter::new();
-        assert!(r.route(&BackendKind::Video).is_none());
+        assert!(r.route("video").is_none());
     }
     #[test]
     fn router_vendors_for_returns_sorted() {
@@ -160,18 +159,18 @@ mod tests {
         r.register(
             StubVendor {
                 name: "b",
-                kind: BackendKind::Audio,
+                kind: "audio".to_string(),
             },
             FallbackLevel::Secondary,
         );
         r.register(
             StubVendor {
                 name: "a",
-                kind: BackendKind::Audio,
+                kind: "audio".to_string(),
             },
             FallbackLevel::Primary,
         );
-        let vs = r.vendors_for(&BackendKind::Audio);
+        let vs = r.vendors_for("audio");
         assert_eq!(vs[0].name(), "a");
         assert_eq!(vs[1].name(), "b");
     }
@@ -182,11 +181,11 @@ mod tests {
         r.register(
             StubMediaVendor {
                 name: "primary",
-                kind: BackendKind::Image,
+                kind: "image".to_string(),
             },
             FallbackLevel::Primary,
         );
-        let result = r.compose_with_fallback(&BackendKind::Image, "hello", &|_| {}, false);
+        let result = r.compose_with_fallback("image", "hello", &|_| {}, false);
         assert_eq!(result, Ok("stub_output".to_string()));
     }
 
@@ -196,25 +195,25 @@ mod tests {
         r.register(
             FailingVendor {
                 name: "fail_primary",
-                kind: BackendKind::Image,
+                kind: "image".to_string(),
             },
             FallbackLevel::Primary,
         );
         r.register(
             StubMediaVendor {
                 name: "ok_secondary",
-                kind: BackendKind::Image,
+                kind: "image".to_string(),
             },
             FallbackLevel::Secondary,
         );
-        let result = r.compose_with_fallback(&BackendKind::Image, "hello", &|_| {}, true);
+        let result = r.compose_with_fallback("image", "hello", &|_| {}, true);
         assert_eq!(result, Ok("stub_output".to_string()));
     }
 
     #[test]
     fn provider_router_no_vendor_returns_err() {
         let r = ProviderRouter::new();
-        let result = r.compose_with_fallback(&BackendKind::Image, "hello", &|_| {}, true);
+        let result = r.compose_with_fallback("image", "hello", &|_| {}, true);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("image"));
     }
@@ -225,20 +224,19 @@ mod tests {
         r.register(
             StubMediaVendor {
                 name: "primary",
-                kind: BackendKind::Data,
+                kind: "data".to_string(),
             },
             FallbackLevel::Primary,
         );
         r.register(
             StubMediaVendor {
                 name: "secondary",
-                kind: BackendKind::Data,
+                kind: "data".to_string(),
             },
             FallbackLevel::Secondary,
         );
-        let result = r.compose_with_fallback(&BackendKind::Data, "input", &|_| {}, false);
+        let result = r.compose_with_fallback("data", "input", &|_| {}, false);
         assert_eq!(result, Ok("stub_output".to_string()));
-        // primary succeeds so vendor_count still 2 (no removal on success)
         assert_eq!(r.vendor_count(), 2);
     }
 
@@ -248,18 +246,18 @@ mod tests {
         r.register(
             FailingVendor {
                 name: "bad_primary",
-                kind: BackendKind::Document,
+                kind: "document".to_string(),
             },
             FallbackLevel::Primary,
         );
         r.register(
             StubMediaVendor {
                 name: "good_fallback",
-                kind: BackendKind::Document,
+                kind: "document".to_string(),
             },
             FallbackLevel::Secondary,
         );
-        let result = r.compose_with_fallback(&BackendKind::Document, "data", &|_| {}, true);
+        let result = r.compose_with_fallback("document", "data", &|_| {}, true);
         assert_eq!(result, Ok("stub_output".to_string()));
     }
 
@@ -269,25 +267,25 @@ mod tests {
         r.register(
             FailingVendor {
                 name: "fail1",
-                kind: BackendKind::Audio,
+                kind: "audio".to_string(),
             },
             FallbackLevel::Primary,
         );
         r.register(
             FailingVendor {
                 name: "fail2",
-                kind: BackendKind::Audio,
+                kind: "audio".to_string(),
             },
             FallbackLevel::Secondary,
         );
         r.register(
             FailingVendor {
                 name: "fail3",
-                kind: BackendKind::Audio,
+                kind: "audio".to_string(),
             },
             FallbackLevel::Tertiary,
         );
-        let result = r.compose_with_fallback(&BackendKind::Audio, "x", &|_| {}, true);
+        let result = r.compose_with_fallback("audio", "x", &|_| {}, true);
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), "error");
     }
@@ -299,13 +297,13 @@ mod tests {
         r.register(
             StubMediaVendor {
                 name: "v",
-                kind: BackendKind::Video,
+                kind: "video".to_string(),
             },
             FallbackLevel::Primary,
         );
         let called = Cell::new(false);
         let _ = r.compose_with_fallback(
-            &BackendKind::Video,
+            "video",
             "clip",
             &|p| {
                 if p >= 1.0 {
@@ -330,7 +328,7 @@ mod tests {
         r.register(
             StubVendor {
                 name: "a",
-                kind: BackendKind::Data,
+                kind: "data".to_string(),
             },
             FallbackLevel::Primary,
         );
@@ -338,7 +336,7 @@ mod tests {
         r.register(
             StubVendor {
                 name: "b",
-                kind: BackendKind::Data,
+                kind: "data".to_string(),
             },
             FallbackLevel::Secondary,
         );
@@ -348,29 +346,28 @@ mod tests {
     #[test]
     fn provider_router_route_picks_highest_priority_among_multiple() {
         let mut r = ProviderRouter::new();
-        // Register tertiary before primary intentionally.
         r.register(
             StubVendor {
                 name: "tertiary",
-                kind: BackendKind::Document,
+                kind: "document".to_string(),
             },
             FallbackLevel::Tertiary,
         );
         r.register(
             StubVendor {
                 name: "primary",
-                kind: BackendKind::Document,
+                kind: "document".to_string(),
             },
             FallbackLevel::Primary,
         );
         r.register(
             StubVendor {
                 name: "secondary",
-                kind: BackendKind::Document,
+                kind: "document".to_string(),
             },
             FallbackLevel::Secondary,
         );
-        let v = r.route(&BackendKind::Document).unwrap();
+        let v = r.route("document").unwrap();
         assert_eq!(v.name(), "primary");
     }
 
@@ -380,11 +377,11 @@ mod tests {
         r.register(
             FailingVendor {
                 name: "f1",
-                kind: BackendKind::Workflow,
+                kind: "workflow".to_string(),
             },
             FallbackLevel::Primary,
         );
-        let result = r.compose_with_fallback(&BackendKind::Workflow, "x", &|_| {}, true);
+        let result = r.compose_with_fallback("workflow", "x", &|_| {}, true);
         assert!(result.is_err());
     }
 
@@ -394,12 +391,11 @@ mod tests {
         r.register(
             StubVendor {
                 name: "v",
-                kind: BackendKind::Image,
+                kind: "image".to_string(),
             },
             FallbackLevel::Primary,
         );
-        // Request kind that has no registered vendor.
-        let vs = r.vendors_for(&BackendKind::Video);
+        let vs = r.vendors_for("video");
         assert!(vs.is_empty());
     }
 
@@ -409,38 +405,33 @@ mod tests {
         r.register(
             FailingVendor {
                 name: "p",
-                kind: BackendKind::Image,
+                kind: "image".to_string(),
             },
             FallbackLevel::Primary,
         );
         r.register(
             FailingVendor {
                 name: "s",
-                kind: BackendKind::Image,
+                kind: "image".to_string(),
             },
             FallbackLevel::Secondary,
         );
         r.register(
             FailingVendor {
                 name: "t",
-                kind: BackendKind::Image,
+                kind: "image".to_string(),
             },
             FallbackLevel::Tertiary,
         );
-        let result = r.compose_with_fallback(&BackendKind::Image, "x", &|_| {}, true);
-        assert!(
-            result.is_err(),
-            "all tiers failing must return Err"
-        );
+        let result = r.compose_with_fallback("image", "x", &|_| {}, true);
+        assert!(result.is_err(), "all tiers failing must return Err");
     }
 
     #[test]
     fn retry_delay_backoff_math() {
-        // Primary = 2^0 * 1000 = 1000, Secondary = 2^1 * 1000 = 2000, Tertiary = 2^2 * 1000 = 4000
         assert_eq!(FallbackLevel::Primary.retry_delay_ms(), 1000);
         assert_eq!(FallbackLevel::Secondary.retry_delay_ms(), 2000);
         assert_eq!(FallbackLevel::Tertiary.retry_delay_ms(), 4000);
-        // Each level doubles.
         assert_eq!(
             FallbackLevel::Secondary.retry_delay_ms(),
             FallbackLevel::Primary.retry_delay_ms() * 2
@@ -457,11 +448,11 @@ mod tests {
         r.register(
             StubMediaVendor {
                 name: "tertiary_ok",
-                kind: BackendKind::Render,
+                kind: "render".to_string(),
             },
             FallbackLevel::Tertiary,
         );
-        let result = r.compose_with_fallback(&BackendKind::Render, "data", &|_| {}, false);
+        let result = r.compose_with_fallback("render", "data", &|_| {}, false);
         assert_eq!(result, Ok("stub_output".to_string()));
     }
 
@@ -471,19 +462,18 @@ mod tests {
         r.register(
             StubMediaVendor {
                 name: "p",
-                kind: BackendKind::Data,
+                kind: "data".to_string(),
             },
             FallbackLevel::Primary,
         );
         r.register(
             StubMediaVendor {
                 name: "s",
-                kind: BackendKind::Data,
+                kind: "data".to_string(),
             },
             FallbackLevel::Secondary,
         );
-        // try_fallbacks=false: only primary is tried
-        let result = r.compose_with_fallback(&BackendKind::Data, "in", &|_| {}, false);
+        let result = r.compose_with_fallback("data", "in", &|_| {}, false);
         assert!(result.is_ok());
     }
 }

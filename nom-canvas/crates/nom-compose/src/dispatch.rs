@@ -2,83 +2,17 @@
 
 use std::collections::HashMap;
 
-use crate::progress::{ComposeEvent, ProgressSink};
 use crate::store::ArtifactStore as _;
-
-/// Which compose backend to route to — DB-driven at runtime.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum BackendKind {
-    Video,
-    Audio,
-    Image,
-    Document,
-    Data,
-    App,
-    Workflow,
-    Scenario,
-    RagQuery,
-    Transform,
-    EmbedGen,
-    Render,
-    Export,
-    Pipeline,
-    CodeExec,
-    WebScreen,
-}
-
-impl BackendKind {
-    pub fn from_kind_name(name: &str) -> Option<Self> {
-        match name {
-            "video" => Some(Self::Video),
-            "audio" => Some(Self::Audio),
-            "image" => Some(Self::Image),
-            "document" => Some(Self::Document),
-            "data" => Some(Self::Data),
-            "app" => Some(Self::App),
-            "workflow" => Some(Self::Workflow),
-            "scenario" => Some(Self::Scenario),
-            "rag_query" => Some(Self::RagQuery),
-            "transform" => Some(Self::Transform),
-            "embed_gen" => Some(Self::EmbedGen),
-            "render" => Some(Self::Render),
-            "export" => Some(Self::Export),
-            "pipeline" => Some(Self::Pipeline),
-            "code_exec" => Some(Self::CodeExec),
-            "web_screen" => Some(Self::WebScreen),
-            _ => None,
-        }
-    }
-    pub fn name(&self) -> &'static str {
-        match self {
-            Self::Video => "video",
-            Self::Audio => "audio",
-            Self::Image => "image",
-            Self::Document => "document",
-            Self::Data => "data",
-            Self::App => "app",
-            Self::Workflow => "workflow",
-            Self::Scenario => "scenario",
-            Self::RagQuery => "rag_query",
-            Self::Transform => "transform",
-            Self::EmbedGen => "embed_gen",
-            Self::Render => "render",
-            Self::Export => "export",
-            Self::Pipeline => "pipeline",
-            Self::CodeExec => "code_exec",
-            Self::WebScreen => "web_screen",
-        }
-    }
-}
 
 /// Trait every compose backend must implement.
 pub trait Backend: Send + Sync {
-    fn kind(&self) -> BackendKind;
+    fn kind(&self) -> String;
     fn compose(&self, input: &str, progress: &dyn Fn(f32)) -> Result<String, String>;
 }
 
-/// Registry mapping BackendKind to a concrete Backend implementation.
+/// Registry mapping backend kind strings to concrete Backend implementations.
 pub struct BackendRegistry {
-    backends: HashMap<BackendKind, Box<dyn Backend>>,
+    backends: HashMap<String, Box<dyn Backend>>,
 }
 
 impl BackendRegistry {
@@ -96,19 +30,19 @@ impl BackendRegistry {
     /// Dispatch to the registered backend, or return Err if none registered.
     pub fn dispatch(
         &self,
-        kind: BackendKind,
+        kind: &str,
         input: &str,
         progress: &dyn Fn(f32),
     ) -> Result<String, String> {
-        match self.backends.get(&kind) {
+        match self.backends.get(kind) {
             Some(b) => b.compose(input, progress),
-            None => Err(format!("no backend registered for kind: {}", kind.name())),
+            None => Err(format!("no backend registered for kind: {}", kind)),
         }
     }
 
     /// List all currently registered kinds.
-    pub fn registered_kinds(&self) -> Vec<BackendKind> {
-        self.backends.keys().cloned().collect()
+    pub fn registered_kinds(&self) -> Vec<&str> {
+        self.backends.keys().map(|s| s.as_str()).collect()
     }
 }
 
@@ -120,22 +54,24 @@ impl Default for BackendRegistry {
 
 /// Stub backend for testing — echoes the input with a kind prefix.
 pub struct NoopBackend {
-    kind: BackendKind,
+    kind: String,
 }
 
 impl NoopBackend {
-    pub fn new(kind: BackendKind) -> Self {
-        Self { kind }
+    pub fn new(kind: &str) -> Self {
+        Self {
+            kind: kind.to_string(),
+        }
     }
 }
 
 impl Backend for NoopBackend {
-    fn kind(&self) -> BackendKind {
+    fn kind(&self) -> String {
         self.kind.clone()
     }
     fn compose(&self, input: &str, progress: &dyn Fn(f32)) -> Result<String, String> {
         progress(1.0);
-        Ok(format!("{}:{}", self.kind.name(), input))
+        Ok(format!("{}:{}", self.kind, input))
     }
 }
 
@@ -144,8 +80,8 @@ impl Backend for NoopBackend {
 // ---------------------------------------------------------------------------
 
 impl Backend for crate::backends::video::VideoBackend {
-    fn kind(&self) -> BackendKind {
-        BackendKind::Video
+    fn kind(&self) -> String {
+        "video".to_string()
     }
     fn compose(&self, input: &str, progress: &dyn Fn(f32)) -> Result<String, String> {
         use crate::backends::video::{ContainerFormat, VideoBackend, VideoCodec, VideoInput};
@@ -173,11 +109,11 @@ impl Backend for crate::backends::video::VideoBackend {
 }
 
 impl Backend for crate::backends::audio::AudioBackend {
-    fn kind(&self) -> BackendKind {
-        BackendKind::Audio
+    fn kind(&self) -> String {
+        "audio".to_string()
     }
     fn compose(&self, input: &str, _progress: &dyn Fn(f32)) -> Result<String, String> {
-        use crate::backends::audio::{AudioBackend, AudioContainer, AudioCodec, AudioInput};
+        use crate::backends::audio::{AudioBackend, AudioCodec, AudioContainer, AudioInput};
         use crate::store::InMemoryStore;
         use nom_blocks::NomtuRef;
         let sink = crate::progress::LogProgressSink;
@@ -200,8 +136,8 @@ impl Backend for crate::backends::audio::AudioBackend {
 }
 
 impl Backend for crate::backends::document::DocumentBackend {
-    fn kind(&self) -> BackendKind {
-        BackendKind::Document
+    fn kind(&self) -> String {
+        "document".to_string()
     }
     fn compose(&self, input: &str, _progress: &dyn Fn(f32)) -> Result<String, String> {
         use crate::backends::document::{DocumentBackend, DocumentInput};
@@ -219,13 +155,16 @@ impl Backend for crate::backends::document::DocumentBackend {
         };
         let mut store = InMemoryStore::new();
         let block = DocumentBackend::compose(doc_input, &mut store, &sink);
-        Ok(format!("document:{}:{}pages", block.entity.id, block.page_count))
+        Ok(format!(
+            "document:{}:{}pages",
+            block.entity.id, block.page_count
+        ))
     }
 }
 
 impl Backend for crate::backends::export::ExportBackend {
-    fn kind(&self) -> BackendKind {
-        BackendKind::Export
+    fn kind(&self) -> String {
+        "export".to_string()
     }
     fn compose(&self, input: &str, _progress: &dyn Fn(f32)) -> Result<String, String> {
         use crate::backends::export::{ExportBackend, ExportInput};
@@ -252,8 +191,8 @@ impl Backend for crate::backends::export::ExportBackend {
 }
 
 impl Backend for crate::backends::rag_query::RagQueryBackend {
-    fn kind(&self) -> BackendKind {
-        BackendKind::RagQuery
+    fn kind(&self) -> String {
+        "rag_query".to_string()
     }
     fn compose(&self, input: &str, _progress: &dyn Fn(f32)) -> Result<String, String> {
         use crate::backends::rag_query::{RagChunk, RagQueryBackend, RagQueryInput};
@@ -284,8 +223,8 @@ impl Backend for crate::backends::rag_query::RagQueryBackend {
 }
 
 impl Backend for crate::backends::mobile_screen::MobileScreenBackend {
-    fn kind(&self) -> BackendKind {
-        BackendKind::WebScreen
+    fn kind(&self) -> String {
+        "web_screen".to_string()
     }
     fn compose(&self, input: &str, _progress: &dyn Fn(f32)) -> Result<String, String> {
         use crate::backends::mobile_screen::{MobileScreenBackend, MobileScreenSpec};
@@ -304,8 +243,8 @@ impl Backend for crate::backends::mobile_screen::MobileScreenBackend {
 }
 
 impl Backend for crate::backends::native_screen::NativeScreenBackend {
-    fn kind(&self) -> BackendKind {
-        BackendKind::Render
+    fn kind(&self) -> String {
+        "render".to_string()
     }
     fn compose(&self, input: &str, _progress: &dyn Fn(f32)) -> Result<String, String> {
         use crate::backends::native_screen::{NativeScreenBackend, NativeScreenSpec};
@@ -383,7 +322,8 @@ impl UnifiedDispatcher {
         kind_name: &str,
         handler: impl Fn(&ComposeContext) -> Result<String, String> + Send + Sync + 'static,
     ) {
-        self.handlers.insert(kind_name.to_string(), Box::new(handler));
+        self.handlers
+            .insert(kind_name.to_string(), Box::new(handler));
     }
 
     pub fn dispatch(&self, ctx: &ComposeContext) -> Result<String, String> {
@@ -426,54 +366,14 @@ impl Default for UnifiedDispatcher {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn dispatch_kind_from_name_roundtrip() {
-        assert_eq!(
-            BackendKind::from_kind_name("video"),
-            Some(BackendKind::Video)
-        );
-        assert_eq!(BackendKind::from_kind_name("unknown"), None);
-    }
-    #[test]
-    fn dispatch_kind_name_matches_from_name() {
-        let kind = BackendKind::Document;
-        assert_eq!(BackendKind::from_kind_name(kind.name()), Some(kind));
-    }
-    #[test]
-    fn all_16_backends_have_kind_names() {
-        let names = [
-            "video",
-            "audio",
-            "image",
-            "document",
-            "data",
-            "app",
-            "workflow",
-            "scenario",
-            "rag_query",
-            "transform",
-            "embed_gen",
-            "render",
-            "export",
-            "pipeline",
-            "code_exec",
-            "web_screen",
-        ];
-        for name in names {
-            assert!(
-                BackendKind::from_kind_name(name).is_some(),
-                "missing: {name}"
-            );
-        }
-    }
 
     #[test]
     fn registry_register_and_dispatch_roundtrip() {
         use std::cell::Cell;
         let mut reg = BackendRegistry::new();
-        reg.register(Box::new(NoopBackend::new(BackendKind::Video)));
+        reg.register(Box::new(NoopBackend::new("video")));
         let called_with = Cell::new(0.0f32);
-        let result = reg.dispatch(BackendKind::Video, "test-input", &|p| {
+        let result = reg.dispatch("video", "test-input", &|p| {
             called_with.set(p);
         });
         assert_eq!(result, Ok("video:test-input".to_string()));
@@ -483,7 +383,7 @@ mod tests {
     #[test]
     fn registry_dispatch_unknown_kind_returns_err() {
         let reg = BackendRegistry::new();
-        let result = reg.dispatch(BackendKind::Audio, "x", &|_| {});
+        let result = reg.dispatch("audio", "x", &|_| {});
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("audio"));
     }
@@ -491,25 +391,25 @@ mod tests {
     #[test]
     fn registry_registered_kinds_lists_all_registered() {
         let mut reg = BackendRegistry::new();
-        reg.register(Box::new(NoopBackend::new(BackendKind::Image)));
-        reg.register(Box::new(NoopBackend::new(BackendKind::Document)));
+        reg.register(Box::new(NoopBackend::new("image")));
+        reg.register(Box::new(NoopBackend::new("document")));
         let mut kinds = reg.registered_kinds();
-        kinds.sort_by_key(|k| k.name());
-        assert_eq!(kinds, vec![BackendKind::Document, BackendKind::Image]);
+        kinds.sort();
+        assert_eq!(kinds, vec!["document", "image"]);
     }
 
     #[test]
     fn backend_registry_register_and_dispatch() {
         let mut reg = BackendRegistry::new();
-        reg.register(Box::new(NoopBackend::new(BackendKind::Render)));
-        let result = reg.dispatch(BackendKind::Render, "scene", &|_| {});
+        reg.register(Box::new(NoopBackend::new("render")));
+        let result = reg.dispatch("render", "scene", &|_| {});
         assert_eq!(result, Ok("render:scene".to_string()));
     }
 
     #[test]
     fn backend_registry_unknown_kind_returns_err() {
         let reg = BackendRegistry::new();
-        let result = reg.dispatch(BackendKind::Export, "data", &|_| {});
+        let result = reg.dispatch("export", "data", &|_| {});
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("export"));
     }
@@ -517,9 +417,9 @@ mod tests {
     #[test]
     fn backend_registry_multiple_kinds() {
         let mut reg = BackendRegistry::new();
-        reg.register(Box::new(NoopBackend::new(BackendKind::Pipeline)));
-        reg.register(Box::new(NoopBackend::new(BackendKind::CodeExec)));
-        reg.register(Box::new(NoopBackend::new(BackendKind::Transform)));
+        reg.register(Box::new(NoopBackend::new("pipeline")));
+        reg.register(Box::new(NoopBackend::new("code_exec")));
+        reg.register(Box::new(NoopBackend::new("transform")));
         assert_eq!(reg.registered_kinds().len(), 3);
     }
 
@@ -530,36 +430,8 @@ mod tests {
     }
 
     #[test]
-    fn all_16_kind_names_roundtrip() {
-        // Every kind's name() must parse back to the same kind via from_kind_name().
-        let kinds = [
-            BackendKind::Video,
-            BackendKind::Audio,
-            BackendKind::Image,
-            BackendKind::Document,
-            BackendKind::Data,
-            BackendKind::App,
-            BackendKind::Workflow,
-            BackendKind::Scenario,
-            BackendKind::RagQuery,
-            BackendKind::Transform,
-            BackendKind::EmbedGen,
-            BackendKind::Render,
-            BackendKind::Export,
-            BackendKind::Pipeline,
-            BackendKind::CodeExec,
-            BackendKind::WebScreen,
-        ];
-        for kind in kinds {
-            let name = kind.name();
-            let parsed = BackendKind::from_kind_name(name);
-            assert_eq!(parsed.as_ref(), Some(&kind), "roundtrip failed for {name}");
-        }
-    }
-
-    #[test]
     fn noop_backend_kind_echoed_in_output() {
-        let b = NoopBackend::new(BackendKind::Scenario);
+        let b = NoopBackend::new("scenario");
         let result = b.compose("input_data", &|_| {});
         assert_eq!(result, Ok("scenario:input_data".to_string()));
     }
@@ -567,7 +439,7 @@ mod tests {
     #[test]
     fn noop_backend_progress_callback_called_with_one() {
         use std::cell::Cell;
-        let b = NoopBackend::new(BackendKind::EmbedGen);
+        let b = NoopBackend::new("embed_gen");
         let progress_val = Cell::new(-1.0f32);
         b.compose("x", &|p| progress_val.set(p)).unwrap();
         assert!((progress_val.get() - 1.0).abs() < f32::EPSILON);
@@ -575,24 +447,16 @@ mod tests {
 
     #[test]
     fn registry_overwrite_same_kind() {
-        // Registering a second backend for the same kind must replace the first.
         let mut reg = BackendRegistry::new();
-        reg.register(Box::new(NoopBackend::new(BackendKind::Audio)));
-        reg.register(Box::new(NoopBackend::new(BackendKind::Audio)));
+        reg.register(Box::new(NoopBackend::new("audio")));
+        reg.register(Box::new(NoopBackend::new("audio")));
         assert_eq!(
             reg.registered_kinds().len(),
             1,
             "duplicate kind must not grow list"
         );
-        let result = reg.dispatch(BackendKind::Audio, "clip", &|_| {});
+        let result = reg.dispatch("audio", "clip", &|_| {});
         assert_eq!(result, Ok("audio:clip".to_string()));
-    }
-
-    #[test]
-    fn from_kind_name_unknown_returns_none() {
-        assert_eq!(BackendKind::from_kind_name(""), None);
-        assert_eq!(BackendKind::from_kind_name("VIDEO"), None); // case sensitive
-        assert_eq!(BackendKind::from_kind_name("unknown_kind"), None);
     }
 
     // -----------------------------------------------------------------------
@@ -603,7 +467,7 @@ mod tests {
     fn video_backend_stored_as_box_dyn_backend() {
         use crate::backends::video::VideoBackend;
         let b: Box<dyn Backend> = Box::new(VideoBackend);
-        assert_eq!(b.kind(), BackendKind::Video);
+        assert_eq!(b.kind(), "video");
         let result = b.compose("entity-v1", &|_| {});
         assert!(result.is_ok(), "VideoBackend dispatch must succeed");
         assert!(result.unwrap().starts_with("video:entity-v1"));
@@ -613,7 +477,7 @@ mod tests {
     fn audio_backend_stored_as_box_dyn_backend() {
         use crate::backends::audio::AudioBackend;
         let b: Box<dyn Backend> = Box::new(AudioBackend);
-        assert_eq!(b.kind(), BackendKind::Audio);
+        assert_eq!(b.kind(), "audio");
         let result = b.compose("entity-a1", &|_| {});
         assert!(result.is_ok(), "AudioBackend dispatch must succeed");
         assert!(result.unwrap().starts_with("audio:entity-a1"));
@@ -623,7 +487,7 @@ mod tests {
     fn document_backend_stored_as_box_dyn_backend() {
         use crate::backends::document::DocumentBackend;
         let b: Box<dyn Backend> = Box::new(DocumentBackend);
-        assert_eq!(b.kind(), BackendKind::Document);
+        assert_eq!(b.kind(), "document");
         let result = b.compose("entity-d1", &|_| {});
         assert!(result.is_ok(), "DocumentBackend dispatch must succeed");
         assert!(result.unwrap().starts_with("document:entity-d1"));
@@ -633,7 +497,7 @@ mod tests {
     fn export_backend_stored_as_box_dyn_backend() {
         use crate::backends::export::ExportBackend;
         let b: Box<dyn Backend> = Box::new(ExportBackend);
-        assert_eq!(b.kind(), BackendKind::Export);
+        assert_eq!(b.kind(), "export");
         let result = b.compose("entity-e1", &|_| {});
         assert!(result.is_ok(), "ExportBackend dispatch must succeed");
         assert!(result.unwrap().starts_with("export:entity-e1"));
@@ -643,7 +507,7 @@ mod tests {
     fn rag_query_backend_stored_as_box_dyn_backend() {
         use crate::backends::rag_query::RagQueryBackend;
         let b: Box<dyn Backend> = Box::new(RagQueryBackend::default());
-        assert_eq!(b.kind(), BackendKind::RagQuery);
+        assert_eq!(b.kind(), "rag_query");
         let result = b.compose("entity-r1", &|_| {});
         assert!(result.is_ok(), "RagQueryBackend dispatch must succeed");
         assert!(result.unwrap().starts_with("rag_query:entity-r1"));
@@ -652,11 +516,13 @@ mod tests {
     #[test]
     fn routing_unknown_kind_returns_error() {
         let reg = BackendRegistry::new();
-        // No backends registered — any kind must return Err.
-        let result = reg.dispatch(BackendKind::EmbedGen, "probe", &|_| {});
+        let result = reg.dispatch("embed_gen", "probe", &|_| {});
         assert!(result.is_err());
         let msg = result.unwrap_err();
-        assert!(msg.contains("embed_gen"), "error must name the missing kind, got: {msg}");
+        assert!(
+            msg.contains("embed_gen"),
+            "error must name the missing kind, got: {msg}"
+        );
     }
 
     #[test]
@@ -672,13 +538,13 @@ mod tests {
 
         assert_eq!(reg.registered_kinds().len(), 3);
 
-        let v = reg.dispatch(BackendKind::Video, "vid-probe", &|_| {});
+        let v = reg.dispatch("video", "vid-probe", &|_| {});
         assert!(v.is_ok(), "video round-trip must succeed");
 
-        let a = reg.dispatch(BackendKind::Audio, "aud-probe", &|_| {});
+        let a = reg.dispatch("audio", "aud-probe", &|_| {});
         assert!(a.is_ok(), "audio round-trip must succeed");
 
-        let d = reg.dispatch(BackendKind::Document, "doc-probe", &|_| {});
+        let d = reg.dispatch("document", "doc-probe", &|_| {});
         assert!(d.is_ok(), "document round-trip must succeed");
     }
 
@@ -691,10 +557,10 @@ mod tests {
         reg.register(Box::new(ExportBackend));
         reg.register(Box::new(RagQueryBackend::default()));
 
-        let e = reg.dispatch(BackendKind::Export, "export-probe", &|_| {});
+        let e = reg.dispatch("export", "export-probe", &|_| {});
         assert!(e.is_ok(), "export round-trip must succeed");
 
-        let r = reg.dispatch(BackendKind::RagQuery, "rag-probe", &|_| {});
+        let r = reg.dispatch("rag_query", "rag-probe", &|_| {});
         assert!(r.is_ok(), "rag_query round-trip must succeed");
     }
 
@@ -705,72 +571,77 @@ mod tests {
         let b: Box<dyn Backend> = Box::new(VideoBackend);
         let called = Cell::new(false);
         b.compose("progress-test", &|_| called.set(true)).unwrap();
-        assert!(called.get(), "progress callback must be called during compose");
+        assert!(
+            called.get(),
+            "progress callback must be called during compose"
+        );
     }
 
     // ── Wave AD new tests ────────────────────────────────────────────────────
 
     #[test]
     fn dispatch_routes_all_16_backend_kinds() {
-        // Register a NoopBackend for each of the 16 kinds and verify dispatch succeeds.
         let mut reg = BackendRegistry::new();
         let all_kinds = [
-            BackendKind::Video,
-            BackendKind::Audio,
-            BackendKind::Image,
-            BackendKind::Document,
-            BackendKind::Data,
-            BackendKind::App,
-            BackendKind::Workflow,
-            BackendKind::Scenario,
-            BackendKind::RagQuery,
-            BackendKind::Transform,
-            BackendKind::EmbedGen,
-            BackendKind::Render,
-            BackendKind::Export,
-            BackendKind::Pipeline,
-            BackendKind::CodeExec,
-            BackendKind::WebScreen,
+            "video", "audio", "image", "document", "data", "app", "workflow", "scenario",
+            "rag_query", "transform", "embed_gen", "render", "export", "pipeline", "code_exec",
+            "web_screen",
         ];
-        for kind in all_kinds.iter() {
-            reg.register(Box::new(NoopBackend::new(kind.clone())));
+        for kind in &all_kinds {
+            reg.register(Box::new(NoopBackend::new(kind)));
         }
-        assert_eq!(reg.registered_kinds().len(), 16, "all 16 backends must be registered");
-        for kind in all_kinds.iter() {
-            let result = reg.dispatch(kind.clone(), "probe", &|_| {});
-            assert!(result.is_ok(), "dispatch must succeed for kind: {}", kind.name());
+        assert_eq!(
+            reg.registered_kinds().len(),
+            16,
+            "all 16 backends must be registered"
+        );
+        for kind in &all_kinds {
+            let result = reg.dispatch(kind, "probe", &|_| {});
+            assert!(
+                result.is_ok(),
+                "dispatch must succeed for kind: {}",
+                kind
+            );
             let output = result.unwrap();
-            assert!(output.starts_with(kind.name()), "output must start with kind name");
+            assert!(
+                output.starts_with(kind),
+                "output must start with kind name"
+            );
         }
     }
 
     #[test]
     fn plan_with_10_steps_all_execute_in_topo_order() {
         use crate::plan::CompositionPlan;
-        // Build a linear 10-step chain and verify all steps execute in order.
         let mut plan = CompositionPlan::new();
-        let step0 = plan.add_step(BackendKind::Video, "src", "s0");
+        let step0 = plan.add_step("video", "src", "s0");
         let mut prev = step0;
         for i in 1..10usize {
             prev = plan.add_step_after(
-                BackendKind::Transform,
+                "transform",
                 format!("s{}", i - 1),
                 format!("s{i}"),
                 vec![prev],
             );
         }
-        assert!(plan.is_valid_dag(), "10-step linear chain must be a valid DAG");
+        assert!(
+            plan.is_valid_dag(),
+            "10-step linear chain must be a valid DAG"
+        );
         let order = plan.topo_order();
         assert_eq!(order.len(), 10, "all 10 steps must appear in topo order");
-        // Each step must be strictly after its predecessor.
         for window in order.windows(2) {
-            assert!(window[0] < window[1], "step {} must precede step {}", window[0], window[1]);
+            assert!(
+                window[0] < window[1],
+                "step {} must precede step {}",
+                window[0],
+                window[1]
+            );
         }
     }
 
     #[test]
     fn progress_cancellation_flag_stops_emission() {
-        // Model progress cancellation: once a flag is set, no further callbacks fire.
         use std::sync::atomic::{AtomicBool, Ordering};
         use std::sync::Arc;
         let cancelled = Arc::new(AtomicBool::new(false));
@@ -778,7 +649,6 @@ mod tests {
         let cc = call_count.clone();
         let ca = cancelled.clone();
 
-        // Simulate 5 progress callbacks where we cancel after the 3rd.
         for i in 0..5usize {
             if ca.load(Ordering::SeqCst) {
                 break;
@@ -788,7 +658,6 @@ mod tests {
                 ca.store(true, Ordering::SeqCst);
             }
         }
-        // Only 3 callbacks fired before cancellation.
         assert_eq!(call_count.load(Ordering::SeqCst), 3);
     }
 
@@ -814,10 +683,16 @@ mod tests {
         assert_eq!(reg.model_count(), 5);
         for name in &table_names {
             let model = reg.get(name).expect("model must exist");
-            let sql = model.to_select_sql();
-            assert!(sql.contains(&format!("raw.{name}")), "SQL must reference the source table");
+            let sql = model.to_select_sql().expect("safe generated model");
+            assert!(
+                sql.contains(&format!("raw.{name}")),
+                "SQL must reference the source table"
+            );
             assert!(sql.contains("id"), "SQL must contain id column");
-            assert!(sql.contains("created_at"), "SQL must contain created_at column");
+            assert!(
+                sql.contains("created_at"),
+                "SQL must contain created_at column"
+            );
         }
     }
 
@@ -825,12 +700,9 @@ mod tests {
     fn backend_registry_register_all_kinds_count_is_16() {
         let mut reg = BackendRegistry::new();
         for kind in [
-            BackendKind::Video, BackendKind::Audio, BackendKind::Image,
-            BackendKind::Document, BackendKind::Data, BackendKind::App,
-            BackendKind::Workflow, BackendKind::Scenario, BackendKind::RagQuery,
-            BackendKind::Transform, BackendKind::EmbedGen, BackendKind::Render,
-            BackendKind::Export, BackendKind::Pipeline, BackendKind::CodeExec,
-            BackendKind::WebScreen,
+            "video", "audio", "image", "document", "data", "app", "workflow", "scenario",
+            "rag_query", "transform", "embed_gen", "render", "export", "pipeline", "code_exec",
+            "web_screen",
         ] {
             reg.register(Box::new(NoopBackend::new(kind)));
         }
@@ -839,35 +711,31 @@ mod tests {
 
     #[test]
     fn noop_backend_output_format_is_kind_colon_input() {
-        // Every NoopBackend outputs "<kind>:<input>".
-        let kinds = [BackendKind::Data, BackendKind::App, BackendKind::Workflow];
+        let kinds = ["data", "app", "workflow"];
         for kind in kinds {
-            let b = NoopBackend::new(kind.clone());
+            let b = NoopBackend::new(kind);
             let result = b.compose("x", &|_| {}).unwrap();
-            assert_eq!(result, format!("{}:x", kind.name()));
+            assert_eq!(result, format!("{}:x", kind));
         }
     }
 
     #[test]
     fn dispatch_missing_kind_returns_err_with_kind_name() {
-        // Dispatching to a kind not registered returns an Err containing the kind name.
         let reg = BackendRegistry::new();
-        for kind in [BackendKind::Pipeline, BackendKind::CodeExec, BackendKind::WebScreen] {
-            let name = kind.name();
+        for kind in ["pipeline", "code_exec", "web_screen"] {
             let err = reg.dispatch(kind, "probe", &|_| {}).unwrap_err();
-            assert!(err.contains(name), "error must mention kind name: {name}");
+            assert!(err.contains(kind), "error must mention kind name: {kind}");
         }
     }
 
     #[test]
     fn plan_diamond_all_steps_in_topo_order() {
         use crate::plan::CompositionPlan;
-        // A→B, A→C, B→D, C→D (diamond).
         let mut plan = CompositionPlan::new();
-        let a = plan.add_step(BackendKind::Video, "src", "v");
-        let b = plan.add_step_after(BackendKind::Audio, "v", "a", vec![a]);
-        let c = plan.add_step_after(BackendKind::Image, "v", "img", vec![a]);
-        let d = plan.add_step_after(BackendKind::Export, "a", "out", vec![b, c]);
+        let a = plan.add_step("video", "src", "v");
+        let b = plan.add_step_after("audio", "v", "a", vec![a]);
+        let c = plan.add_step_after("image", "v", "img", vec![a]);
+        let d = plan.add_step_after("export", "a", "out", vec![b, c]);
         assert!(plan.is_valid_dag());
         let order = plan.topo_order();
         let pos = |id| order.iter().position(|&x| x == id).unwrap();
@@ -888,7 +756,13 @@ mod tests {
     fn semantic_model_5_cols_select_sql_lists_all() {
         use crate::semantic::{SemanticColumn, SemanticDataType, SemanticModel};
         let mut m = SemanticModel::new("fact_sales", "dw.fact_sales");
-        let cols = ["sale_id", "product_id", "customer_id", "amount", "sale_date"];
+        let cols = [
+            "sale_id",
+            "product_id",
+            "customer_id",
+            "amount",
+            "sale_date",
+        ];
         for name in &cols {
             m.add_column(SemanticColumn {
                 name: (*name).into(),
@@ -896,7 +770,7 @@ mod tests {
                 description: None,
             });
         }
-        let sql = m.to_select_sql();
+        let sql = m.to_select_sql().expect("safe test model");
         for col in &cols {
             assert!(sql.contains(*col), "SQL must contain column: {col}");
         }
@@ -908,17 +782,15 @@ mod tests {
     fn plan_10_step_all_backend_kinds_are_valid_dag() {
         use crate::plan::CompositionPlan;
         let kinds = [
-            BackendKind::Video, BackendKind::Audio, BackendKind::Image,
-            BackendKind::Document, BackendKind::Data, BackendKind::App,
-            BackendKind::Workflow, BackendKind::Scenario, BackendKind::RagQuery,
-            BackendKind::Transform,
+            "video", "audio", "image", "document", "data", "app", "workflow", "scenario",
+            "rag_query", "transform",
         ];
         let mut plan = CompositionPlan::new();
-        let first = plan.add_step(kinds[0].clone(), "in", "s0");
+        let first = plan.add_step(kinds[0], "in", "s0");
         let mut prev = first;
         for (i, kind) in kinds[1..].iter().enumerate() {
             prev = plan.add_step_after(
-                kind.clone(),
+                *kind,
                 format!("s{i}"),
                 format!("s{}", i + 1),
                 vec![prev],
@@ -931,19 +803,14 @@ mod tests {
 
     #[test]
     fn backend_kind_all_16_names_are_lowercase_no_spaces() {
-        // All BackendKind::name() values must be lowercase with no spaces.
         let all_kinds = [
-            BackendKind::Video, BackendKind::Audio, BackendKind::Image,
-            BackendKind::Document, BackendKind::Data, BackendKind::App,
-            BackendKind::Workflow, BackendKind::Scenario, BackendKind::RagQuery,
-            BackendKind::Transform, BackendKind::EmbedGen, BackendKind::Render,
-            BackendKind::Export, BackendKind::Pipeline, BackendKind::CodeExec,
-            BackendKind::WebScreen,
+            "video", "audio", "image", "document", "data", "app", "workflow", "scenario",
+            "rag_query", "transform", "embed_gen", "render", "export", "pipeline", "code_exec",
+            "web_screen",
         ];
-        for kind in &all_kinds {
-            let name = kind.name();
+        for name in &all_kinds {
             assert!(!name.is_empty(), "name must not be empty");
-            assert_eq!(name, name.to_lowercase(), "name must be lowercase: {name}");
+            assert_eq!(*name, name.to_lowercase(), "name must be lowercase: {name}");
             assert!(!name.contains(' '), "name must not contain spaces: {name}");
         }
     }
@@ -951,9 +818,14 @@ mod tests {
     #[test]
     fn dispatch_noop_output_starts_with_kind_name() {
         let mut reg = BackendRegistry::new();
-        reg.register(Box::new(NoopBackend::new(BackendKind::Scenario)));
-        let out = reg.dispatch(BackendKind::Scenario, "my-input", &|_| {}).unwrap();
-        assert!(out.starts_with("scenario:"), "output must start with 'scenario:'");
+        reg.register(Box::new(NoopBackend::new("scenario")));
+        let out = reg
+            .dispatch("scenario", "my-input", &|_| {})
+            .unwrap();
+        assert!(
+            out.starts_with("scenario:"),
+            "output must start with 'scenario:'"
+        );
         assert!(out.contains("my-input"), "output must contain input");
     }
 
@@ -961,7 +833,7 @@ mod tests {
     fn plan_single_step_dag_is_valid() {
         use crate::plan::CompositionPlan;
         let mut plan = CompositionPlan::new();
-        plan.add_step(BackendKind::Render, "input", "output");
+        plan.add_step("render", "input", "output");
         assert!(plan.is_valid_dag());
         assert_eq!(plan.topo_order(), vec![0]);
     }
@@ -984,71 +856,79 @@ mod tests {
 
     #[test]
     fn registry_with_7_backends_all_dispatch_ok() {
-        // Register the 7 "real" backends (video, audio, document, export, rag_query,
-        // mobile_screen→WebScreen, native_screen→Render) via NoopBackend and verify each routes.
         let mut reg = BackendRegistry::new();
         let kinds = [
-            BackendKind::Video,
-            BackendKind::Audio,
-            BackendKind::Document,
-            BackendKind::Export,
-            BackendKind::RagQuery,
-            BackendKind::WebScreen,
-            BackendKind::Render,
+            "video", "audio", "document", "export", "rag_query", "web_screen", "render",
         ];
         for kind in &kinds {
-            reg.register(Box::new(NoopBackend::new(kind.clone())));
+            reg.register(Box::new(NoopBackend::new(kind)));
         }
-        assert_eq!(reg.registered_kinds().len(), 7, "exactly 7 backends must be registered");
+        assert_eq!(
+            reg.registered_kinds().len(),
+            7,
+            "exactly 7 backends must be registered"
+        );
         for kind in &kinds {
-            let result = reg.dispatch(kind.clone(), "probe", &|_| {});
-            assert!(result.is_ok(), "dispatch must succeed for kind: {}", kind.name());
+            let result = reg.dispatch(kind, "probe", &|_| {});
+            assert!(
+                result.is_ok(),
+                "dispatch must succeed for kind: {}",
+                kind
+            );
         }
     }
 
     #[test]
     fn registry_route_by_kind_returns_correct_backend() {
-        // Each kind returns an output that starts with its own name prefix.
         let mut reg = BackendRegistry::new();
-        reg.register(Box::new(NoopBackend::new(BackendKind::Video)));
-        reg.register(Box::new(NoopBackend::new(BackendKind::Audio)));
-        reg.register(Box::new(NoopBackend::new(BackendKind::Document)));
+        reg.register(Box::new(NoopBackend::new("video")));
+        reg.register(Box::new(NoopBackend::new("audio")));
+        reg.register(Box::new(NoopBackend::new("document")));
 
-        let v = reg.dispatch(BackendKind::Video, "x", &|_| {}).unwrap();
-        assert!(v.starts_with("video:"), "video backend output must start with 'video:'");
+        let v = reg.dispatch("video", "x", &|_| {}).unwrap();
+        assert!(
+            v.starts_with("video:"),
+            "video backend output must start with 'video:'"
+        );
 
-        let a = reg.dispatch(BackendKind::Audio, "x", &|_| {}).unwrap();
-        assert!(a.starts_with("audio:"), "audio backend output must start with 'audio:'");
+        let a = reg.dispatch("audio", "x", &|_| {}).unwrap();
+        assert!(
+            a.starts_with("audio:"),
+            "audio backend output must start with 'audio:'"
+        );
 
-        let d = reg.dispatch(BackendKind::Document, "x", &|_| {}).unwrap();
-        assert!(d.starts_with("document:"), "document backend output must start with 'document:'");
+        let d = reg.dispatch("document", "x", &|_| {}).unwrap();
+        assert!(
+            d.starts_with("document:"),
+            "document backend output must start with 'document:'"
+        );
     }
 
     #[test]
     fn registry_unknown_kind_error_message_contains_kind_name() {
         let reg = BackendRegistry::new();
-        let err = reg.dispatch(BackendKind::Scenario, "x", &|_| {}).unwrap_err();
+        let err = reg
+            .dispatch("scenario", "x", &|_| {})
+            .unwrap_err();
         assert!(err.contains("scenario"), "error must name the missing kind");
     }
 
     #[test]
     fn concurrent_dispatch_simulation_all_succeed() {
-        // Simulate concurrent dispatch by sharing a registry across multiple
-        // closures (no actual threads needed — tests the Send+Sync bound via Arc).
         use std::sync::Arc;
         let mut reg = BackendRegistry::new();
-        reg.register(Box::new(NoopBackend::new(BackendKind::Video)));
-        reg.register(Box::new(NoopBackend::new(BackendKind::Audio)));
-        reg.register(Box::new(NoopBackend::new(BackendKind::Image)));
+        reg.register(Box::new(NoopBackend::new("video")));
+        reg.register(Box::new(NoopBackend::new("audio")));
+        reg.register(Box::new(NoopBackend::new("image")));
         let reg = Arc::new(reg);
 
         let results: Vec<_> = [
-            (BackendKind::Video, "v-payload"),
-            (BackendKind::Audio, "a-payload"),
-            (BackendKind::Image, "i-payload"),
+            ("video", "v-payload"),
+            ("audio", "a-payload"),
+            ("image", "i-payload"),
         ]
         .iter()
-        .map(|(kind, input)| reg.dispatch(kind.clone(), input, &|_| {}))
+        .map(|(kind, input)| reg.dispatch(kind, input, &|_| {}))
         .collect();
 
         for r in &results {
@@ -1060,38 +940,21 @@ mod tests {
     }
 
     #[test]
-    fn backend_kind_from_kind_name_all_names_parse() {
-        // Every variant's name() must parse back via from_kind_name() to itself.
-        let all = [
-            BackendKind::Video, BackendKind::Audio, BackendKind::Image,
-            BackendKind::Document, BackendKind::Data, BackendKind::App,
-            BackendKind::Workflow, BackendKind::Scenario, BackendKind::RagQuery,
-            BackendKind::Transform, BackendKind::EmbedGen, BackendKind::Render,
-            BackendKind::Export, BackendKind::Pipeline, BackendKind::CodeExec,
-            BackendKind::WebScreen,
-        ];
-        for kind in &all {
-            let parsed = BackendKind::from_kind_name(kind.name());
-            assert_eq!(parsed.as_ref(), Some(kind), "roundtrip failed for {:?}", kind);
-        }
-    }
-
-    #[test]
     fn noop_backend_compose_empty_input_returns_kind_prefix() {
-        let b = NoopBackend::new(BackendKind::Transform);
+        let b = NoopBackend::new("transform");
         let result = b.compose("", &|_| {}).unwrap();
         assert_eq!(result, "transform:", "empty input must yield 'transform:'");
     }
 
     #[test]
     fn registry_dispatch_after_replacing_backend() {
-        // Registering a new backend for the same kind replaces the old one.
         let mut reg = BackendRegistry::new();
-        reg.register(Box::new(NoopBackend::new(BackendKind::Pipeline)));
-        // Replace with another noop (same observable behavior).
-        reg.register(Box::new(NoopBackend::new(BackendKind::Pipeline)));
+        reg.register(Box::new(NoopBackend::new("pipeline")));
+        reg.register(Box::new(NoopBackend::new("pipeline")));
         assert_eq!(reg.registered_kinds().len(), 1);
-        let result = reg.dispatch(BackendKind::Pipeline, "data", &|_| {}).unwrap();
+        let result = reg
+            .dispatch("pipeline", "data", &|_| {})
+            .unwrap();
         assert!(result.starts_with("pipeline:"));
     }
 
@@ -1099,16 +962,20 @@ mod tests {
 
     #[test]
     fn dispatch_backend_kind_roundtrip() {
-        // BackendKind::from_kind_name("video") must return BackendKind::Video.
-        let kind = BackendKind::from_kind_name("video");
-        assert_eq!(kind, Some(BackendKind::Video));
+        let mut reg = BackendRegistry::new();
+        reg.register(Box::new(NoopBackend::new("video")));
+        let result = reg.dispatch("video", "probe", &|_| {});
+        assert!(result.is_ok());
     }
 
     #[test]
     fn dispatch_unknown_kind_returns_error() {
         let reg = BackendRegistry::new();
-        let result = reg.dispatch(BackendKind::Data, "probe", &|_| {});
-        assert!(result.is_err(), "dispatch on empty registry must return Err");
+        let result = reg.dispatch("data", "probe", &|_| {});
+        assert!(
+            result.is_err(),
+            "dispatch on empty registry must return Err"
+        );
         assert!(result.unwrap_err().contains("data"));
     }
 
@@ -1116,29 +983,16 @@ mod tests {
     fn dispatch_all_registered_kinds_resolve() {
         let mut reg = BackendRegistry::new();
         let all_kinds = [
-            BackendKind::Video,
-            BackendKind::Audio,
-            BackendKind::Image,
-            BackendKind::Document,
-            BackendKind::Data,
-            BackendKind::App,
-            BackendKind::Workflow,
-            BackendKind::Scenario,
-            BackendKind::RagQuery,
-            BackendKind::Transform,
-            BackendKind::EmbedGen,
-            BackendKind::Render,
-            BackendKind::Export,
-            BackendKind::Pipeline,
-            BackendKind::CodeExec,
-            BackendKind::WebScreen,
+            "video", "audio", "image", "document", "data", "app", "workflow", "scenario",
+            "rag_query", "transform", "embed_gen", "render", "export", "pipeline", "code_exec",
+            "web_screen",
         ];
         for kind in &all_kinds {
-            reg.register(Box::new(NoopBackend::new(kind.clone())));
+            reg.register(Box::new(NoopBackend::new(kind)));
         }
         for kind in &all_kinds {
-            let result = reg.dispatch(kind.clone(), "test", &|_| {});
-            assert!(result.is_ok(), "kind {} must resolve", kind.name());
+            let result = reg.dispatch(kind, "test", &|_| {});
+            assert!(result.is_ok(), "kind {} must resolve", kind);
         }
     }
 
@@ -1146,8 +1000,7 @@ mod tests {
     fn document_backend_metadata_nonempty() {
         use crate::backends::document::DocumentBackend;
         let b: Box<dyn Backend> = Box::new(DocumentBackend);
-        // kind() must return Document and compose must yield non-empty output.
-        assert_eq!(b.kind(), BackendKind::Document);
+        assert_eq!(b.kind(), "document");
         let out = b.compose("metadata-check", &|_| {}).unwrap();
         assert!(!out.is_empty(), "document backend output must not be empty");
     }
@@ -1157,8 +1010,10 @@ mod tests {
         use crate::backends::document::DocumentBackend;
         let b: Box<dyn Backend> = Box::new(DocumentBackend);
         let out = b.compose("my-title", &|_| {}).unwrap();
-        // The dispatch impl passes input as entity id; output starts with "document:<id>".
-        assert!(out.starts_with("document:my-title"), "output must reference entity id");
+        assert!(
+            out.starts_with("document:my-title"),
+            "output must reference entity id"
+        );
     }
 
     #[test]
@@ -1178,7 +1033,10 @@ mod tests {
             target_mime: "text/plain".into(),
         };
         let block = DocumentBackend::compose(input, &mut store, &LogProgressSink);
-        assert!(store.exists(&block.artifact_hash), "artifact must be stored even for empty content");
+        assert!(
+            store.exists(&block.artifact_hash),
+            "artifact must be stored even for empty content"
+        );
     }
 
     #[test]
@@ -1198,31 +1056,31 @@ mod tests {
             target_mime: "text/html".into(),
         };
         let block = DocumentBackend::compose(input, &mut store, &LogProgressSink);
-        assert!(store.exists(&block.artifact_hash), "returned hash must exist in store");
+        assert!(
+            store.exists(&block.artifact_hash),
+            "returned hash must exist in store"
+        );
         assert_eq!(block.mime, "text/html");
     }
 
     #[test]
     fn backend_trait_kind_matches_compose_kind() {
-        // For every concrete backend impl in dispatch.rs the Backend::kind()
-        // must match the BackendKind returned by from_kind_name().
         use crate::backends::audio::AudioBackend;
         use crate::backends::document::DocumentBackend;
         use crate::backends::export::ExportBackend;
         use crate::backends::video::VideoBackend;
 
-        let pairs: Vec<(Box<dyn Backend>, BackendKind)> = vec![
-            (Box::new(VideoBackend), BackendKind::Video),
-            (Box::new(AudioBackend), BackendKind::Audio),
-            (Box::new(DocumentBackend), BackendKind::Document),
-            (Box::new(ExportBackend), BackendKind::Export),
+        let pairs: Vec<(Box<dyn Backend>, &str)> = vec![
+            (Box::new(VideoBackend), "video"),
+            (Box::new(AudioBackend), "audio"),
+            (Box::new(DocumentBackend), "document"),
+            (Box::new(ExportBackend), "export"),
         ];
         for (backend, expected_kind) in &pairs {
             assert_eq!(
                 backend.kind(),
                 *expected_kind,
-                "Backend::kind() must match expected BackendKind for {:?}",
-                expected_kind.name()
+                "Backend::kind() must match expected kind string"
             );
         }
     }
@@ -1231,31 +1089,34 @@ mod tests {
 
     #[test]
     fn dispatch_routes_all_16_known_kinds() {
-        // Register NoopBackend for all 16 kinds and verify each dispatch returns Ok.
         let mut reg = BackendRegistry::new();
         let all_kinds = [
-            BackendKind::Video, BackendKind::Audio, BackendKind::Image,
-            BackendKind::Document, BackendKind::Data, BackendKind::App,
-            BackendKind::Workflow, BackendKind::Scenario, BackendKind::RagQuery,
-            BackendKind::Transform, BackendKind::EmbedGen, BackendKind::Render,
-            BackendKind::Export, BackendKind::Pipeline, BackendKind::CodeExec,
-            BackendKind::WebScreen,
+            "video", "audio", "image", "document", "data", "app", "workflow", "scenario",
+            "rag_query", "transform", "embed_gen", "render", "export", "pipeline", "code_exec",
+            "web_screen",
         ];
         for kind in &all_kinds {
-            reg.register(Box::new(NoopBackend::new(kind.clone())));
+            reg.register(Box::new(NoopBackend::new(kind)));
         }
-        assert_eq!(reg.registered_kinds().len(), 16, "must register all 16 kinds");
+        assert_eq!(
+            reg.registered_kinds().len(),
+            16,
+            "must register all 16 kinds"
+        );
         for kind in &all_kinds {
-            let result = reg.dispatch(kind.clone(), "payload", &|_| {});
-            assert!(result.is_ok(), "dispatch must succeed for kind: {}", kind.name());
+            let result = reg.dispatch(kind, "payload", &|_| {});
+            assert!(
+                result.is_ok(),
+                "dispatch must succeed for kind: {}",
+                kind
+            );
         }
     }
 
     #[test]
     fn dispatch_unknown_kind_graceful_error() {
-        // Empty registry must return a graceful Err (not panic) for any kind.
         let reg = BackendRegistry::new();
-        let result = reg.dispatch(BackendKind::Workflow, "x", &|_| {});
+        let result = reg.dispatch("workflow", "x", &|_| {});
         assert!(result.is_err(), "unknown kind must return Err");
         let msg = result.unwrap_err();
         assert!(!msg.is_empty(), "error message must not be empty");
@@ -1264,94 +1125,92 @@ mod tests {
 
     #[test]
     fn dispatch_compose_result_has_artifact() {
-        // Dispatching to a real VideoBackend must produce an output containing the entity id.
         use crate::backends::video::VideoBackend;
         let b: Box<dyn Backend> = Box::new(VideoBackend);
         let result = b.compose("entity-artifact", &|_| {});
         assert!(result.is_ok(), "VideoBackend must return Ok");
         let out = result.unwrap();
-        assert!(out.contains("entity-artifact"), "output must reference entity id");
+        assert!(
+            out.contains("entity-artifact"),
+            "output must reference entity id"
+        );
     }
 
     #[test]
     fn dispatch_compose_result_has_events() {
-        // AudioBackend dispatch via trait returns output containing the entity id.
         use crate::backends::audio::AudioBackend;
         let b: Box<dyn Backend> = Box::new(AudioBackend);
         let result = b.compose("aud-events", &|_| {});
         assert!(result.is_ok());
         let out = result.unwrap();
-        assert!(out.contains("aud-events"), "audio dispatch output must contain entity id");
+        assert!(
+            out.contains("aud-events"),
+            "audio dispatch output must contain entity id"
+        );
     }
 
     #[test]
     fn dispatch_progress_events_monotone() {
-        // NoopBackend calls progress exactly once with value 1.0.
         use std::cell::RefCell;
-        let b = NoopBackend::new(BackendKind::Image);
+        let b = NoopBackend::new("image");
         let values: RefCell<Vec<f32>> = RefCell::new(Vec::new());
         b.compose("mono", &|p| values.borrow_mut().push(p)).unwrap();
         let vals = values.borrow();
         assert!(!vals.is_empty(), "at least one progress callback must fire");
-        // Values must be non-decreasing.
         for window in vals.windows(2) {
-            assert!(window[1] >= window[0], "progress must be monotonically non-decreasing");
+            assert!(
+                window[1] >= window[0],
+                "progress must be monotonically non-decreasing"
+            );
         }
-        // Final value must be 1.0.
-        assert!((*vals.last().unwrap() - 1.0).abs() < f32::EPSILON, "final progress must be 1.0");
+        assert!(
+            (*vals.last().unwrap() - 1.0).abs() < f32::EPSILON,
+            "final progress must be 1.0"
+        );
     }
 
     #[test]
     fn dispatch_concurrent_two_different_kinds_safe() {
-        // Registering Video and Audio then dispatching both must both succeed.
         let mut reg = BackendRegistry::new();
-        reg.register(Box::new(NoopBackend::new(BackendKind::Video)));
-        reg.register(Box::new(NoopBackend::new(BackendKind::Audio)));
+        reg.register(Box::new(NoopBackend::new("video")));
+        reg.register(Box::new(NoopBackend::new("audio")));
 
-        let v = reg.dispatch(BackendKind::Video, "v-data", &|_| {});
-        let a = reg.dispatch(BackendKind::Audio, "a-data", &|_| {});
+        let v = reg.dispatch("video", "v-data", &|_| {});
+        let a = reg.dispatch("audio", "a-data", &|_| {});
 
         assert!(v.is_ok(), "video dispatch must succeed");
         assert!(a.is_ok(), "audio dispatch must succeed");
-        // Outputs must not cross-contaminate.
-        assert!(v.unwrap().contains("video"), "video output must contain 'video'");
-        assert!(a.unwrap().contains("audio"), "audio output must contain 'audio'");
+        assert!(
+            v.unwrap().contains("video"),
+            "video output must contain 'video'"
+        );
+        assert!(
+            a.unwrap().contains("audio"),
+            "audio output must contain 'audio'"
+        );
     }
 
     #[test]
     fn dispatch_compose_empty_prompt_ok() {
-        // Dispatching with an empty input string must not panic; output is kind-prefixed.
         let mut reg = BackendRegistry::new();
-        reg.register(Box::new(NoopBackend::new(BackendKind::Transform)));
-        let result = reg.dispatch(BackendKind::Transform, "", &|_| {});
+        reg.register(Box::new(NoopBackend::new("transform")));
+        let result = reg.dispatch("transform", "", &|_| {});
         assert!(result.is_ok(), "empty prompt must not cause Err");
-        assert_eq!(result.unwrap(), "transform:", "empty prompt yields '<kind>:'");
+        assert_eq!(
+            result.unwrap(),
+            "transform:",
+            "empty prompt yields '<kind>:'"
+        );
     }
 
-    #[test]
-    fn dispatch_backend_kind_name_eq_from_kind_name_all() {
-        // Verify name() / from_kind_name() are symmetric for all 16 variants.
-        let all = [
-            BackendKind::Video, BackendKind::Audio, BackendKind::Image,
-            BackendKind::Document, BackendKind::Data, BackendKind::App,
-            BackendKind::Workflow, BackendKind::Scenario, BackendKind::RagQuery,
-            BackendKind::Transform, BackendKind::EmbedGen, BackendKind::Render,
-            BackendKind::Export, BackendKind::Pipeline, BackendKind::CodeExec,
-            BackendKind::WebScreen,
-        ];
-        for kind in &all {
-            let n = kind.name();
-            let parsed = BackendKind::from_kind_name(n);
-            assert_eq!(parsed.as_ref(), Some(kind), "roundtrip failed for {n}");
-        }
-    }
-
-    // ── Wave AL new tests: BackendKindStr + UnifiedDispatcher + backend coverage ──
+    // ── Wave AL new tests: UnifiedDispatcher + backend coverage ──
 
     #[test]
     fn backend_kind_str_video_dispatches_via_unified_dispatcher() {
         let mut d = UnifiedDispatcher::new();
-        d.register("video", |ctx| Ok(format!("video-handler:{}", ctx.entity_id)));
+        d.register("video", |ctx| {
+            Ok(format!("video-handler:{}", ctx.entity_id))
+        });
         let ctx = ComposeContext::new("video", "entity-v1");
         let result = d.dispatch(&ctx);
         assert!(result.is_ok(), "video dispatch must succeed");
@@ -1361,7 +1220,9 @@ mod tests {
     #[test]
     fn backend_kind_str_audio_dispatches_via_unified_dispatcher() {
         let mut d = UnifiedDispatcher::new();
-        d.register("audio", |ctx| Ok(format!("audio-handler:{}", ctx.entity_id)));
+        d.register("audio", |ctx| {
+            Ok(format!("audio-handler:{}", ctx.entity_id))
+        });
         let ctx = ComposeContext::new("audio", "entity-a1");
         let result = d.dispatch(&ctx);
         assert!(result.is_ok(), "audio dispatch must succeed");
@@ -1371,7 +1232,9 @@ mod tests {
     #[test]
     fn backend_kind_str_document_dispatches_via_unified_dispatcher() {
         let mut d = UnifiedDispatcher::new();
-        d.register("document", |ctx| Ok(format!("document-handler:{}", ctx.entity_id)));
+        d.register("document", |ctx| {
+            Ok(format!("document-handler:{}", ctx.entity_id))
+        });
         let ctx = ComposeContext::new("document", "entity-d1");
         let result = d.dispatch(&ctx);
         assert!(result.is_ok(), "document dispatch must succeed");
@@ -1384,7 +1247,10 @@ mod tests {
         let ctx = ComposeContext::new("unknown", "entity-x");
         let result = d.dispatch(&ctx);
         assert!(result.is_err(), "unknown kind must return Err");
-        assert!(result.unwrap_err().contains("unknown"), "error must name the missing kind");
+        assert!(
+            result.unwrap_err().contains("unknown"),
+            "error must name the missing kind"
+        );
     }
 
     #[test]
@@ -1399,7 +1265,11 @@ mod tests {
     fn backend_kind_str_two_same_strings_are_equal_via_context() {
         let ctx1 = ComposeContext::new("audio", "e1");
         let ctx2 = ComposeContext::new("audio", "e2");
-        assert_eq!(ctx1.kind_name(), ctx2.kind_name(), "same kind_name string must be equal");
+        assert_eq!(
+            ctx1.kind_name(),
+            ctx2.kind_name(),
+            "same kind_name string must be equal"
+        );
     }
 
     #[test]
@@ -1429,7 +1299,6 @@ mod tests {
 
     #[test]
     fn backend_kind_str_dynamic_kind_not_in_enum_dispatches() {
-        // A kind string that doesn't exist in BackendKind enum — proves open-ended dispatch.
         let mut d = UnifiedDispatcher::new();
         d.register("new_db_kind_2025", |_| Ok("dynamic".to_string()));
         let ctx = ComposeContext::new("new_db_kind_2025", "e1");
@@ -1459,12 +1328,17 @@ mod tests {
         let mut d = UnifiedDispatcher::new();
         for kind in &["video", "audio", "document", "export", "rag_query"] {
             let k = kind.to_string();
-            d.register(kind, move |ctx| Ok(format!("{}-result:{}", k, ctx.entity_id)));
+            d.register(kind, move |ctx| {
+                Ok(format!("{}-result:{}", k, ctx.entity_id))
+            });
         }
         for kind in &["video", "audio", "document", "export", "rag_query"] {
             let ctx = ComposeContext::new(kind, "probe");
             let result = d.dispatch(&ctx).unwrap();
-            assert!(result.starts_with(kind), "dispatch result must start with kind: {kind}");
+            assert!(
+                result.starts_with(kind),
+                "dispatch result must start with kind: {kind}"
+            );
         }
     }
 
@@ -1475,7 +1349,10 @@ mod tests {
         let ctx = ComposeContext::new("audio", "e1");
         let err = d.dispatch(&ctx).unwrap_err();
         assert!(!err.is_empty(), "error must not be empty");
-        assert!(err.contains("audio"), "error must name the missing kind: {err}");
+        assert!(
+            err.contains("audio"),
+            "error must name the missing kind: {err}"
+        );
     }
 
     #[test]
@@ -1494,7 +1371,10 @@ mod tests {
         use crate::backends::video::VideoBackend;
         let b: Box<dyn Backend> = Box::new(VideoBackend);
         let out = b.compose("video-entity-123", &|_| {}).unwrap();
-        assert!(out.contains("video-entity-123"), "entity_id must be in artifact output");
+        assert!(
+            out.contains("video-entity-123"),
+            "entity_id must be in artifact output"
+        );
     }
 
     #[test]
@@ -1502,9 +1382,14 @@ mod tests {
         use crate::backends::audio::AudioBackend;
         let b: Box<dyn Backend> = Box::new(AudioBackend);
         let out = b.compose("audio-entity-pcm", &|_| {}).unwrap();
-        // dispatch impl passes input as entity id — output must contain entity id
-        assert!(out.contains("audio-entity-pcm"), "audio output must reference entity id");
-        assert!(out.starts_with("audio:"), "audio output must start with 'audio:'");
+        assert!(
+            out.contains("audio-entity-pcm"),
+            "audio output must reference entity id"
+        );
+        assert!(
+            out.starts_with("audio:"),
+            "audio output must start with 'audio:'"
+        );
     }
 
     #[test]
@@ -1512,17 +1397,25 @@ mod tests {
         use crate::backends::document::DocumentBackend;
         let b: Box<dyn Backend> = Box::new(DocumentBackend);
         let out = b.compose("doc-content", &|_| {}).unwrap();
-        assert!(!out.is_empty(), "document backend must produce non-empty artifact");
-        assert!(out.contains("document:"), "document artifact must have kind prefix");
+        assert!(
+            !out.is_empty(),
+            "document backend must produce non-empty artifact"
+        );
+        assert!(
+            out.contains("document:"),
+            "document artifact must have kind prefix"
+        );
     }
 
     #[test]
     fn rag_query_backend_empty_query_produces_output() {
         use crate::backends::rag_query::RagQueryBackend;
         let b: Box<dyn Backend> = Box::new(RagQueryBackend::default());
-        // The dispatch impl always adds one chunk; even with an "empty" entity id it succeeds.
         let out = b.compose("empty-query", &|_| {}).unwrap();
-        assert!(out.starts_with("rag_query:"), "rag_query artifact must have kind prefix");
+        assert!(
+            out.starts_with("rag_query:"),
+            "rag_query artifact must have kind prefix"
+        );
     }
 
     #[test]
@@ -1530,8 +1423,10 @@ mod tests {
         use crate::backends::export::ExportBackend;
         let b: Box<dyn Backend> = Box::new(ExportBackend);
         let out = b.compose("export-entity-hex", &|_| {}).unwrap();
-        // Dispatch impl uses "hex" format; output contains byte count.
-        assert!(out.starts_with("export:"), "export output must start with 'export:'");
+        assert!(
+            out.starts_with("export:"),
+            "export output must start with 'export:'"
+        );
         assert!(out.contains("bytes"), "export output must mention bytes");
     }
 
@@ -1541,9 +1436,22 @@ mod tests {
     fn unified_dispatcher_all_16_backend_kinds_by_string() {
         let mut d = UnifiedDispatcher::new();
         let kinds = [
-            "video", "audio", "image", "document", "data", "app",
-            "workflow", "scenario", "rag_query", "transform", "embed_gen",
-            "render", "export", "pipeline", "code_exec", "web_screen",
+            "video",
+            "audio",
+            "image",
+            "document",
+            "data",
+            "app",
+            "workflow",
+            "scenario",
+            "rag_query",
+            "transform",
+            "embed_gen",
+            "render",
+            "export",
+            "pipeline",
+            "code_exec",
+            "web_screen",
         ];
         for kind in &kinds {
             let k = kind.to_string();
@@ -1733,9 +1641,22 @@ mod tests {
     fn unified_dispatcher_backend_count_16_all_kinds() {
         let mut d = UnifiedDispatcher::new();
         for kind in &[
-            "video", "audio", "image", "document", "data", "app",
-            "workflow", "scenario", "rag_query", "transform", "embed_gen",
-            "render", "export", "pipeline", "code_exec", "web_screen",
+            "video",
+            "audio",
+            "image",
+            "document",
+            "data",
+            "app",
+            "workflow",
+            "scenario",
+            "rag_query",
+            "transform",
+            "embed_gen",
+            "render",
+            "export",
+            "pipeline",
+            "code_exec",
+            "web_screen",
         ] {
             d.register(kind, |_| Ok("ok".to_string()));
         }

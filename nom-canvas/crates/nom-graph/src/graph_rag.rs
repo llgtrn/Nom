@@ -901,7 +901,10 @@ mod tests {
         let retriever = GraphRagRetriever::new(&dag);
         let query = node_vec("anything");
         let results = retriever.retrieve(&query, 10, 5);
-        assert!(results.is_empty(), "RRF on empty node set must return empty results");
+        assert!(
+            results.is_empty(),
+            "RRF on empty node set must return empty results"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -927,7 +930,9 @@ mod tests {
             assert!(r.score > 0.0, "score must be positive, got {}", r.score);
             assert!(
                 r.score <= max_possible + 1e-5,
-                "score {} must not exceed max_possible={}", r.score, max_possible
+                "score {} must not exceed max_possible={}",
+                r.score,
+                max_possible
             );
         }
     }
@@ -1104,10 +1109,18 @@ mod tests {
         let zero_query = [0.0f32; 16];
         let results = retriever.retrieve(&zero_query, 2, 1);
         // Both nodes should appear — even with zero cosine, BFS still visits them.
-        assert_eq!(results.len(), 2, "zero-magnitude query must still return all nodes");
+        assert_eq!(
+            results.len(),
+            2,
+            "zero-magnitude query must still return all nodes"
+        );
         // Scores must be positive (confidence/rrf formula).
         for r in &results {
-            assert!(r.score > 0.0, "score for {} must be > 0 even with zero query", r.node_id);
+            assert!(
+                r.score > 0.0,
+                "score for {} must be > 0 even with zero query",
+                r.node_id
+            );
         }
     }
 
@@ -1149,7 +1162,10 @@ mod tests {
         let query = node_vec("D");
         let results = retriever.retrieve(&query, 4, 3);
         let count_d = results.iter().filter(|r| r.node_id == "D").count();
-        assert_eq!(count_d, 1, "D reached via two paths must appear exactly once");
+        assert_eq!(
+            count_d, 1,
+            "D reached via two paths must appear exactly once"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -1161,7 +1177,10 @@ mod tests {
         let retriever = GraphRagRetriever::new(&dag);
         let query = node_vec("any");
         let results = retriever.retrieve(&query, 10, 5);
-        assert!(results.is_empty(), "RRF over empty node set must return empty");
+        assert!(
+            results.is_empty(),
+            "RRF over empty node set must return empty"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -1174,7 +1193,11 @@ mod tests {
         let retriever = GraphRagRetriever::new(&dag);
         let query = node_vec("only_node");
         let results = retriever.retrieve(&query, 1, 0);
-        assert_eq!(results.len(), 1, "single-node graph with top_k=1 must return 1 result");
+        assert_eq!(
+            results.len(),
+            1,
+            "single-node graph with top_k=1 must return 1 result"
+        );
         assert_eq!(results[0].node_id, "only_node");
     }
 
@@ -1245,7 +1268,11 @@ mod tests {
         // Query with "foo"'s vec; "bar" and "baz" are partial matches.
         let query = node_vec("foo");
         let results = retriever.retrieve(&query, 3, 2);
-        assert_eq!(results.len(), 3, "all 3 nodes must appear even as partial matches");
+        assert_eq!(
+            results.len(),
+            3,
+            "all 3 nodes must appear even as partial matches"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -1260,8 +1287,16 @@ mod tests {
         let retriever = GraphRagRetriever::new(&dag);
         let query = node_vec("n1");
         let results = retriever.retrieve(&query, 3, 1);
-        assert!(results.len() <= 3, "top_k=3 must return at most 3 results, got {}", results.len());
-        assert_eq!(results.len(), 3, "with 6 nodes, top_k=3 must return exactly 3");
+        assert!(
+            results.len() <= 3,
+            "top_k=3 must return at most 3 results, got {}",
+            results.len()
+        );
+        assert_eq!(
+            results.len(),
+            3,
+            "with 6 nodes, top_k=3 must return exactly 3"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -1284,7 +1319,9 @@ mod tests {
         for r in &results {
             assert!(
                 r.score <= max_score + 1e-5,
-                "score {} must be ≤ max_possible={}", r.score, max_score
+                "score {} must be ≤ max_possible={}",
+                r.score,
+                max_score
             );
         }
     }
@@ -1304,8 +1341,14 @@ mod tests {
         assert_eq!(r_alpha.len(), 3);
         assert_eq!(r_gamma.len(), 3);
         // The top result differs: alpha-query → alpha first; gamma-query → gamma first.
-        assert_eq!(r_alpha[0].node_id, "alpha", "alpha query must rank alpha first");
-        assert_eq!(r_gamma[0].node_id, "gamma", "gamma query must rank gamma first");
+        assert_eq!(
+            r_alpha[0].node_id, "alpha",
+            "alpha query must rank alpha first"
+        );
+        assert_eq!(
+            r_gamma[0].node_id, "gamma",
+            "gamma query must rank gamma first"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -1368,7 +1411,9 @@ mod tests {
     #[test]
     fn rrf_score_for_rank_10_is_1_over_70() {
         let mut dag = Dag::new();
-        let names = ["r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7", "r8", "r9", "r10"];
+        let names = [
+            "r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7", "r8", "r9", "r10",
+        ];
         for name in &names {
             dag.add_node(ExecNode::new(*name, "verb"));
         }
@@ -1410,7 +1455,11 @@ mod tests {
         }
         let retriever = GraphRagRetriever::new(&dag);
         let results = retriever.retrieve(&node_vec("na"), 1000, 2);
-        assert_eq!(results.len(), 3, "top_k=1000 on 3-node dag must return exactly 3");
+        assert_eq!(
+            results.len(),
+            3,
+            "top_k=1000 on 3-node dag must return exactly 3"
+        );
     }
 
     // graph_rag_index_100_nodes_retrieve_10
@@ -1425,7 +1474,11 @@ mod tests {
         }
         let retriever = GraphRagRetriever::new(&dag);
         let results = retriever.retrieve(&node_vec("nd_0"), 10, 3);
-        assert_eq!(results.len(), 10, "must return exactly 10 from 100-node DAG");
+        assert_eq!(
+            results.len(),
+            10,
+            "must return exactly 10 from 100-node DAG"
+        );
         for i in 0..results.len() - 1 {
             assert!(
                 results[i].score >= results[i + 1].score,
@@ -1444,8 +1497,14 @@ mod tests {
         dag.add_edge_weighted("hub2", "out", "linked2", "in", 1.0);
         let retriever = GraphRagRetriever::new(&dag);
         let results = retriever.retrieve(&node_vec("hub2"), 3, 2);
-        assert!(results.iter().any(|r| r.node_id == "linked2"), "linked2 must appear");
-        assert!(results.iter().any(|r| r.node_id == "isolated2"), "isolated2 must appear");
+        assert!(
+            results.iter().any(|r| r.node_id == "linked2"),
+            "linked2 must appear"
+        );
+        assert!(
+            results.iter().any(|r| r.node_id == "isolated2"),
+            "isolated2 must appear"
+        );
     }
 
     // graph_rag_unrelated_nodes_score_lower
@@ -1473,7 +1532,10 @@ mod tests {
         dag.add_node(ExecNode::new("other_b", "verb"));
         let retriever = GraphRagRetriever::new(&dag);
         let results = retriever.retrieve(&node_vec("kw_node"), 3, 1);
-        assert_eq!(results[0].node_id, "kw_node", "exact keyword match must rank first");
+        assert_eq!(
+            results[0].node_id, "kw_node",
+            "exact keyword match must rank first"
+        );
         let expected_max = 1.0f32 / 60.0;
         assert!(
             (results[0].score - expected_max).abs() < 1e-5,
@@ -1510,10 +1572,20 @@ mod tests {
         let query = node_vec("alpha");
         let res1 = r1.retrieve(&query, 3, 2);
         let res2 = r2.retrieve(&query, 3, 2);
-        assert_eq!(res1.len(), res2.len(), "both retrievers must agree on count");
+        assert_eq!(
+            res1.len(),
+            res2.len(),
+            "both retrievers must agree on count"
+        );
         for (a, b) in res1.iter().zip(res2.iter()) {
-            assert_eq!(a.node_id, b.node_id, "results must be identical across retrievers");
-            assert!((a.score - b.score).abs() < 1e-6, "scores must match exactly");
+            assert_eq!(
+                a.node_id, b.node_id,
+                "results must be identical across retrievers"
+            );
+            assert!(
+                (a.score - b.score).abs() < 1e-6,
+                "scores must match exactly"
+            );
         }
     }
 
@@ -1525,9 +1597,15 @@ mod tests {
         let q = node_vec("anything");
         assert!(retriever.retrieve(&q, 0, 0).is_empty(), "top_k=0 empty dag");
         assert!(retriever.retrieve(&q, 1, 0).is_empty(), "top_k=1 empty dag");
-        assert!(retriever.retrieve(&q, 100, 10).is_empty(), "top_k=100 empty dag");
+        assert!(
+            retriever.retrieve(&q, 100, 10).is_empty(),
+            "top_k=100 empty dag"
+        );
         let zero: QueryVec = [0.0f32; 16];
-        assert!(retriever.retrieve(&zero, 5, 2).is_empty(), "zero query empty dag");
+        assert!(
+            retriever.retrieve(&zero, 5, 2).is_empty(),
+            "zero query empty dag"
+        );
     }
 
     // rrf_list_weight_doubles_score
@@ -1568,7 +1646,10 @@ mod tests {
         let retriever = GraphRagRetriever::new(&dag);
         let q = node_vec("anything");
         let results = retriever.retrieve(&q, 5, 2);
-        assert!(results.is_empty(), "empty-DAG retriever must return empty results");
+        assert!(
+            results.is_empty(),
+            "empty-DAG retriever must return empty results"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -1584,13 +1665,19 @@ mod tests {
         let r1 = GraphRagRetriever::new(&dag);
         let res1 = r1.retrieve(&node_vec("new_node"), 5, 1);
         // "new_node" not yet in dag — must not appear.
-        assert!(!res1.iter().any(|r| r.node_id == "new_node"), "new_node not yet indexed");
+        assert!(
+            !res1.iter().any(|r| r.node_id == "new_node"),
+            "new_node not yet indexed"
+        );
 
         // Add the node and rebuild the retriever (simulates re-index).
         dag.add_node(ExecNode::new("new_node", "verb"));
         let r2 = GraphRagRetriever::new(&dag);
         let res2 = r2.retrieve(&node_vec("new_node"), 5, 1);
-        assert!(res2.iter().any(|r| r.node_id == "new_node"), "new_node must appear after re-index");
+        assert!(
+            res2.iter().any(|r| r.node_id == "new_node"),
+            "new_node must appear after re-index"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -1661,15 +1748,26 @@ mod tests {
 
         // First call: populates cache.
         let res1 = cached.retrieve_cached(&query, 2, 1);
-        assert_eq!(cached.cache.len(), 1, "cache must contain 1 entry after first call");
+        assert_eq!(
+            cached.cache.len(),
+            1,
+            "cache must contain 1 entry after first call"
+        );
 
         // Second call with identical params: cache hit, no new entry.
         let res2 = cached.retrieve_cached(&query, 2, 1);
         assert_eq!(cached.cache.len(), 1, "cache must not grow on hit");
-        assert_eq!(res1.len(), res2.len(), "cached result must match first result");
+        assert_eq!(
+            res1.len(),
+            res2.len(),
+            "cached result must match first result"
+        );
         for (a, b) in res1.iter().zip(res2.iter()) {
             assert_eq!(a.node_id, b.node_id, "node_id must match on cache hit");
-            assert!((a.score - b.score).abs() < 1e-6, "score must match on cache hit");
+            assert!(
+                (a.score - b.score).abs() < 1e-6,
+                "score must match on cache hit"
+            );
         }
     }
 
@@ -1711,7 +1809,10 @@ mod tests {
         assert!(!results.is_empty(), "results must not be empty");
         // The node queried by its own id must be retrievable.
         let found = results.iter().find(|r| r.node_id == "round_trip_target");
-        assert!(found.is_some(), "node queried by its own id must appear in results");
+        assert!(
+            found.is_some(),
+            "node queried by its own id must appear in results"
+        );
         // It must rank first (highest score, cosine_sim=1.0 at rank 0).
         assert_eq!(
             results[0].node_id, "round_trip_target",
@@ -1739,9 +1840,18 @@ mod tests {
         let results = retriever.retrieve(&query, 3, 1);
 
         let node_ids: Vec<&str> = results.iter().map(|r| r.node_id.as_str()).collect();
-        assert!(node_ids.contains(&"center"), "center must appear in results");
-        assert!(node_ids.contains(&"nbr_1"), "nbr_1 (direct neighbor) must appear in results");
-        assert!(node_ids.contains(&"nbr_2"), "nbr_2 (direct neighbor) must appear in results");
+        assert!(
+            node_ids.contains(&"center"),
+            "center must appear in results"
+        );
+        assert!(
+            node_ids.contains(&"nbr_1"),
+            "nbr_1 (direct neighbor) must appear in results"
+        );
+        assert!(
+            node_ids.contains(&"nbr_2"),
+            "nbr_2 (direct neighbor) must appear in results"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -1792,7 +1902,11 @@ mod tests {
         // Every node in dag.nodes is a BFS seed: disconnected_x has hop=0 from itself.
         let results = retriever.retrieve(&node_vec("connected_a"), 3, 2);
 
-        assert_eq!(results.len(), 3, "all 3 nodes (including disconnected) must appear");
+        assert_eq!(
+            results.len(),
+            3,
+            "all 3 nodes (including disconnected) must appear"
+        );
         assert!(
             results.iter().any(|r| r.node_id == "disconnected_x"),
             "disconnected_x must appear as its own BFS seed"
@@ -1808,7 +1922,11 @@ mod tests {
         dag.add_node(ExecNode::new("the_only_node", "verb"));
         let retriever = GraphRagRetriever::new(&dag);
         let results = retriever.retrieve(&node_vec("the_only_node"), 5, 2);
-        assert_eq!(results.len(), 1, "single-node dag must return exactly 1 result");
+        assert_eq!(
+            results.len(),
+            1,
+            "single-node dag must return exactly 1 result"
+        );
         assert_eq!(results[0].node_id, "the_only_node");
         assert_eq!(results[0].hops, 0, "single node has hops=0 (own seed)");
     }
@@ -1832,7 +1950,10 @@ mod tests {
         let results = retriever.retrieve(&node_vec("src_node"), 2, 1);
         assert_eq!(results.len(), 2);
         // src_node must rank above tgt_node.
-        assert_eq!(results[0].node_id, "src_node", "exact match must rank first");
+        assert_eq!(
+            results[0].node_id, "src_node",
+            "exact match must rank first"
+        );
         assert!(
             results[0].score > results[1].score,
             "exact-match src_node must score above neighbor tgt_node"
@@ -1858,11 +1979,18 @@ mod tests {
         let query = node_vec("node_x");
 
         let res1 = r1.retrieve(&query, 3, 2);
-        let res2 = r2.retrieve(&query, 3,2);
+        let res2 = r2.retrieve(&query, 3, 2);
 
-        assert_eq!(res1.len(), res2.len(), "both retrievers must return same count");
+        assert_eq!(
+            res1.len(),
+            res2.len(),
+            "both retrievers must return same count"
+        );
         for (a, b) in res1.iter().zip(res2.iter()) {
-            assert_eq!(a.node_id, b.node_id, "node_ids must match across concurrent retrievers");
+            assert_eq!(
+                a.node_id, b.node_id,
+                "node_ids must match across concurrent retrievers"
+            );
             assert!((a.score - b.score).abs() < 1e-6, "scores must match");
         }
     }
@@ -1928,13 +2056,18 @@ mod tests {
         let retriever = GraphRagRetriever::new(&dag);
         let results = retriever.retrieve(&node_vec("exact_match_node"), 3, 1);
 
-        assert_eq!(results[0].node_id, "exact_match_node",
-            "exact-name query must rank that node first (dense vector cosine=1.0)");
+        assert_eq!(
+            results[0].node_id, "exact_match_node",
+            "exact-name query must rank that node first (dense vector cosine=1.0)"
+        );
 
         // Verify cosine similarity is 1.0 for self-query.
         let self_vec = node_vec("exact_match_node");
         let sim = cosine_sim(&self_vec, &self_vec);
-        assert!((sim - 1.0).abs() < 1e-5, "self cosine_sim must be 1.0, got {sim}");
+        assert!(
+            (sim - 1.0).abs() < 1e-5,
+            "self cosine_sim must be 1.0, got {sim}"
+        );
     }
 
     // -----------------------------------------------------------------------

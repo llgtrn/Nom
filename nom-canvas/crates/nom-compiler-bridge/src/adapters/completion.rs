@@ -94,10 +94,12 @@ mod tests {
             crate::shared::GrammarKind {
                 name: "verb".into(),
                 description: "action".into(),
+                status: crate::shared::KindStatus::Transient,
             },
             crate::shared::GrammarKind {
                 name: "concept".into(),
                 description: "idea".into(),
+                status: crate::shared::KindStatus::Transient,
             },
         ]);
         let items = complete_from_dict("ve", None, &state);
@@ -120,14 +122,17 @@ mod tests {
             crate::shared::GrammarKind {
                 name: "alpha".into(),
                 description: "first".into(),
+                status: crate::shared::KindStatus::Transient,
             },
             crate::shared::GrammarKind {
                 name: "beta".into(),
                 description: "second".into(),
+                status: crate::shared::KindStatus::Transient,
             },
             crate::shared::GrammarKind {
                 name: "aleph".into(),
                 description: "letter".into(),
+                status: crate::shared::KindStatus::Transient,
             },
         ]);
         let items = complete_from_dict("al", None, &state);
@@ -142,6 +147,7 @@ mod tests {
         state.update_grammar_kinds(vec![crate::shared::GrammarKind {
             name: "flow".into(),
             description: "movement".into(),
+            status: crate::shared::KindStatus::Transient,
         }]);
         let items = complete_from_dict("", None, &state);
         assert!(!items.is_empty());
@@ -154,10 +160,12 @@ mod tests {
             crate::shared::GrammarKind {
                 name: "x".into(),
                 description: "".into(),
+                status: crate::shared::KindStatus::Transient,
             },
             crate::shared::GrammarKind {
                 name: "y".into(),
                 description: "".into(),
+                status: crate::shared::KindStatus::Transient,
             },
         ]);
         let items = complete_from_dict("", None, &state);
@@ -170,6 +178,7 @@ mod tests {
         state.update_grammar_kinds(vec![crate::shared::GrammarKind {
             name: "zeta".into(),
             description: "".into(),
+            status: crate::shared::KindStatus::Transient,
         }]);
         let items = complete_from_dict("abc", None, &state);
         assert!(items.is_empty());
@@ -183,6 +192,7 @@ mod tests {
             .map(|i| crate::shared::GrammarKind {
                 name: format!("aa_kind_{i:02}"),
                 description: "test".into(),
+                status: crate::shared::KindStatus::Transient,
             })
             .collect();
         state.update_grammar_kinds(kinds);
@@ -193,12 +203,18 @@ mod tests {
     #[test]
     fn kind_mapping_attribute_and_constraint() {
         assert_eq!(kind_to_completion_kind("attribute"), CompletionKind::Field);
-        assert_eq!(kind_to_completion_kind("constraint"), CompletionKind::Snippet);
+        assert_eq!(
+            kind_to_completion_kind("constraint"),
+            CompletionKind::Snippet
+        );
     }
 
     #[test]
     fn kind_mapping_unknown_falls_to_keyword() {
-        assert_eq!(kind_to_completion_kind("unknown_kind"), CompletionKind::Keyword);
+        assert_eq!(
+            kind_to_completion_kind("unknown_kind"),
+            CompletionKind::Keyword
+        );
         assert_eq!(kind_to_completion_kind(""), CompletionKind::Keyword);
     }
 
@@ -208,6 +224,7 @@ mod tests {
         state.update_grammar_kinds(vec![crate::shared::GrammarKind {
             name: "stream".into(),
             description: "data flow".into(),
+            status: crate::shared::KindStatus::Transient,
         }]);
         let items = complete_from_dict("st", None, &state);
         assert_eq!(items.len(), 1);
@@ -220,6 +237,7 @@ mod tests {
         state.update_grammar_kinds(vec![crate::shared::GrammarKind {
             name: "render".into(),
             description: "output action".into(),
+            status: crate::shared::KindStatus::Transient,
         }]);
         let items = complete_from_dict("ren", None, &state);
         assert_eq!(items.len(), 1);
@@ -232,6 +250,7 @@ mod tests {
         state.update_grammar_kinds(vec![crate::shared::GrammarKind {
             name: "emit".into(),
             description: "send".into(),
+            status: crate::shared::KindStatus::Transient,
         }]);
         let items = complete_from_dict("em", None, &state);
         assert!(!items.is_empty());
@@ -244,6 +263,7 @@ mod tests {
         state.update_grammar_kinds(vec![crate::shared::GrammarKind {
             name: "verb".into(),
             description: "action".into(),
+            status: crate::shared::KindStatus::Transient,
         }]);
         // kind_filter "zz" doesn't appear in name "verb" → empty
         let items = complete_from_dict("", Some("zz"), &state);
@@ -257,10 +277,12 @@ mod tests {
             crate::shared::GrammarKind {
                 name: "verb_run".into(),
                 description: "run action".into(),
+                status: crate::shared::KindStatus::Transient,
             },
             crate::shared::GrammarKind {
                 name: "noun_entity".into(),
                 description: "entity".into(),
+                status: crate::shared::KindStatus::Transient,
             },
         ]);
         // kind_filter "verb" matches name "verb_run" (contains check)
@@ -282,6 +304,7 @@ mod tests {
         state.update_grammar_kinds(vec![crate::shared::GrammarKind {
             name: "définir".into(),
             description: "declare".into(),
+            status: crate::shared::KindStatus::Transient,
         }]);
         let items = complete_from_dict("dé", None, &state);
         assert_eq!(items.len(), 1);
@@ -298,6 +321,7 @@ mod tests {
             .map(|i| crate::shared::GrammarKind {
                 name: format!("item_{i:02}"),
                 description: format!("desc {i}"),
+                status: crate::shared::KindStatus::Transient,
             })
             .collect();
         state.update_grammar_kinds(kinds);
@@ -313,7 +337,11 @@ mod tests {
         state.update_grammar_kinds(
             names
                 .iter()
-                .map(|n| crate::shared::GrammarKind { name: n.to_string(), description: "action".into() })
+                .map(|n| crate::shared::GrammarKind {
+                    name: n.to_string(),
+                    description: "action".into(),
+                    status: crate::shared::KindStatus::Transient,
+                })
                 .collect(),
         );
         let items = complete_from_dict("", None, &state);
@@ -334,8 +362,16 @@ mod tests {
     fn completion_kind_is_keyword_for_cached_kinds() {
         let state = SharedState::new("a.db", "b.db");
         state.update_grammar_kinds(vec![
-            crate::shared::GrammarKind { name: "resolve".into(), description: "lookup".into() },
-            crate::shared::GrammarKind { name: "compose".into(), description: "combine".into() },
+            crate::shared::GrammarKind {
+                name: "resolve".into(),
+                description: "lookup".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            crate::shared::GrammarKind {
+                name: "compose".into(),
+                description: "combine".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
         ]);
         let items = complete_from_dict("", None, &state);
         for item in &items {
@@ -352,9 +388,21 @@ mod tests {
     fn completion_kind_filter_substring_match() {
         let state = SharedState::new("a.db", "b.db");
         state.update_grammar_kinds(vec![
-            crate::shared::GrammarKind { name: "verb_run".into(), description: "run".into() },
-            crate::shared::GrammarKind { name: "verb_jump".into(), description: "jump".into() },
-            crate::shared::GrammarKind { name: "noun_thing".into(), description: "thing".into() },
+            crate::shared::GrammarKind {
+                name: "verb_run".into(),
+                description: "run".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            crate::shared::GrammarKind {
+                name: "verb_jump".into(),
+                description: "jump".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            crate::shared::GrammarKind {
+                name: "noun_thing".into(),
+                description: "thing".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
         ]);
         let items = complete_from_dict("", Some("verb"), &state);
         assert_eq!(items.len(), 2, "only verb_* kinds should match");
@@ -368,9 +416,21 @@ mod tests {
     fn completion_prefix_filter_subset() {
         let state = SharedState::new("a.db", "b.db");
         state.update_grammar_kinds(vec![
-            crate::shared::GrammarKind { name: "stream".into(), description: "flow".into() },
-            crate::shared::GrammarKind { name: "string".into(), description: "text".into() },
-            crate::shared::GrammarKind { name: "select".into(), description: "choose".into() },
+            crate::shared::GrammarKind {
+                name: "stream".into(),
+                description: "flow".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            crate::shared::GrammarKind {
+                name: "string".into(),
+                description: "text".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            crate::shared::GrammarKind {
+                name: "select".into(),
+                description: "choose".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
         ]);
         let items = complete_from_dict("str", None, &state);
         assert_eq!(items.len(), 2);
@@ -384,6 +444,7 @@ mod tests {
         state.update_grammar_kinds(vec![crate::shared::GrammarKind {
             name: "produce".into(),
             description: "generate output".into(),
+            status: crate::shared::KindStatus::Transient,
         }]);
         let items = complete_from_dict("p", None, &state);
         assert!(!items.is_empty());
@@ -401,7 +462,10 @@ mod tests {
         let state = SharedState::new("a.db", "b.db");
         // no grammar kinds loaded — empty cache
         let items = complete_from_dict("", None, &state);
-        assert!(items.is_empty(), "empty source with empty cache must return empty list");
+        assert!(
+            items.is_empty(),
+            "empty source with empty cache must return empty list"
+        );
     }
 
     /// Completion with a valid prefix (non-empty cache, prefix matches) returns non-empty list.
@@ -411,9 +475,13 @@ mod tests {
         state.update_grammar_kinds(vec![crate::shared::GrammarKind {
             name: "transform".into(),
             description: "map data".into(),
+            status: crate::shared::KindStatus::Transient,
         }]);
         let items = complete_from_dict("tr", None, &state);
-        assert!(!items.is_empty(), "valid prefix 'tr' must return at least one completion");
+        assert!(
+            !items.is_empty(),
+            "valid prefix 'tr' must return at least one completion"
+        );
     }
 
     /// All completion result items have non-empty label fields.
@@ -421,13 +489,24 @@ mod tests {
     fn completion_results_have_non_empty_labels() {
         let state = SharedState::new("a.db", "b.db");
         state.update_grammar_kinds(vec![
-            crate::shared::GrammarKind { name: "action".into(), description: "do".into() },
-            crate::shared::GrammarKind { name: "aspect".into(), description: "view".into() },
+            crate::shared::GrammarKind {
+                name: "action".into(),
+                description: "do".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            crate::shared::GrammarKind {
+                name: "aspect".into(),
+                description: "view".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
         ]);
         let items = complete_from_dict("a", None, &state);
         assert!(!items.is_empty());
         for item in &items {
-            assert!(!item.label.is_empty(), "every completion must have non-empty label");
+            assert!(
+                !item.label.is_empty(),
+                "every completion must have non-empty label"
+            );
         }
     }
 
@@ -438,11 +517,15 @@ mod tests {
         state.update_grammar_kinds(vec![crate::shared::GrammarKind {
             name: "validate".into(),
             description: "check constraint".into(),
+            status: crate::shared::KindStatus::Transient,
         }]);
         let items = complete_from_dict("v", None, &state);
         assert!(!items.is_empty());
-        assert_eq!(items[0].kind, CompletionKind::Keyword,
-            "cached completions must have Keyword kind");
+        assert_eq!(
+            items[0].kind,
+            CompletionKind::Keyword,
+            "cached completions must have Keyword kind"
+        );
     }
 
     /// Max results limit: 25 matching entries returns at most 20.
@@ -453,12 +536,16 @@ mod tests {
             .map(|i| crate::shared::GrammarKind {
                 name: format!("zz_item_{i:02}"),
                 description: "test".into(),
+                status: crate::shared::KindStatus::Transient,
             })
             .collect();
         state.update_grammar_kinds(kinds);
         let items = complete_from_dict("zz", None, &state);
-        assert!(items.len() <= 20,
-            "complete_from_dict must return at most 20 items, got {}", items.len());
+        assert!(
+            items.len() <= 20,
+            "complete_from_dict must return at most 20 items, got {}",
+            items.len()
+        );
     }
 
     /// Completion at EOF position (prefix is the full kind name) still returns that kind.
@@ -468,10 +555,14 @@ mod tests {
         state.update_grammar_kinds(vec![crate::shared::GrammarKind {
             name: "finalize".into(),
             description: "end the pipeline".into(),
+            status: crate::shared::KindStatus::Transient,
         }]);
         // "EOF" position = prefix equals the full word
         let items = complete_from_dict("finalize", None, &state);
-        assert!(!items.is_empty(), "prefix matching full word must still return the item");
+        assert!(
+            !items.is_empty(),
+            "prefix matching full word must still return the item"
+        );
         assert_eq!(items[0].label, "finalize");
     }
 
@@ -480,12 +571,28 @@ mod tests {
     fn completion_single_char_prefix_returns_matching() {
         let state = SharedState::new("a.db", "b.db");
         state.update_grammar_kinds(vec![
-            crate::shared::GrammarKind { name: "flow".into(), description: "".into() },
-            crate::shared::GrammarKind { name: "filter".into(), description: "".into() },
-            crate::shared::GrammarKind { name: "generate".into(), description: "".into() },
+            crate::shared::GrammarKind {
+                name: "flow".into(),
+                description: "".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            crate::shared::GrammarKind {
+                name: "filter".into(),
+                description: "".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            crate::shared::GrammarKind {
+                name: "generate".into(),
+                description: "".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
         ]);
         let items = complete_from_dict("f", None, &state);
-        assert_eq!(items.len(), 2, "single char 'f' must match 'flow' and 'filter'");
+        assert_eq!(
+            items.len(),
+            2,
+            "single char 'f' must match 'flow' and 'filter'"
+        );
         for item in &items {
             assert!(item.label.starts_with('f'));
         }
@@ -496,9 +603,21 @@ mod tests {
     fn completion_no_kind_filter_returns_all_matching() {
         let state = SharedState::new("a.db", "b.db");
         state.update_grammar_kinds(vec![
-            crate::shared::GrammarKind { name: "noun_x".into(), description: "".into() },
-            crate::shared::GrammarKind { name: "noun_y".into(), description: "".into() },
-            crate::shared::GrammarKind { name: "verb_x".into(), description: "".into() },
+            crate::shared::GrammarKind {
+                name: "noun_x".into(),
+                description: "".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            crate::shared::GrammarKind {
+                name: "noun_y".into(),
+                description: "".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            crate::shared::GrammarKind {
+                name: "verb_x".into(),
+                description: "".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
         ]);
         // No kind_filter — all items with empty prefix are returned
         let items = complete_from_dict("", None, &state);
@@ -512,10 +631,14 @@ mod tests {
         state.update_grammar_kinds(vec![crate::shared::GrammarKind {
             name: "run".into(),
             description: "execute".into(),
+            status: crate::shared::KindStatus::Transient,
         }]);
         // "running" is longer than "run" — "run".starts_with("running") is false
         let items = complete_from_dict("running", None, &state);
-        assert!(items.is_empty(), "prefix longer than any kind must return empty");
+        assert!(
+            items.is_empty(),
+            "prefix longer than any kind must return empty"
+        );
     }
 
     /// Completion with multiple kinds that all share the same prefix returns all of them.
@@ -523,9 +646,21 @@ mod tests {
     fn completion_all_items_share_prefix_returns_all() {
         let state = SharedState::new("a.db", "b.db");
         state.update_grammar_kinds(vec![
-            crate::shared::GrammarKind { name: "stream".into(), description: "".into() },
-            crate::shared::GrammarKind { name: "stride".into(), description: "".into() },
-            crate::shared::GrammarKind { name: "strip".into(), description: "".into() },
+            crate::shared::GrammarKind {
+                name: "stream".into(),
+                description: "".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            crate::shared::GrammarKind {
+                name: "stride".into(),
+                description: "".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            crate::shared::GrammarKind {
+                name: "strip".into(),
+                description: "".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
         ]);
         let items = complete_from_dict("str", None, &state);
         assert_eq!(items.len(), 3, "all 3 'str*' items must be returned");
@@ -544,6 +679,7 @@ mod tests {
         state.update_grammar_kinds(vec![crate::shared::GrammarKind {
             name: "ingest".into(),
             description: "consume input".into(),
+            status: crate::shared::KindStatus::Transient,
         }]);
         let items = complete_from_dict("in", None, &state);
         assert!(!items.is_empty());

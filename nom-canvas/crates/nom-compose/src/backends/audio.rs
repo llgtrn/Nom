@@ -137,12 +137,7 @@ fn encode_audio_stub_container(container: &str, codec: &str, spec: &AudioSpec) -
     format!(
         "# NOM-STUB-AUDIO-CONTAINER: {} codec={} sample_rate={} channels={} duration_ms={}\n\
          # External encoder required to produce a real {} file.\n",
-        container,
-        codec,
-        spec.sample_rate,
-        spec.channels,
-        spec.duration_ms,
-        container,
+        container, codec, spec.sample_rate, spec.channels, spec.duration_ms, container,
     )
     .into_bytes()
 }
@@ -175,9 +170,19 @@ mod tests {
     use crate::progress::LogProgressSink;
     use crate::store::InMemoryStore;
 
-    fn default_audio_input(id: &str, word: &str, samples: Vec<f32>, sample_rate: u32, codec: &str) -> AudioInput {
+    fn default_audio_input(
+        id: &str,
+        word: &str,
+        samples: Vec<f32>,
+        sample_rate: u32,
+        codec: &str,
+    ) -> AudioInput {
         AudioInput {
-            entity: NomtuRef { id: id.into(), word: word.into(), kind: "media".into() },
+            entity: NomtuRef {
+                id: id.into(),
+                word: word.into(),
+                kind: "media".into(),
+            },
             pcm_samples: samples,
             sample_rate,
             codec: codec.into(),
@@ -190,9 +195,19 @@ mod tests {
 
     #[test]
     fn audio_spec_bitrate_kbps() {
-        let spec = AudioSpec { sample_rate: 44100, channels: 2, duration_ms: 3000, codec: "pcm_f32le".into() };
+        let spec = AudioSpec {
+            sample_rate: 44100,
+            channels: 2,
+            duration_ms: 3000,
+            codec: "pcm_f32le".into(),
+        };
         assert_eq!(spec.bitrate_kbps(), 1411);
-        let mono = AudioSpec { sample_rate: 44100, channels: 1, duration_ms: 1000, codec: "pcm_f32le".into() };
+        let mono = AudioSpec {
+            sample_rate: 44100,
+            channels: 1,
+            duration_ms: 1000,
+            codec: "pcm_f32le".into(),
+        };
         assert_eq!(mono.bitrate_kbps(), 705);
     }
 
@@ -229,7 +244,12 @@ mod tests {
 
     #[test]
     fn audio_spec_mono_bitrate() {
-        let spec = AudioSpec { sample_rate: 48000, channels: 1, duration_ms: 1000, codec: "aac".into() };
+        let spec = AudioSpec {
+            sample_rate: 48000,
+            channels: 1,
+            duration_ms: 1000,
+            codec: "aac".into(),
+        };
         assert_eq!(spec.bitrate_kbps(), 768);
     }
 
@@ -271,7 +291,11 @@ mod tests {
     fn flac_stub_produces_header_marker() {
         let mut store = InMemoryStore::new();
         let input = AudioInput {
-            entity: NomtuRef { id: "aud4".into(), word: "lossless".into(), kind: "media".into() },
+            entity: NomtuRef {
+                id: "aud4".into(),
+                word: "lossless".into(),
+                kind: "media".into(),
+            },
             pcm_samples: vec![0.0f32; 8000],
             sample_rate: 44100,
             codec: "flac".into(),
@@ -290,7 +314,11 @@ mod tests {
     fn ogg_stub_produces_header_marker() {
         let mut store = InMemoryStore::new();
         let input = AudioInput {
-            entity: NomtuRef { id: "aud5".into(), word: "stream".into(), kind: "media".into() },
+            entity: NomtuRef {
+                id: "aud5".into(),
+                word: "stream".into(),
+                kind: "media".into(),
+            },
             pcm_samples: vec![0.0f32; 8000],
             sample_rate: 48000,
             codec: "opus".into(),
@@ -306,7 +334,12 @@ mod tests {
 
     #[test]
     fn audio_stub_sample_rate_in_header() {
-        let spec = AudioSpec { sample_rate: 48000, channels: 1, duration_ms: 2000, codec: "flac".into() };
+        let spec = AudioSpec {
+            sample_rate: 48000,
+            channels: 1,
+            duration_ms: 2000,
+            codec: "flac".into(),
+        };
         let bytes = encode_audio_stub_container("FLAC", "flac", &spec);
         let text = String::from_utf8_lossy(&bytes);
         assert!(text.contains("sample_rate=48000"));
@@ -318,7 +351,11 @@ mod tests {
         // Default AudioInput uses Wav + Pcm — output must start with RIFF.
         let mut store = InMemoryStore::new();
         let input = AudioInput {
-            entity: NomtuRef { id: "aud6".into(), word: "ping".into(), kind: "media".into() },
+            entity: NomtuRef {
+                id: "aud6".into(),
+                word: "ping".into(),
+                kind: "media".into(),
+            },
             pcm_samples: vec![0.1f32, -0.1f32],
             sample_rate: 8000,
             codec: "pcm".into(),
@@ -334,7 +371,11 @@ mod tests {
     fn audio_new_fields_do_not_break_entity_propagation() {
         let mut store = InMemoryStore::new();
         let input = AudioInput {
-            entity: NomtuRef { id: "aud7".into(), word: "theme".into(), kind: "media".into() },
+            entity: NomtuRef {
+                id: "aud7".into(),
+                word: "theme".into(),
+                kind: "media".into(),
+            },
             pcm_samples: vec![0.0f32; 1000],
             sample_rate: 44100,
             codec: "opus".into(),
@@ -350,18 +391,34 @@ mod tests {
 
     #[test]
     fn flac_stub_header_contains_sample_rate() {
-        let spec = AudioSpec { sample_rate: 96000, channels: 1, duration_ms: 1000, codec: "flac".into() };
+        let spec = AudioSpec {
+            sample_rate: 96000,
+            channels: 1,
+            duration_ms: 1000,
+            codec: "flac".into(),
+        };
         let bytes = encode_audio_stub_container("FLAC", "flac", &spec);
         let text = String::from_utf8_lossy(&bytes);
-        assert!(text.contains("sample_rate=96000"), "FLAC stub must contain sample_rate");
+        assert!(
+            text.contains("sample_rate=96000"),
+            "FLAC stub must contain sample_rate"
+        );
     }
 
     #[test]
     fn ogg_stub_header_contains_codec_field() {
-        let spec = AudioSpec { sample_rate: 48000, channels: 1, duration_ms: 500, codec: "opus".into() };
+        let spec = AudioSpec {
+            sample_rate: 48000,
+            channels: 1,
+            duration_ms: 500,
+            codec: "opus".into(),
+        };
         let bytes = encode_audio_stub_container("Ogg", "opus", &spec);
         let text = String::from_utf8_lossy(&bytes);
-        assert!(text.contains("codec=opus"), "Ogg stub must contain codec field");
+        assert!(
+            text.contains("codec=opus"),
+            "Ogg stub must contain codec field"
+        );
         assert!(text.contains("NOM-STUB-AUDIO-CONTAINER: Ogg"));
     }
 
@@ -369,7 +426,11 @@ mod tests {
     fn audio_sample_rate_zero_does_not_panic() {
         let mut store = InMemoryStore::new();
         let input = AudioInput {
-            entity: NomtuRef { id: "aud-zero".into(), word: "silence".into(), kind: "media".into() },
+            entity: NomtuRef {
+                id: "aud-zero".into(),
+                word: "silence".into(),
+                kind: "media".into(),
+            },
             pcm_samples: vec![0.0f32; 8],
             sample_rate: 0,
             codec: "pcm".into(),
@@ -384,7 +445,11 @@ mod tests {
     fn audio_sample_rate_192000_wav_stores_artifact() {
         let mut store = InMemoryStore::new();
         let input = AudioInput {
-            entity: NomtuRef { id: "aud-hi".into(), word: "hires".into(), kind: "media".into() },
+            entity: NomtuRef {
+                id: "aud-hi".into(),
+                word: "hires".into(),
+                kind: "media".into(),
+            },
             pcm_samples: vec![0.5f32; 192],
             sample_rate: 192000,
             codec: "pcm".into(),
@@ -401,7 +466,11 @@ mod tests {
     fn flac_stub_compose_stores_artifact() {
         let mut store = InMemoryStore::new();
         let input = AudioInput {
-            entity: NomtuRef { id: "aud-flac".into(), word: "lossless".into(), kind: "media".into() },
+            entity: NomtuRef {
+                id: "aud-flac".into(),
+                word: "lossless".into(),
+                kind: "media".into(),
+            },
             pcm_samples: vec![0.1f32; 4000],
             sample_rate: 44100,
             codec: "flac".into(),
@@ -419,7 +488,11 @@ mod tests {
     fn ogg_stub_compose_stores_artifact() {
         let mut store = InMemoryStore::new();
         let input = AudioInput {
-            entity: NomtuRef { id: "aud-ogg".into(), word: "stream".into(), kind: "media".into() },
+            entity: NomtuRef {
+                id: "aud-ogg".into(),
+                word: "stream".into(),
+                kind: "media".into(),
+            },
             pcm_samples: vec![0.2f32; 2000],
             sample_rate: 48000,
             codec: "opus".into(),
@@ -453,19 +526,34 @@ mod tests {
     #[test]
     fn audio_spec_high_sample_rate_bitrate() {
         // 192000 Hz, 1 channel => 192000 * 1 * 16 / 1000 = 3072 kbps
-        let spec = AudioSpec { sample_rate: 192000, channels: 1, duration_ms: 100, codec: "pcm".into() };
+        let spec = AudioSpec {
+            sample_rate: 192000,
+            channels: 1,
+            duration_ms: 100,
+            codec: "pcm".into(),
+        };
         assert_eq!(spec.bitrate_kbps(), 3072);
     }
 
     #[test]
     fn audio_spec_zero_sample_rate_bitrate_is_zero() {
-        let spec = AudioSpec { sample_rate: 0, channels: 1, duration_ms: 0, codec: "pcm".into() };
+        let spec = AudioSpec {
+            sample_rate: 0,
+            channels: 1,
+            duration_ms: 0,
+            codec: "pcm".into(),
+        };
         assert_eq!(spec.bitrate_kbps(), 0);
     }
 
     #[test]
     fn flac_stub_header_contains_duration_ms() {
-        let spec = AudioSpec { sample_rate: 44100, channels: 1, duration_ms: 3000, codec: "flac".into() };
+        let spec = AudioSpec {
+            sample_rate: 44100,
+            channels: 1,
+            duration_ms: 3000,
+            codec: "flac".into(),
+        };
         let bytes = encode_audio_stub_container("FLAC", "flac", &spec);
         let text = String::from_utf8_lossy(&bytes);
         assert!(text.contains("duration_ms=3000"));
@@ -507,7 +595,11 @@ mod tests {
     fn audio_backend_compose_flac_stub_ok() {
         let mut store = InMemoryStore::new();
         let input = AudioInput {
-            entity: NomtuRef { id: "flac-ok".into(), word: "lossless".into(), kind: "media".into() },
+            entity: NomtuRef {
+                id: "flac-ok".into(),
+                word: "lossless".into(),
+                kind: "media".into(),
+            },
             pcm_samples: vec![0.5f32; 1000],
             sample_rate: 44100,
             codec: "flac".into(),
@@ -525,7 +617,11 @@ mod tests {
     fn audio_backend_compose_ogg_stub_ok() {
         let mut store = InMemoryStore::new();
         let input = AudioInput {
-            entity: NomtuRef { id: "ogg-ok".into(), word: "stream".into(), kind: "media".into() },
+            entity: NomtuRef {
+                id: "ogg-ok".into(),
+                word: "stream".into(),
+                kind: "media".into(),
+            },
             pcm_samples: vec![0.1f32; 500],
             sample_rate: 48000,
             codec: "opus".into(),
@@ -572,10 +668,18 @@ mod tests {
 
     #[test]
     fn audio_stub_channels_in_header() {
-        let spec = AudioSpec { sample_rate: 44100, channels: 2, duration_ms: 1000, codec: "flac".into() };
+        let spec = AudioSpec {
+            sample_rate: 44100,
+            channels: 2,
+            duration_ms: 1000,
+            codec: "flac".into(),
+        };
         let bytes = encode_audio_stub_container("FLAC", "flac", &spec);
         let text = String::from_utf8_lossy(&bytes);
-        assert!(text.contains("channels=2"), "stub header must contain channels");
+        assert!(
+            text.contains("channels=2"),
+            "stub header must contain channels"
+        );
     }
 
     #[test]
@@ -592,7 +696,11 @@ mod tests {
     #[test]
     fn audio_codec_all_display_nonempty() {
         for codec in &[AudioCodec::Pcm, AudioCodec::FlacStub, AudioCodec::OpusStub] {
-            assert!(!codec.to_string().is_empty(), "codec display must be nonempty for {:?}", codec);
+            assert!(
+                !codec.to_string().is_empty(),
+                "codec display must be nonempty for {:?}",
+                codec
+            );
         }
     }
 
@@ -642,7 +750,10 @@ mod tests {
         let mut store = InMemoryStore::new();
         let input = default_audio_input("bd-24", "hires", vec![0.5f32; 192], 96000, "pcm");
         let block = AudioBackend::compose(input, &mut store, &LogProgressSink);
-        assert!(store.exists(&block.artifact_hash), "must store artifact for 96kHz input");
+        assert!(
+            store.exists(&block.artifact_hash),
+            "must store artifact for 96kHz input"
+        );
     }
 
     #[test]
@@ -659,9 +770,18 @@ mod tests {
     #[test]
     fn audio_backend_stereo_channel_count_2() {
         // AudioSpec with channels=2 produces correct bitrate; encoder still writes mono WAV.
-        let spec = AudioSpec { sample_rate: 44100, channels: 2, duration_ms: 1000, codec: "pcm".into() };
+        let spec = AudioSpec {
+            sample_rate: 44100,
+            channels: 2,
+            duration_ms: 1000,
+            codec: "pcm".into(),
+        };
         // Stereo bitrate: 44100 * 2 * 16 / 1000 = 1411 kbps
-        assert_eq!(spec.bitrate_kbps(), 1411, "stereo bitrate must be double mono");
+        assert_eq!(
+            spec.bitrate_kbps(),
+            1411,
+            "stereo bitrate must be double mono"
+        );
         // Confirm channels field is accessible.
         assert_eq!(spec.channels, 2);
     }
@@ -672,7 +792,10 @@ mod tests {
         let mut store = InMemoryStore::new();
         let input = default_audio_input("silence", "quiet", vec![0.0f32; 1000], 44100, "pcm");
         let block = AudioBackend::compose(input, &mut store, &LogProgressSink);
-        assert!(store.exists(&block.artifact_hash), "silence must produce a stored artifact");
+        assert!(
+            store.exists(&block.artifact_hash),
+            "silence must produce a stored artifact"
+        );
         let payload = store.read(&block.artifact_hash).unwrap();
         assert_eq!(&payload[0..4], b"RIFF");
     }
@@ -681,13 +804,21 @@ mod tests {
     fn audio_backend_nonzero_samples_produce_output() {
         // Non-silent samples (max amplitude) must produce a stored WAV artifact.
         let mut store = InMemoryStore::new();
-        let samples: Vec<f32> = (0..100).map(|i| if i % 2 == 0 { 1.0 } else { -1.0 }).collect();
+        let samples: Vec<f32> = (0..100)
+            .map(|i| if i % 2 == 0 { 1.0 } else { -1.0 })
+            .collect();
         let input = default_audio_input("nonzero", "loud", samples, 44100, "pcm");
         let block = AudioBackend::compose(input, &mut store, &LogProgressSink);
-        assert!(store.exists(&block.artifact_hash), "non-zero samples must produce artifact");
+        assert!(
+            store.exists(&block.artifact_hash),
+            "non-zero samples must produce artifact"
+        );
         let payload = store.read(&block.artifact_hash).unwrap();
         assert_eq!(&payload[0..4], b"RIFF");
-        assert!(payload.len() > 44, "payload must contain PCM data beyond header");
+        assert!(
+            payload.len() > 44,
+            "payload must contain PCM data beyond header"
+        );
     }
 
     // ── Wave AK new tests ────────────────────────────────────────────────────
@@ -697,7 +828,11 @@ mod tests {
         assert_eq!(AudioContainer::FlacStub.to_string(), "audio/flac");
         let mut store = InMemoryStore::new();
         let input = AudioInput {
-            entity: NomtuRef { id: "wav-flac".into(), word: "track".into(), kind: "media".into() },
+            entity: NomtuRef {
+                id: "wav-flac".into(),
+                word: "track".into(),
+                kind: "media".into(),
+            },
             pcm_samples: vec![0.1f32; 4410],
             sample_rate: 44100,
             codec: "flac".into(),
@@ -707,7 +842,10 @@ mod tests {
         let block = AudioBackend::compose(input, &mut store, &LogProgressSink);
         let payload = store.read(&block.artifact_hash).unwrap();
         let text = String::from_utf8_lossy(&payload);
-        assert!(text.contains("FLAC"), "WAV->FLAC stub payload must mention FLAC");
+        assert!(
+            text.contains("FLAC"),
+            "WAV->FLAC stub payload must mention FLAC"
+        );
     }
 
     #[test]
@@ -715,7 +853,11 @@ mod tests {
         assert_eq!(AudioContainer::OggStub.to_string(), "audio/ogg");
         let mut store = InMemoryStore::new();
         let input = AudioInput {
-            entity: NomtuRef { id: "wav-ogg".into(), word: "loop".into(), kind: "media".into() },
+            entity: NomtuRef {
+                id: "wav-ogg".into(),
+                word: "loop".into(),
+                kind: "media".into(),
+            },
             pcm_samples: vec![0.2f32; 4800],
             sample_rate: 48000,
             codec: "opus".into(),
@@ -725,14 +867,21 @@ mod tests {
         let block = AudioBackend::compose(input, &mut store, &LogProgressSink);
         let payload = store.read(&block.artifact_hash).unwrap();
         let text = String::from_utf8_lossy(&payload);
-        assert!(text.contains("Ogg"), "WAV->Ogg stub payload must mention Ogg");
+        assert!(
+            text.contains("Ogg"),
+            "WAV->Ogg stub payload must mention Ogg"
+        );
     }
 
     #[test]
     fn audio_pcm_to_opus_stub_produces_artifact() {
         let mut store = InMemoryStore::new();
         let input = AudioInput {
-            entity: NomtuRef { id: "pcm-opus".into(), word: "voice".into(), kind: "media".into() },
+            entity: NomtuRef {
+                id: "pcm-opus".into(),
+                word: "voice".into(),
+                kind: "media".into(),
+            },
             pcm_samples: vec![0.5f32; 8000],
             sample_rate: 16000,
             codec: "opus".into(),
@@ -748,20 +897,30 @@ mod tests {
     #[test]
     fn audio_container_wav_name_contains_wav() {
         let name = AudioContainer::Wav.to_string();
-        assert!(name.contains("wav"), "Wav container name must contain wav: {name}");
+        assert!(
+            name.contains("wav"),
+            "Wav container name must contain wav: {name}"
+        );
     }
 
     #[test]
     fn audio_codec_pcm_name_contains_pcm() {
         let name = AudioCodec::Pcm.to_string();
-        assert!(name.contains("pcm"), "Pcm codec name must contain pcm: {name}");
+        assert!(
+            name.contains("pcm"),
+            "Pcm codec name must contain pcm: {name}"
+        );
     }
 
     #[test]
     fn audio_pcm_codec_wav_container_compatibility() {
         let mut store = InMemoryStore::new();
         let input = AudioInput {
-            entity: NomtuRef { id: "pcm-wav-compat".into(), word: "compat".into(), kind: "media".into() },
+            entity: NomtuRef {
+                id: "pcm-wav-compat".into(),
+                word: "compat".into(),
+                kind: "media".into(),
+            },
             pcm_samples: vec![0.0f32; 1000],
             sample_rate: 44100,
             codec: "pcm_s16le".into(),
@@ -778,7 +937,11 @@ mod tests {
     fn audio_flac_stub_entity_propagated() {
         let mut store = InMemoryStore::new();
         let input = AudioInput {
-            entity: NomtuRef { id: "flac-entity".into(), word: "symphony".into(), kind: "media".into() },
+            entity: NomtuRef {
+                id: "flac-entity".into(),
+                word: "symphony".into(),
+                kind: "media".into(),
+            },
             pcm_samples: vec![0.3f32; 2000],
             sample_rate: 44100,
             codec: "flac".into(),
@@ -794,7 +957,11 @@ mod tests {
     fn audio_ogg_stub_entity_propagated() {
         let mut store = InMemoryStore::new();
         let input = AudioInput {
-            entity: NomtuRef { id: "ogg-entity".into(), word: "podcast".into(), kind: "media".into() },
+            entity: NomtuRef {
+                id: "ogg-entity".into(),
+                word: "podcast".into(),
+                kind: "media".into(),
+            },
             pcm_samples: vec![0.1f32; 3000],
             sample_rate: 48000,
             codec: "opus".into(),

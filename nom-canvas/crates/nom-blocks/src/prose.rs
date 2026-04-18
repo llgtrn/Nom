@@ -544,8 +544,14 @@ mod tests {
     #[test]
     fn plain_text_extraction_multiple_inserts() {
         let delta = vec![
-            DeltaOp::Insert { text: "foo".into(), attrs: Default::default() },
-            DeltaOp::Insert { text: " bar".into(), attrs: Default::default() },
+            DeltaOp::Insert {
+                text: "foo".into(),
+                attrs: Default::default(),
+            },
+            DeltaOp::Insert {
+                text: " bar".into(),
+                attrs: Default::default(),
+            },
         ];
         assert_eq!(delta_plain_text(&delta), "foo bar");
     }
@@ -553,7 +559,10 @@ mod tests {
     #[test]
     fn plain_text_extraction_ignores_delete_ops() {
         let delta = vec![
-            DeltaOp::Insert { text: "hello".into(), attrs: Default::default() },
+            DeltaOp::Insert {
+                text: "hello".into(),
+                attrs: Default::default(),
+            },
             DeltaOp::Delete { count: 3 },
         ];
         // delete ops contribute no text
@@ -563,8 +572,14 @@ mod tests {
     #[test]
     fn plain_text_extraction_ignores_retain_ops() {
         let delta = vec![
-            DeltaOp::Retain { count: 5, attrs: Default::default() },
-            DeltaOp::Insert { text: "world".into(), attrs: Default::default() },
+            DeltaOp::Retain {
+                count: 5,
+                attrs: Default::default(),
+            },
+            DeltaOp::Insert {
+                text: "world".into(),
+                attrs: Default::default(),
+            },
         ];
         assert_eq!(delta_plain_text(&delta), "world");
     }
@@ -577,7 +592,10 @@ mod tests {
 
     #[test]
     fn word_count_single_word() {
-        let delta = vec![DeltaOp::Insert { text: "nom".into(), attrs: Default::default() }];
+        let delta = vec![DeltaOp::Insert {
+            text: "nom".into(),
+            attrs: Default::default(),
+        }];
         assert_eq!(word_count(&delta), 1);
     }
 
@@ -598,15 +616,24 @@ mod tests {
 
     #[test]
     fn word_count_whitespace_only_delta_is_zero() {
-        let delta = vec![DeltaOp::Insert { text: "   ".into(), attrs: Default::default() }];
+        let delta = vec![DeltaOp::Insert {
+            text: "   ".into(),
+            attrs: Default::default(),
+        }];
         assert_eq!(word_count(&delta), 0);
     }
 
     #[test]
     fn word_count_splits_across_ops() {
         let delta = vec![
-            DeltaOp::Insert { text: "hello ".into(), attrs: Default::default() },
-            DeltaOp::Insert { text: "world".into(), attrs: Default::default() },
+            DeltaOp::Insert {
+                text: "hello ".into(),
+                attrs: Default::default(),
+            },
+            DeltaOp::Insert {
+                text: "world".into(),
+                attrs: Default::default(),
+            },
         ];
         assert_eq!(word_count(&delta), 2);
     }
@@ -634,7 +661,10 @@ mod tests {
         let block = CodeBlock {
             entity,
             language: "nom".into(),
-            text: vec![DeltaOp::Insert { text: src.into(), attrs: Default::default() }],
+            text: vec![DeltaOp::Insert {
+                text: src.into(),
+                attrs: Default::default(),
+            }],
             wrap: false,
         };
         assert_eq!(delta_plain_text(&block.text), src);

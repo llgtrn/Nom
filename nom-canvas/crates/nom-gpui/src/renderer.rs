@@ -419,9 +419,7 @@ impl GpuResources {
             quad_pipeline,
             instance_buffer,
             instance_buffer_capacity,
-            state: GpuState::Ready {
-                surface_format,
-            },
+            state: GpuState::Ready { surface_format },
             device_request: DeviceRequest::default(),
         }
     }
@@ -453,26 +451,70 @@ fn build_quad_pipeline(
     device: &wgpu::Device,
     surface_format: wgpu::TextureFormat,
 ) -> wgpu::RenderPipeline {
-    let vs_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("nom-gpui quad-vs"),
+    // QUAD_VERT_WGSL contains both @vertex and @fragment entry points.
+    let quad_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("nom-gpui quad-shader"),
         source: wgpu::ShaderSource::Wgsl(QUAD_VERT_WGSL.into()),
     });
-    let fs_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("nom-gpui quad-fs"),
-        source: wgpu::ShaderSource::Wgsl(QUAD_FRAG_WGSL.into()),
+    // Bind group layout for the GlobalUniforms uniform buffer (group 0, binding 0).
+    let globals_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("nom-gpui globals-bgl"),
+        entries: &[wgpu::BindGroupLayoutEntry {
+            binding: 0,
+            visibility: wgpu::ShaderStages::VERTEX,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        }],
     });
     let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("nom-gpui quad-layout"),
-        bind_group_layouts: &[],
+        bind_group_layouts: &[&globals_bgl],
         push_constant_ranges: &[],
     });
+    // Alias for use in pipeline descriptor below.
+    let vs_module = &quad_module;
+    let fs_module = &quad_module;
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("nom-gpui quad-pipeline"),
         layout: Some(&layout),
         vertex: wgpu::VertexState {
             module: &vs_module,
             entry_point: "vs_main",
-            buffers: &[],
+            buffers: &[wgpu::VertexBufferLayout {
+                array_stride: 80, // 5 * 16 bytes (5 x Float32x4)
+                step_mode: wgpu::VertexStepMode::Instance,
+                attributes: &[
+                    wgpu::VertexAttribute {
+                        format: wgpu::VertexFormat::Float32x4,
+                        offset: 0,
+                        shader_location: 0,
+                    },
+                    wgpu::VertexAttribute {
+                        format: wgpu::VertexFormat::Float32x4,
+                        offset: 16,
+                        shader_location: 1,
+                    },
+                    wgpu::VertexAttribute {
+                        format: wgpu::VertexFormat::Float32x4,
+                        offset: 32,
+                        shader_location: 2,
+                    },
+                    wgpu::VertexAttribute {
+                        format: wgpu::VertexFormat::Float32x4,
+                        offset: 48,
+                        shader_location: 3,
+                    },
+                    wgpu::VertexAttribute {
+                        format: wgpu::VertexFormat::Float32x4,
+                        offset: 64,
+                        shader_location: 4,
+                    },
+                ],
+            }],
         },
         fragment: Some(wgpu::FragmentState {
             module: &fs_module,
@@ -557,6 +599,71 @@ impl Renderer {
                 gpu.queue.write_buffer(&gpu.instance_buffer, 0, bytes);
             }
         }
+        self.in_frame = false;
+        self.frame_count += 1;
+        self.frame_stats.frames += 1;
+        Ok(())
+    }
+
+    /// Close the frame with a real GPU render pass: clear, draw quads, present.
+    ///
+    /// Use this variant in the native event loop where `wgpu::Surface` is
+    /// available. Falls back gracefully (no-op render) when `self.gpu` is
+    /// `None` (CPU-only / test mode).
+    pub fn end_frame_render(
+        &mut self,
+        surface: &wgpu::Surface,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+    ) -> Result<(), FrameError> {
+        if !self.in_frame {
+            return Err(FrameError::NotInFrame);
+        }
+        if let Some(gpu) = self.gpu.as_mut() {
+            if !self.pending_quads.is_empty() {
+                let bytes = bytemuck::cast_slice(self.pending_quads.as_slice());
+                gpu.queue.write_buffer(&gpu.instance_buffer, 0, bytes);
+            }
+        }
+        let output = surface.get_current_texture().unwrap();
+        let view = output
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        let mut encoder =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("nom-render"),
+            });
+        {
+            let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("nom-rpass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: 0.1,
+                            g: 0.1,
+                            b: 0.12,
+                            a: 1.0,
+                        }),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+            if let Some(gpu) = &self.gpu {
+                if !self.pending_quads.is_empty() {
+                    rpass.set_pipeline(&gpu.quad_pipeline);
+                    rpass.set_vertex_buffer(0, gpu.instance_buffer.slice(..));
+                    rpass.draw(0..6, 0..self.pending_quads.len() as u32);
+                }
+            }
+        }
+        queue.submit(std::iter::once(encoder.finish()));
+        output.present();
+        self.pending_quads.clear();
         self.in_frame = false;
         self.frame_count += 1;
         self.frame_stats.frames += 1;
@@ -1464,8 +1571,14 @@ mod tests {
         let mut renderer = Renderer::new();
         let rect = FrostedRect {
             bounds: Bounds {
-                origin: Point { x: Pixels(0.0), y: Pixels(0.0) },
-                size: Size { width: Pixels(100.0), height: Pixels(50.0) },
+                origin: Point {
+                    x: Pixels(0.0),
+                    y: Pixels(0.0),
+                },
+                size: Size {
+                    width: Pixels(100.0),
+                    height: Pixels(50.0),
+                },
             },
             blur_radius: 0.0,
             bg_alpha: 0.5,
@@ -1489,8 +1602,14 @@ mod tests {
         let mut renderer = Renderer::new();
         let rect = FrostedRect {
             bounds: Bounds {
-                origin: Point { x: Pixels(0.0), y: Pixels(0.0) },
-                size: Size { width: Pixels(100.0), height: Pixels(50.0) },
+                origin: Point {
+                    x: Pixels(0.0),
+                    y: Pixels(0.0),
+                },
+                size: Size {
+                    width: Pixels(100.0),
+                    height: Pixels(50.0),
+                },
             },
             blur_radius: 20.0,
             bg_alpha: 0.5,
@@ -1520,9 +1639,18 @@ mod tests {
         // The Hsla type comment says h: 0-360. Verify that hsla_to_rgba
         // produces correct output for a canonical 0-360 input.
         // Pure green: h=120, s=1, l=0.5 → (0, 1, 0, 1)
-        let rgba = hsla_to_rgba(Hsla { h: 120.0, s: 1.0, l: 0.5, a: 1.0 });
+        let rgba = hsla_to_rgba(Hsla {
+            h: 120.0,
+            s: 1.0,
+            l: 0.5,
+            a: 1.0,
+        });
         assert!(rgba[0] < 0.01, "h=120 red must be ~0, got {}", rgba[0]);
-        assert!((rgba[1] - 1.0).abs() < 1e-4, "h=120 green must be ~1, got {}", rgba[1]);
+        assert!(
+            (rgba[1] - 1.0).abs() < 1e-4,
+            "h=120 green must be ~1, got {}",
+            rgba[1]
+        );
         assert!(rgba[2] < 0.01, "h=120 blue must be ~0, got {}", rgba[2]);
     }
 
@@ -1532,7 +1660,12 @@ mod tests {
         // hsla_to_rgba divides h by 360 internally, so Hsla{h:220,...} should
         // produce the same result as the CSS-standard hsl(220°, ...).
         // hsl(220, 13%, 11%) — primary background from tokens.rs:
-        let c = Hsla { h: 220.0, s: 0.13, l: 0.11, a: 1.0 };
+        let c = Hsla {
+            h: 220.0,
+            s: 0.13,
+            l: 0.11,
+            a: 1.0,
+        };
         let [r, g, b, a] = hsla_to_rgba(c);
         // All channels must be in [0.0, 1.0]
         for ch in [r, g, b, a] {
@@ -1602,7 +1735,11 @@ mod tests {
         renderer.begin_frame().unwrap();
         renderer.end_frame().unwrap();
         assert_eq!(renderer.frame_count, 1, "frame_count must advance");
-        assert_eq!(renderer.stats().frames, 1, "frame_stats.frames must advance");
+        assert_eq!(
+            renderer.stats().frames,
+            1,
+            "frame_stats.frames must advance"
+        );
         assert!(
             !renderer.is_in_frame(),
             "end_frame must disarm the in-frame flag"
@@ -1630,7 +1767,10 @@ mod tests {
         renderer
             .draw_quads_gpu(&batch)
             .expect("must accept initial-capacity worth of quads");
-        assert_eq!(renderer.pending_quads().len(), QUAD_INSTANCE_INITIAL_CAPACITY);
+        assert_eq!(
+            renderer.pending_quads().len(),
+            QUAD_INSTANCE_INITIAL_CAPACITY
+        );
     }
 
     #[test]
@@ -1680,7 +1820,10 @@ mod tests {
         let mut renderer = Renderer::new();
         renderer.begin_frame().unwrap();
         renderer.end_frame().unwrap();
-        assert!(!renderer.is_in_frame(), "must not be in-frame after end_frame");
+        assert!(
+            !renderer.is_in_frame(),
+            "must not be in-frame after end_frame"
+        );
     }
 
     #[test]
@@ -1697,8 +1840,12 @@ mod tests {
     fn pending_quads_accumulates_across_draw_quads_gpu_calls() {
         let mut renderer = Renderer::new();
         renderer.begin_frame().unwrap();
-        renderer.draw_quads_gpu(&[QuadInstance::default(); 3]).unwrap();
-        renderer.draw_quads_gpu(&[QuadInstance::default(); 5]).unwrap();
+        renderer
+            .draw_quads_gpu(&[QuadInstance::default(); 3])
+            .unwrap();
+        renderer
+            .draw_quads_gpu(&[QuadInstance::default(); 5])
+            .unwrap();
         assert_eq!(
             renderer.pending_quads().len(),
             8,
@@ -1710,7 +1857,9 @@ mod tests {
     fn pending_quads_cleared_by_begin_frame() {
         let mut renderer = Renderer::new();
         renderer.begin_frame().unwrap();
-        renderer.draw_quads_gpu(&[QuadInstance::default(); 10]).unwrap();
+        renderer
+            .draw_quads_gpu(&[QuadInstance::default(); 10])
+            .unwrap();
         renderer.end_frame().unwrap();
         renderer.begin_frame().unwrap();
         assert_eq!(
@@ -1735,11 +1884,15 @@ mod tests {
         let mut renderer = Renderer::new();
         // Frame 1
         renderer.begin_frame().unwrap();
-        renderer.draw_quads_gpu(&[QuadInstance::default(); 5]).unwrap();
+        renderer
+            .draw_quads_gpu(&[QuadInstance::default(); 5])
+            .unwrap();
         renderer.end_frame().unwrap();
         // Frame 2
         renderer.begin_frame().unwrap();
-        renderer.draw_quads_gpu(&[QuadInstance::default(); 3]).unwrap();
+        renderer
+            .draw_quads_gpu(&[QuadInstance::default(); 3])
+            .unwrap();
         renderer.end_frame().unwrap();
         assert_eq!(
             renderer.stats().quads_drawn,
@@ -1762,7 +1915,10 @@ mod tests {
     #[test]
     fn renderer_gpu_field_none_on_new() {
         let renderer = Renderer::new();
-        assert!(renderer.gpu.is_none(), "cpu-only renderer must have gpu == None");
+        assert!(
+            renderer.gpu.is_none(),
+            "cpu-only renderer must have gpu == None"
+        );
     }
 
     #[test]
@@ -1809,8 +1965,14 @@ mod tests {
         let mut renderer = Renderer::new();
         let rect = FrostedRect {
             bounds: Bounds {
-                origin: Point { x: Pixels(0.0), y: Pixels(0.0) },
-                size: Size { width: Pixels(100.0), height: Pixels(100.0) },
+                origin: Point {
+                    x: Pixels(0.0),
+                    y: Pixels(0.0),
+                },
+                size: Size {
+                    width: Pixels(100.0),
+                    height: Pixels(100.0),
+                },
             },
             // blur_radius=30 > 20, so min(30,20)=20, alpha = (0.7 - 20*0.015).max(0.3) = 0.4
             blur_radius: 30.0,
@@ -1834,8 +1996,14 @@ mod tests {
         let mut renderer = Renderer::new();
         let rect = FrostedRect {
             bounds: Bounds {
-                origin: Point { x: Pixels(0.0), y: Pixels(0.0) },
-                size: Size { width: Pixels(50.0), height: Pixels(50.0) },
+                origin: Point {
+                    x: Pixels(0.0),
+                    y: Pixels(0.0),
+                },
+                size: Size {
+                    width: Pixels(50.0),
+                    height: Pixels(50.0),
+                },
             },
             blur_radius: 5.0,
             bg_alpha: 0.5,
@@ -1844,14 +2012,12 @@ mod tests {
         let quads = renderer.draw_frosted_rects(&[rect]);
         // Border quad (index 1) must have border_widths = [1.0; 4]
         assert_eq!(
-            quads[1].border_widths,
-            [1.0; 4],
+            quads[1].border_widths, [1.0; 4],
             "border quad must have uniform 1px border widths"
         );
         // Background quad must have zero border widths
         assert_eq!(
-            quads[0].border_widths,
-            [0.0; 4],
+            quads[0].border_widths, [0.0; 4],
             "background quad must have zero border widths"
         );
     }
@@ -1864,8 +2030,14 @@ mod tests {
         let mut renderer = Renderer::new();
         let rect = FrostedRect {
             bounds: Bounds {
-                origin: Point { x: Pixels(10.0), y: Pixels(10.0) },
-                size: Size { width: Pixels(200.0), height: Pixels(100.0) },
+                origin: Point {
+                    x: Pixels(10.0),
+                    y: Pixels(10.0),
+                },
+                size: Size {
+                    width: Pixels(200.0),
+                    height: Pixels(100.0),
+                },
             },
             blur_radius: 8.0,
             bg_alpha: 0.6,
@@ -1874,8 +2046,7 @@ mod tests {
         let quads = renderer.draw_frosted_rects(&[rect]);
         for (i, quad) in quads.iter().enumerate() {
             assert_eq!(
-                quad.corner_radii,
-                [0.0; 4],
+                quad.corner_radii, [0.0; 4],
                 "quad[{i}] corner_radii must be zero (frosted rect has no rounding)"
             );
         }
@@ -1889,8 +2060,14 @@ mod tests {
         let mut renderer = Renderer::new();
         let rect = FrostedRect {
             bounds: Bounds {
-                origin: Point { x: Pixels(0.0), y: Pixels(0.0) },
-                size: Size { width: Pixels(100.0), height: Pixels(100.0) },
+                origin: Point {
+                    x: Pixels(0.0),
+                    y: Pixels(0.0),
+                },
+                size: Size {
+                    width: Pixels(100.0),
+                    height: Pixels(100.0),
+                },
             },
             blur_radius: 5.0,
             bg_alpha: 0.5,
@@ -1898,9 +2075,18 @@ mod tests {
         };
         let quads = renderer.draw_frosted_rects(&[rect]);
         // Background quad RGB must be [0.5, 0.5, 0.5] (mid-grey).
-        assert!((quads[0].bg_color[0] - 0.5).abs() < 1e-6, "R channel must be 0.5");
-        assert!((quads[0].bg_color[1] - 0.5).abs() < 1e-6, "G channel must be 0.5");
-        assert!((quads[0].bg_color[2] - 0.5).abs() < 1e-6, "B channel must be 0.5");
+        assert!(
+            (quads[0].bg_color[0] - 0.5).abs() < 1e-6,
+            "R channel must be 0.5"
+        );
+        assert!(
+            (quads[0].bg_color[1] - 0.5).abs() < 1e-6,
+            "G channel must be 0.5"
+        );
+        assert!(
+            (quads[0].bg_color[2] - 0.5).abs() < 1e-6,
+            "B channel must be 0.5"
+        );
     }
 
     #[test]
@@ -1908,7 +2094,10 @@ mod tests {
         // ortho(1, 1): x scale = 2.0, y scale = -2.0
         let m = ortho_projection(1.0, 1.0);
         assert!((m[0][0] - 2.0).abs() < 1e-6, "x scale for width=1 is 2.0");
-        assert!((m[1][1] - (-2.0)).abs() < 1e-6, "y scale for height=1 is -2.0");
+        assert!(
+            (m[1][1] - (-2.0)).abs() < 1e-6,
+            "y scale for height=1 is -2.0"
+        );
     }
 
     #[test]
@@ -1921,26 +2110,65 @@ mod tests {
     #[test]
     fn hsla_to_rgba_blue() {
         // Pure blue: h=240, s=1, l=0.5 → [0, 0, 1, 1]
-        let rgba = hsla_to_rgba(Hsla { h: 240.0, s: 1.0, l: 0.5, a: 1.0 });
+        let rgba = hsla_to_rgba(Hsla {
+            h: 240.0,
+            s: 1.0,
+            l: 0.5,
+            a: 1.0,
+        });
         assert!(rgba[0] < 0.01, "blue hue: red must be ~0, got {}", rgba[0]);
-        assert!(rgba[1] < 0.01, "blue hue: green must be ~0, got {}", rgba[1]);
-        assert!((rgba[2] - 1.0).abs() < 1e-4, "blue hue: blue must be ~1, got {}", rgba[2]);
+        assert!(
+            rgba[1] < 0.01,
+            "blue hue: green must be ~0, got {}",
+            rgba[1]
+        );
+        assert!(
+            (rgba[2] - 1.0).abs() < 1e-4,
+            "blue hue: blue must be ~1, got {}",
+            rgba[2]
+        );
     }
 
     #[test]
     fn hsla_to_rgba_alpha_passthrough() {
         // Alpha must be forwarded unchanged regardless of hue/saturation.
-        let rgba = hsla_to_rgba(Hsla { h: 60.0, s: 0.5, l: 0.5, a: 0.42 });
-        assert!((rgba[3] - 0.42).abs() < 1e-6, "alpha must be preserved: {}", rgba[3]);
+        let rgba = hsla_to_rgba(Hsla {
+            h: 60.0,
+            s: 0.5,
+            l: 0.5,
+            a: 0.42,
+        });
+        assert!(
+            (rgba[3] - 0.42).abs() < 1e-6,
+            "alpha must be preserved: {}",
+            rgba[3]
+        );
     }
 
     #[test]
     fn hsla_to_rgba_achromatic_midgrey() {
         // s=0, l=0.5 → r = g = b = 0.5
-        let rgba = hsla_to_rgba(Hsla { h: 0.0, s: 0.0, l: 0.5, a: 1.0 });
-        assert!((rgba[0] - 0.5).abs() < 1e-6, "mid-grey R must be 0.5, got {}", rgba[0]);
-        assert!((rgba[1] - 0.5).abs() < 1e-6, "mid-grey G must be 0.5, got {}", rgba[1]);
-        assert!((rgba[2] - 0.5).abs() < 1e-6, "mid-grey B must be 0.5, got {}", rgba[2]);
+        let rgba = hsla_to_rgba(Hsla {
+            h: 0.0,
+            s: 0.0,
+            l: 0.5,
+            a: 1.0,
+        });
+        assert!(
+            (rgba[0] - 0.5).abs() < 1e-6,
+            "mid-grey R must be 0.5, got {}",
+            rgba[0]
+        );
+        assert!(
+            (rgba[1] - 0.5).abs() < 1e-6,
+            "mid-grey G must be 0.5, got {}",
+            rgba[1]
+        );
+        assert!(
+            (rgba[2] - 0.5).abs() < 1e-6,
+            "mid-grey B must be 0.5, got {}",
+            rgba[2]
+        );
     }
 
     // ------------------------------------------------------------------
@@ -1954,10 +2182,22 @@ mod tests {
         let mut renderer = Renderer::new();
         renderer.begin_frame().unwrap();
         renderer.draw_quads_gpu(&[]).unwrap();
-        assert_eq!(renderer.pending_quads().len(), 0, "pending_quads must stay empty");
-        assert_eq!(renderer.stats().quads_drawn, 0, "quads_drawn must stay zero");
+        assert_eq!(
+            renderer.pending_quads().len(),
+            0,
+            "pending_quads must stay empty"
+        );
+        assert_eq!(
+            renderer.stats().quads_drawn,
+            0,
+            "quads_drawn must stay zero"
+        );
         renderer.end_frame().unwrap();
-        assert_eq!(renderer.stats().quads_drawn, 0, "quads_drawn stays zero after frame");
+        assert_eq!(
+            renderer.stats().quads_drawn,
+            0,
+            "quads_drawn stays zero after frame"
+        );
     }
 
     #[test]
@@ -1993,22 +2233,46 @@ mod tests {
         let x_trans = m[3][0];
         let y_trans = m[3][1];
 
-        assert!((x_scale - 2.0).abs() < 1e-6, "x_scale must be 2.0 for width=1, got {x_scale}");
-        assert!((y_scale - (-2.0)).abs() < 1e-6, "y_scale must be -2.0 for height=1, got {y_scale}");
-        assert!((x_trans - (-1.0)).abs() < 1e-6, "x_trans must be -1, got {x_trans}");
-        assert!((y_trans - 1.0).abs() < 1e-6, "y_trans must be 1, got {y_trans}");
+        assert!(
+            (x_scale - 2.0).abs() < 1e-6,
+            "x_scale must be 2.0 for width=1, got {x_scale}"
+        );
+        assert!(
+            (y_scale - (-2.0)).abs() < 1e-6,
+            "y_scale must be -2.0 for height=1, got {y_scale}"
+        );
+        assert!(
+            (x_trans - (-1.0)).abs() < 1e-6,
+            "x_trans must be -1, got {x_trans}"
+        );
+        assert!(
+            (y_trans - 1.0).abs() < 1e-6,
+            "y_trans must be 1, got {y_trans}"
+        );
 
         // Verify: top-left (0,0) → NDC x = 0*2 + (-1) = -1, NDC y = 0*(-2) + 1 = 1
         let ndc_tl_x = 0.0 * x_scale + x_trans;
         let ndc_tl_y = 0.0 * y_scale + y_trans;
-        assert!((ndc_tl_x - (-1.0)).abs() < 1e-6, "top-left NDC x = -1, got {ndc_tl_x}");
-        assert!((ndc_tl_y - 1.0).abs() < 1e-6, "top-left NDC y = 1, got {ndc_tl_y}");
+        assert!(
+            (ndc_tl_x - (-1.0)).abs() < 1e-6,
+            "top-left NDC x = -1, got {ndc_tl_x}"
+        );
+        assert!(
+            (ndc_tl_y - 1.0).abs() < 1e-6,
+            "top-left NDC y = 1, got {ndc_tl_y}"
+        );
 
         // Verify: bottom-right (1,1) → NDC x = 1*2 + (-1) = 1, NDC y = 1*(-2) + 1 = -1
         let ndc_br_x = 1.0 * x_scale + x_trans;
         let ndc_br_y = 1.0 * y_scale + y_trans;
-        assert!((ndc_br_x - 1.0).abs() < 1e-6, "bottom-right NDC x = 1, got {ndc_br_x}");
-        assert!((ndc_br_y - (-1.0)).abs() < 1e-6, "bottom-right NDC y = -1, got {ndc_br_y}");
+        assert!(
+            (ndc_br_x - 1.0).abs() < 1e-6,
+            "bottom-right NDC x = 1, got {ndc_br_x}"
+        );
+        assert!(
+            (ndc_br_y - (-1.0)).abs() < 1e-6,
+            "bottom-right NDC y = -1, got {ndc_br_y}"
+        );
     }
 
     #[test]
@@ -2022,8 +2286,14 @@ mod tests {
 
         let ndc_x = 400.0 * x_scale + x_trans;
         let ndc_y = 300.0 * y_scale + y_trans;
-        assert!((ndc_x - 0.0).abs() < 1e-5, "center maps to NDC x=0, got {ndc_x}");
-        assert!((ndc_y - 0.0).abs() < 1e-5, "center maps to NDC y=0, got {ndc_y}");
+        assert!(
+            (ndc_x - 0.0).abs() < 1e-5,
+            "center maps to NDC x=0, got {ndc_x}"
+        );
+        assert!(
+            (ndc_y - 0.0).abs() < 1e-5,
+            "center maps to NDC y=0, got {ndc_y}"
+        );
     }
 
     #[test]
@@ -2034,8 +2304,16 @@ mod tests {
             scene.push_shadow(crate::scene::Shadow::default());
         }
         renderer.draw(&mut scene);
-        assert_eq!(renderer.stats().shadows_drawn, 4, "4 shadows must be counted");
-        assert_eq!(renderer.stats().quads_drawn, 0, "no quads in shadow-only scene");
+        assert_eq!(
+            renderer.stats().shadows_drawn,
+            4,
+            "4 shadows must be counted"
+        );
+        assert_eq!(
+            renderer.stats().quads_drawn,
+            0,
+            "no quads in shadow-only scene"
+        );
     }
 
     #[test]
@@ -2057,7 +2335,11 @@ mod tests {
             scene.push_quad(crate::scene::Quad::default());
             renderer.draw(&mut scene);
         }
-        assert_eq!(renderer.stats().quads_drawn, 3, "cumulative 3 quads across 3 draws");
+        assert_eq!(
+            renderer.stats().quads_drawn,
+            3,
+            "cumulative 3 quads across 3 draws"
+        );
         assert_eq!(renderer.stats().frames, 3, "3 frames");
     }
 
@@ -2070,30 +2352,45 @@ mod tests {
         // Both variants must produce different Display strings.
         let not_in = format!("{}", FrameError::NotInFrame);
         let already = format!("{}", FrameError::AlreadyInFrame);
-        assert_ne!(not_in, already, "Display strings for different variants must differ");
+        assert_ne!(
+            not_in, already,
+            "Display strings for different variants must differ"
+        );
         assert!(!not_in.is_empty(), "NotInFrame display must not be empty");
-        assert!(!already.is_empty(), "AlreadyInFrame display must not be empty");
+        assert!(
+            !already.is_empty(),
+            "AlreadyInFrame display must not be empty"
+        );
     }
 
     #[test]
     fn renderer_draw_frosted_rects_blur_alpha_radius_0() {
         // blur_radius=0 → alpha = (0.7 - 0.0 * 0.015).max(0.3) = 0.7
         let expected = (0.7_f32 - 0.0_f32.min(20.0) * 0.015).max(0.3);
-        assert!((expected - 0.7).abs() < 1e-5, "radius=0 → alpha=0.7, got {expected}");
+        assert!(
+            (expected - 0.7).abs() < 1e-5,
+            "radius=0 → alpha=0.7, got {expected}"
+        );
     }
 
     #[test]
     fn renderer_draw_frosted_rects_blur_alpha_radius_10() {
         // blur_radius=10 → alpha = (0.7 - 10.0 * 0.015).max(0.3) = (0.7 - 0.15).max(0.3) = 0.55
         let expected = (0.7_f32 - 10.0_f32.min(20.0) * 0.015).max(0.3);
-        assert!((expected - 0.55).abs() < 1e-5, "radius=10 → alpha=0.55, got {expected}");
+        assert!(
+            (expected - 0.55).abs() < 1e-5,
+            "radius=10 → alpha=0.55, got {expected}"
+        );
     }
 
     #[test]
     fn renderer_draw_frosted_rects_blur_alpha_radius_20() {
         // blur_radius=20 → alpha = (0.7 - 20.0 * 0.015).max(0.3) = (0.7 - 0.3).max(0.3) = 0.4
         let expected = (0.7_f32 - 20.0_f32.min(20.0) * 0.015).max(0.3);
-        assert!((expected - 0.4).abs() < 1e-5, "radius=20 → alpha=0.4, got {expected}");
+        assert!(
+            (expected - 0.4).abs() < 1e-5,
+            "radius=20 → alpha=0.4, got {expected}"
+        );
     }
 
     #[test]
@@ -2101,19 +2398,29 @@ mod tests {
         // blur_radius=30 → min(30,20)=20 → same as radius=20 → 0.4
         let r30 = (0.7_f32 - 30.0_f32.min(20.0) * 0.015).max(0.3);
         let r20 = (0.7_f32 - 20.0_f32.min(20.0) * 0.015).max(0.3);
-        assert!((r30 - r20).abs() < 1e-7, "radius=30 must clamp to same alpha as radius=20");
+        assert!(
+            (r30 - r20).abs() < 1e-7,
+            "radius=30 must clamp to same alpha as radius=20"
+        );
     }
 
     #[test]
     fn renderer_new_has_no_pending_quads() {
         let renderer = Renderer::new();
-        assert_eq!(renderer.pending_quads().len(), 0, "new renderer must have zero pending quads");
+        assert_eq!(
+            renderer.pending_quads().len(),
+            0,
+            "new renderer must have zero pending quads"
+        );
     }
 
     #[test]
     fn renderer_new_frame_count_zero() {
         let renderer = Renderer::new();
-        assert_eq!(renderer.frame_count, 0, "new renderer must have frame_count = 0");
+        assert_eq!(
+            renderer.frame_count, 0,
+            "new renderer must have frame_count = 0"
+        );
     }
 
     #[test]
@@ -2134,12 +2441,20 @@ mod tests {
     #[test]
     fn quad_instance_size_is_multiple_of_four() {
         // QuadInstance is repr(C) and must have a size divisible by 4 for GPU alignment.
-        assert_eq!(std::mem::size_of::<QuadInstance>() % 4, 0, "QuadInstance size must be 4-byte aligned");
+        assert_eq!(
+            std::mem::size_of::<QuadInstance>() % 4,
+            0,
+            "QuadInstance size must be 4-byte aligned"
+        );
     }
 
     #[test]
     fn sprite_instance_size_is_multiple_of_four() {
-        assert_eq!(std::mem::size_of::<SpriteInstance>() % 4, 0, "SpriteInstance size must be 4-byte aligned");
+        assert_eq!(
+            std::mem::size_of::<SpriteInstance>() % 4,
+            0,
+            "SpriteInstance size must be 4-byte aligned"
+        );
     }
 
     // ------------------------------------------------------------------
@@ -2173,13 +2488,19 @@ mod tests {
     #[test]
     fn pipeline_descriptor_vertex_shader_contains_vertex_attribute() {
         let d = describe_quad_pipeline();
-        assert!(d.vertex_shader.contains("@vertex"), "vertex shader must contain @vertex");
+        assert!(
+            d.vertex_shader.contains("@vertex"),
+            "vertex shader must contain @vertex"
+        );
     }
 
     #[test]
     fn pipeline_descriptor_fragment_shader_contains_output() {
         let d = describe_quad_pipeline();
-        assert!(d.fragment_shader.contains("@location(0)"), "fragment shader must contain @location(0) output");
+        assert!(
+            d.fragment_shader.contains("@location(0)"),
+            "fragment shader must contain @location(0) output"
+        );
     }
 
     #[test]
@@ -2203,15 +2524,27 @@ mod tests {
     #[test]
     fn quad_pipeline_vertex_shader_has_vs_main() {
         let d = describe_quad_pipeline();
-        assert!(d.vertex_shader.contains("@vertex"), "must contain @vertex annotation");
-        assert!(d.vertex_shader.contains("vs_main"), "must contain vs_main function");
+        assert!(
+            d.vertex_shader.contains("@vertex"),
+            "must contain @vertex annotation"
+        );
+        assert!(
+            d.vertex_shader.contains("vs_main"),
+            "must contain vs_main function"
+        );
     }
 
     #[test]
     fn quad_pipeline_fragment_shader_has_fs_main() {
         let d = describe_quad_pipeline();
-        assert!(d.fragment_shader.contains("@fragment"), "must contain @fragment annotation");
-        assert!(d.fragment_shader.contains("fs_main"), "must contain fs_main function");
+        assert!(
+            d.fragment_shader.contains("@fragment"),
+            "must contain @fragment annotation"
+        );
+        assert!(
+            d.fragment_shader.contains("fs_main"),
+            "must contain fs_main function"
+        );
     }
 
     #[test]
@@ -2219,8 +2552,14 @@ mod tests {
         // The quad shaders currently don't have a uniform binding; we document
         // this expected absence and verify the shaders at least contain entry points.
         let d = describe_quad_pipeline();
-        assert!(!d.vertex_shader.is_empty(), "vertex shader must not be empty");
-        assert!(!d.fragment_shader.is_empty(), "fragment shader must not be empty");
+        assert!(
+            !d.vertex_shader.is_empty(),
+            "vertex shader must not be empty"
+        );
+        assert!(
+            !d.fragment_shader.is_empty(),
+            "fragment shader must not be empty"
+        );
     }
 
     #[test]
@@ -2256,7 +2595,11 @@ mod tests {
         r.draw_quads_gpu(&[QuadInstance::default(); 5]).unwrap();
         r.end_frame().unwrap();
         r.begin_frame().unwrap();
-        assert_eq!(r.pending_quads().len(), 0, "begin_frame must clear pending quads");
+        assert_eq!(
+            r.pending_quads().len(),
+            0,
+            "begin_frame must clear pending quads"
+        );
     }
 
     #[test]
@@ -2291,19 +2634,28 @@ mod tests {
     #[test]
     fn blur_alpha_formula_radius_0_is_0_7() {
         let alpha = (0.7_f32 - 0.0_f32.min(20.0) * 0.015).max(0.3);
-        assert!((alpha - 0.7).abs() < 1e-5, "radius=0 → alpha=0.7, got {alpha}");
+        assert!(
+            (alpha - 0.7).abs() < 1e-5,
+            "radius=0 → alpha=0.7, got {alpha}"
+        );
     }
 
     #[test]
     fn blur_alpha_formula_radius_10_is_0_55() {
         let alpha = (0.7_f32 - 10.0_f32.min(20.0) * 0.015).max(0.3);
-        assert!((alpha - 0.55).abs() < 1e-5, "radius=10 → alpha=0.55, got {alpha}");
+        assert!(
+            (alpha - 0.55).abs() < 1e-5,
+            "radius=10 → alpha=0.55, got {alpha}"
+        );
     }
 
     #[test]
     fn blur_alpha_formula_radius_20_is_0_4() {
         let alpha = (0.7_f32 - 20.0_f32.min(20.0) * 0.015).max(0.3);
-        assert!((alpha - 0.4).abs() < 1e-5, "radius=20 → alpha=0.4, got {alpha}");
+        assert!(
+            (alpha - 0.4).abs() < 1e-5,
+            "radius=20 → alpha=0.4, got {alpha}"
+        );
     }
 
     #[test]
@@ -2312,7 +2664,10 @@ mod tests {
         // The clamp floor is 0.3 but radius=30 still gives 0.4 via min(30,20)
         let alpha = (0.7_f32 - 30.0_f32.min(20.0) * 0.015).max(0.3);
         let expected = (0.7_f32 - 20.0_f32 * 0.015).max(0.3);
-        assert!((alpha - expected).abs() < 1e-6, "radius=30 clamps same as radius=20");
+        assert!(
+            (alpha - expected).abs() < 1e-6,
+            "radius=30 clamps same as radius=20"
+        );
     }
 
     #[test]
@@ -2320,7 +2675,10 @@ mod tests {
         // radius=50: min(50,20)=20 → same as radius=20=0.4; floor clamp=0.3 not reached
         let alpha = (0.7_f32 - 50.0_f32.min(20.0) * 0.015).max(0.3);
         let expected = (0.7_f32 - 20.0_f32 * 0.015).max(0.3);
-        assert!((alpha - expected).abs() < 1e-6, "radius=50 same alpha as radius=20");
+        assert!(
+            (alpha - expected).abs() < 1e-6,
+            "radius=50 same alpha as radius=20"
+        );
     }
 
     #[test]
@@ -2330,8 +2688,14 @@ mod tests {
         let mut r = Renderer::new();
         let rect = FrostedRect {
             bounds: Bounds {
-                origin: Point { x: Pixels(0.0), y: Pixels(0.0) },
-                size: Size { width: Pixels(100.0), height: Pixels(50.0) },
+                origin: Point {
+                    x: Pixels(0.0),
+                    y: Pixels(0.0),
+                },
+                size: Size {
+                    width: Pixels(100.0),
+                    height: Pixels(50.0),
+                },
             },
             blur_radius: 5.0,
             bg_alpha: 0.5,
@@ -2344,7 +2708,12 @@ mod tests {
     #[test]
     fn renderer_clear_color_stores_rgba() {
         // Verify LinearRgba can store an RGBA tuple from Hsla conversion.
-        let color = LinearRgba::from(Hsla { h: 200.0, s: 0.5, l: 0.5, a: 0.8 });
+        let color = LinearRgba::from(Hsla {
+            h: 200.0,
+            s: 0.5,
+            l: 0.5,
+            a: 0.8,
+        });
         // All channels must be in valid range [0.0, 1.0].
         for (i, ch) in color.0.iter().enumerate() {
             assert!(*ch >= 0.0 && *ch <= 1.0, "channel[{i}] = {ch} out of [0,1]");
@@ -2357,13 +2726,19 @@ mod tests {
         let d = describe_quad_pipeline();
         // The constant is a &'static str so it's always valid UTF-8 by construction.
         // This test documents that the shader source is valid text.
-        assert!(std::str::from_utf8(d.vertex_shader.as_bytes()).is_ok(), "vertex shader must be valid UTF-8");
+        assert!(
+            std::str::from_utf8(d.vertex_shader.as_bytes()).is_ok(),
+            "vertex shader must be valid UTF-8"
+        );
     }
 
     #[test]
     fn wgsl_quad_fragment_shader_nonempty() {
         let d = describe_quad_pipeline();
-        assert!(!d.fragment_shader.trim().is_empty(), "fragment shader must not be empty");
+        assert!(
+            !d.fragment_shader.trim().is_empty(),
+            "fragment shader must not be empty"
+        );
     }
 
     #[test]
@@ -2371,9 +2746,15 @@ mod tests {
         let quad = describe_quad_pipeline();
         let sprite = describe_sprite_pipeline();
         // The fragment shaders differ between pipelines (quad = red stub, sprite = green stub).
-        assert_ne!(quad.fragment_shader, sprite.fragment_shader, "quad and sprite fragment shaders must differ");
+        assert_ne!(
+            quad.fragment_shader, sprite.fragment_shader,
+            "quad and sprite fragment shaders must differ"
+        );
         // The descriptors as a whole must not be equal.
-        assert_ne!(quad, sprite, "quad and sprite pipeline descriptors must differ");
+        assert_ne!(
+            quad, sprite,
+            "quad and sprite pipeline descriptors must differ"
+        );
     }
 
     #[test]
@@ -2399,7 +2780,11 @@ mod tests {
     #[test]
     fn gpu_state_unavailable_is_default() {
         let state = GpuState::default();
-        assert_eq!(state, GpuState::Unavailable, "default GpuState must be Unavailable");
+        assert_eq!(
+            state,
+            GpuState::Unavailable,
+            "default GpuState must be Unavailable"
+        );
     }
 
     #[test]
@@ -2409,7 +2794,9 @@ mod tests {
 
     #[test]
     fn gpu_state_ready_has_surface_format() {
-        let state = GpuState::Ready { surface_format: wgpu::TextureFormat::Bgra8UnormSrgb };
+        let state = GpuState::Ready {
+            surface_format: wgpu::TextureFormat::Bgra8UnormSrgb,
+        };
         if let GpuState::Ready { surface_format } = state {
             assert_eq!(surface_format, wgpu::TextureFormat::Bgra8UnormSrgb);
         } else {
@@ -2432,7 +2819,10 @@ mod tests {
     #[test]
     fn device_request_default_features_empty() {
         let req = DeviceRequest::default();
-        assert!(req.required_features.is_empty(), "default features must be empty");
+        assert!(
+            req.required_features.is_empty(),
+            "default features must be empty"
+        );
     }
 
     #[test]
@@ -2444,7 +2834,10 @@ mod tests {
     #[test]
     fn renderer_can_render_false_without_gpu() {
         let r = Renderer::new();
-        assert!(!r.can_render(), "cpu-only renderer must return false for can_render");
+        assert!(
+            !r.can_render(),
+            "cpu-only renderer must return false for can_render"
+        );
     }
 
     #[test]
@@ -2512,13 +2905,19 @@ mod tests {
     #[test]
     fn describe_quad_pipeline_topology() {
         let d = describe_quad_pipeline();
-        assert_eq!(d.topology, "triangle-list", "quad pipeline topology must be triangle-list");
+        assert_eq!(
+            d.topology, "triangle-list",
+            "quad pipeline topology must be triangle-list"
+        );
     }
 
     #[test]
     fn describe_sprite_pipeline_topology() {
         let d = describe_sprite_pipeline();
-        assert_eq!(d.topology, "triangle-list", "sprite pipeline topology must be triangle-list");
+        assert_eq!(
+            d.topology, "triangle-list",
+            "sprite pipeline topology must be triangle-list"
+        );
     }
 
     #[test]
@@ -2543,13 +2942,21 @@ mod tests {
     #[test]
     fn renderer_frame_stats_sprites_start_zero() {
         let r = Renderer::new();
-        assert_eq!(r.stats().sprites_drawn, 0, "sprites_drawn must start at zero");
+        assert_eq!(
+            r.stats().sprites_drawn,
+            0,
+            "sprites_drawn must start at zero"
+        );
     }
 
     #[test]
     fn renderer_frame_stats_frosted_start_zero() {
         let r = Renderer::new();
-        assert_eq!(r.stats().frosted_drawn, 0, "frosted_drawn must start at zero");
+        assert_eq!(
+            r.stats().frosted_drawn,
+            0,
+            "frosted_drawn must start at zero"
+        );
     }
 
     #[test]
@@ -2589,8 +2996,14 @@ mod tests {
         let mut r = Renderer::new();
         let rect = FrostedRect {
             bounds: Bounds {
-                origin: Point { x: Pixels(0.0), y: Pixels(0.0) },
-                size: Size { width: Pixels(50.0), height: Pixels(50.0) },
+                origin: Point {
+                    x: Pixels(0.0),
+                    y: Pixels(0.0),
+                },
+                size: Size {
+                    width: Pixels(50.0),
+                    height: Pixels(50.0),
+                },
             },
             blur_radius: 5.0,
             bg_alpha: 0.5,
@@ -2646,31 +3059,46 @@ mod tests {
         // min(50,20)=20 → (0.7-0.3).max(0.3) = 0.4, floor clamp not triggered
         let alpha = (0.7_f32 - 50.0_f32.min(20.0) * 0.015).max(0.3);
         let expected = (0.7_f32 - 20.0_f32 * 0.015).max(0.3);
-        assert!((alpha - expected).abs() < 1e-6, "radius=50 same as radius=20, got {alpha}");
+        assert!(
+            (alpha - expected).abs() < 1e-6,
+            "radius=50 same as radius=20, got {alpha}"
+        );
     }
 
     #[test]
     fn wgsl_quad_vs_contains_at_vertex() {
         let d = describe_quad_pipeline();
-        assert!(d.vertex_shader.contains("@vertex"), "quad VS must contain @vertex");
+        assert!(
+            d.vertex_shader.contains("@vertex"),
+            "quad VS must contain @vertex"
+        );
     }
 
     #[test]
     fn wgsl_quad_fs_contains_at_fragment() {
         let d = describe_quad_pipeline();
-        assert!(d.fragment_shader.contains("@fragment"), "quad FS must contain @fragment");
+        assert!(
+            d.fragment_shader.contains("@fragment"),
+            "quad FS must contain @fragment"
+        );
     }
 
     #[test]
     fn wgsl_sprite_vs_contains_at_vertex() {
         let d = describe_sprite_pipeline();
-        assert!(d.vertex_shader.contains("@vertex"), "sprite VS must contain @vertex");
+        assert!(
+            d.vertex_shader.contains("@vertex"),
+            "sprite VS must contain @vertex"
+        );
     }
 
     #[test]
     fn wgsl_sprite_fs_contains_at_fragment() {
         let d = describe_sprite_pipeline();
-        assert!(d.fragment_shader.contains("@fragment"), "sprite FS must contain @fragment");
+        assert!(
+            d.fragment_shader.contains("@fragment"),
+            "sprite FS must contain @fragment"
+        );
     }
 
     #[test]
@@ -2717,19 +3145,28 @@ mod tests {
 
     #[test]
     fn instance_config_vulkan_only() {
-        let cfg = WgpuInstanceConfig { backends: "vulkan", ..WgpuInstanceConfig::default() };
+        let cfg = WgpuInstanceConfig {
+            backends: "vulkan",
+            ..WgpuInstanceConfig::default()
+        };
         assert_eq!(cfg.backends, "vulkan");
     }
 
     #[test]
     fn instance_config_metal_only() {
-        let cfg = WgpuInstanceConfig { backends: "metal", ..WgpuInstanceConfig::default() };
+        let cfg = WgpuInstanceConfig {
+            backends: "metal",
+            ..WgpuInstanceConfig::default()
+        };
         assert_eq!(cfg.backends, "metal");
     }
 
     #[test]
     fn instance_config_dx12_only() {
-        let cfg = WgpuInstanceConfig { backends: "dx12", ..WgpuInstanceConfig::default() };
+        let cfg = WgpuInstanceConfig {
+            backends: "dx12",
+            ..WgpuInstanceConfig::default()
+        };
         assert_eq!(cfg.backends, "dx12");
     }
 
@@ -2846,7 +3283,9 @@ mod tests {
 
     #[test]
     fn gpu_state_ready_has_format() {
-        let s = GpuState::Ready { surface_format: wgpu::TextureFormat::Bgra8UnormSrgb };
+        let s = GpuState::Ready {
+            surface_format: wgpu::TextureFormat::Bgra8UnormSrgb,
+        };
         assert!(matches!(s, GpuState::Ready { .. }));
     }
 
@@ -2876,7 +3315,10 @@ mod tests {
     fn renderer_can_render_requires_ready_state() {
         // can_render() returns false when gpu is None.
         let r = Renderer::new();
-        assert!(!r.can_render(), "can_render must be false without a GPU device");
+        assert!(
+            !r.can_render(),
+            "can_render must be false without a GPU device"
+        );
     }
 
     #[test]
@@ -2886,7 +3328,12 @@ mod tests {
         assert_ne!(state, GpuState::Unavailable, "Requested != Unavailable");
         // The only way to verify can_render with Requested would require a real GPU;
         // here we document the variant exists and is distinguishable.
-        assert_ne!(state, GpuState::Ready { surface_format: wgpu::TextureFormat::Bgra8UnormSrgb });
+        assert_ne!(
+            state,
+            GpuState::Ready {
+                surface_format: wgpu::TextureFormat::Bgra8UnormSrgb
+            }
+        );
     }
 
     #[test]
@@ -2930,15 +3377,24 @@ mod tests {
     #[test]
     fn pipeline_descriptor_shader_nonempty() {
         let d = describe_quad_pipeline();
-        assert!(!d.vertex_shader.trim().is_empty(), "vertex shader must not be empty");
-        assert!(!d.fragment_shader.trim().is_empty(), "fragment shader must not be empty");
+        assert!(
+            !d.vertex_shader.trim().is_empty(),
+            "vertex shader must not be empty"
+        );
+        assert!(
+            !d.fragment_shader.trim().is_empty(),
+            "fragment shader must not be empty"
+        );
     }
 
     #[test]
     fn pipeline_descriptor_entries_nonempty() {
         let d = describe_quad_pipeline();
         assert!(!d.vertex_entry.is_empty(), "vertex_entry must not be empty");
-        assert!(!d.fragment_entry.is_empty(), "fragment_entry must not be empty");
+        assert!(
+            !d.fragment_entry.is_empty(),
+            "fragment_entry must not be empty"
+        );
     }
 
     #[test]
@@ -2968,8 +3424,14 @@ mod tests {
     #[test]
     fn wgsl_contains_fn_keyword() {
         let d = describe_quad_pipeline();
-        assert!(d.vertex_shader.contains("fn "), "vertex shader must contain fn keyword");
-        assert!(d.fragment_shader.contains("fn "), "fragment shader must contain fn keyword");
+        assert!(
+            d.vertex_shader.contains("fn "),
+            "vertex shader must contain fn keyword"
+        );
+        assert!(
+            d.fragment_shader.contains("fn "),
+            "fragment shader must contain fn keyword"
+        );
     }
 
     #[test]
@@ -3016,7 +3478,10 @@ mod tests {
         // WgpuInstanceConfig derives Copy; assigning must not move the original.
         let cfg = WgpuInstanceConfig::default();
         let copy = cfg;
-        assert_eq!(cfg.backends, copy.backends, "Copy must produce identical value");
+        assert_eq!(
+            cfg.backends, copy.backends,
+            "Copy must produce identical value"
+        );
     }
 
     #[test]
@@ -3024,13 +3489,19 @@ mod tests {
         let a = WgpuInstanceConfig::default();
         let b = WgpuInstanceConfig::default();
         assert_eq!(a, b, "two defaults must be equal");
-        let c = WgpuInstanceConfig { backends: "dx12", ..WgpuInstanceConfig::default() };
+        let c = WgpuInstanceConfig {
+            backends: "dx12",
+            ..WgpuInstanceConfig::default()
+        };
         assert_ne!(a, c, "different backends must not be equal");
     }
 
     #[test]
     fn wgpu_instance_config_gl_backend() {
-        let cfg = WgpuInstanceConfig { backends: "gl", ..WgpuInstanceConfig::default() };
+        let cfg = WgpuInstanceConfig {
+            backends: "gl",
+            ..WgpuInstanceConfig::default()
+        };
         assert_eq!(cfg.backends, "gl");
         assert_eq!(cfg.dx12_shader_compiler, "fxc");
         assert_eq!(cfg.gles_minor_version, 2);
@@ -3038,19 +3509,28 @@ mod tests {
 
     #[test]
     fn wgpu_instance_config_gles_minor_version_can_be_0() {
-        let cfg = WgpuInstanceConfig { gles_minor_version: 0, ..WgpuInstanceConfig::default() };
+        let cfg = WgpuInstanceConfig {
+            gles_minor_version: 0,
+            ..WgpuInstanceConfig::default()
+        };
         assert_eq!(cfg.gles_minor_version, 0);
     }
 
     #[test]
     fn wgpu_instance_config_gles_minor_version_can_be_3() {
-        let cfg = WgpuInstanceConfig { gles_minor_version: 3, ..WgpuInstanceConfig::default() };
+        let cfg = WgpuInstanceConfig {
+            gles_minor_version: 3,
+            ..WgpuInstanceConfig::default()
+        };
         assert_eq!(cfg.gles_minor_version, 3);
     }
 
     #[test]
     fn wgpu_instance_config_dx12_dxc_compiler() {
-        let cfg = WgpuInstanceConfig { dx12_shader_compiler: "dxc", ..WgpuInstanceConfig::default() };
+        let cfg = WgpuInstanceConfig {
+            dx12_shader_compiler: "dxc",
+            ..WgpuInstanceConfig::default()
+        };
         assert_eq!(cfg.dx12_shader_compiler, "dxc");
     }
 
@@ -3080,7 +3560,10 @@ mod tests {
     #[test]
     fn swapchain_config_present_mode_never_empty() {
         let cfg = SwapchainConfig::default_for_size(640, 480);
-        assert!(!cfg.present_mode.is_empty(), "present_mode must not be empty");
+        assert!(
+            !cfg.present_mode.is_empty(),
+            "present_mode must not be empty"
+        );
     }
 
     #[test]
@@ -3091,7 +3574,11 @@ mod tests {
 
     #[test]
     fn color_space_linear_and_gamma_differ() {
-        assert_ne!(ColorSpace::Linear, ColorSpace::Gamma, "Linear and Gamma must be distinct");
+        assert_ne!(
+            ColorSpace::Linear,
+            ColorSpace::Gamma,
+            "Linear and Gamma must be distinct"
+        );
     }
 
     #[test]
@@ -3128,7 +3615,9 @@ mod tests {
     fn gpu_state_three_variants_all_distinct() {
         let unavailable = GpuState::Unavailable;
         let requested = GpuState::Requested;
-        let ready = GpuState::Ready { surface_format: wgpu::TextureFormat::Bgra8UnormSrgb };
+        let ready = GpuState::Ready {
+            surface_format: wgpu::TextureFormat::Bgra8UnormSrgb,
+        };
         assert_ne!(unavailable, requested);
         assert_ne!(unavailable, ready);
         assert_ne!(requested, ready);
@@ -3141,7 +3630,11 @@ mod tests {
         // rgba comes first but bgra is not "preferred" — the function returns the first match.
         // Since rgba appears before bgra, the first-match result must be rgba8unorm-srgb.
         let result = Renderer::negotiate_surface_format(candidates);
-        assert_eq!(result, Some("rgba8unorm-srgb"), "first matching format wins");
+        assert_eq!(
+            result,
+            Some("rgba8unorm-srgb"),
+            "first matching format wins"
+        );
     }
 
     #[test]
@@ -3193,7 +3686,10 @@ mod tests {
     #[test]
     fn create_instance_config_backends_is_all() {
         let cfg = Renderer::create_instance_config();
-        assert_eq!(cfg.backends, "all", "create_instance_config must return backends=all");
+        assert_eq!(
+            cfg.backends, "all",
+            "create_instance_config must return backends=all"
+        );
     }
 
     #[test]
@@ -3243,18 +3739,26 @@ mod tests {
     #[test]
     fn sprite_pipeline_vertex_shader_nonempty() {
         let d = describe_sprite_pipeline();
-        assert!(!d.vertex_shader.trim().is_empty(), "sprite vertex shader must not be empty");
+        assert!(
+            !d.vertex_shader.trim().is_empty(),
+            "sprite vertex shader must not be empty"
+        );
     }
 
     #[test]
     fn sprite_pipeline_fragment_shader_nonempty() {
         let d = describe_sprite_pipeline();
-        assert!(!d.fragment_shader.trim().is_empty(), "sprite fragment shader must not be empty");
+        assert!(
+            !d.fragment_shader.trim().is_empty(),
+            "sprite fragment shader must not be empty"
+        );
     }
 
     #[test]
     fn gpu_state_ready_clone_preserves_format() {
-        let original = GpuState::Ready { surface_format: wgpu::TextureFormat::Rgba8UnormSrgb };
+        let original = GpuState::Ready {
+            surface_format: wgpu::TextureFormat::Rgba8UnormSrgb,
+        };
         let cloned = original.clone();
         assert_eq!(original, cloned, "cloned Ready state must equal original");
     }
@@ -3267,7 +3771,11 @@ mod tests {
 
     #[test]
     fn frame_stats_copy_semantics() {
-        let stats = FrameStats { quads_drawn: 5, frames: 2, ..FrameStats::default() };
+        let stats = FrameStats {
+            quads_drawn: 5,
+            frames: 2,
+            ..FrameStats::default()
+        };
         let copy = stats;
         assert_eq!(stats.quads_drawn, copy.quads_drawn);
         assert_eq!(stats.frames, copy.frames);
@@ -3294,7 +3802,10 @@ mod tests {
     fn ortho_projection_negative_y_axis() {
         // The renderer uses top-left origin; y-axis is flipped → y scale must be negative.
         let m = ortho_projection(1920.0, 1080.0);
-        assert!(m[1][1] < 0.0, "y scale must be negative (top-left origin convention)");
+        assert!(
+            m[1][1] < 0.0,
+            "y scale must be negative (top-left origin convention)"
+        );
     }
 
     #[test]
@@ -3313,13 +3824,19 @@ mod tests {
         assert_eq!(cfg.clear_color.0[0], 0.0, "R must be 0 for black clear");
         assert_eq!(cfg.clear_color.0[1], 0.0, "G must be 0 for black clear");
         assert_eq!(cfg.clear_color.0[2], 0.0, "B must be 0 for black clear");
-        assert_eq!(cfg.clear_color.0[3], 1.0, "A must be 1 for opaque black clear");
+        assert_eq!(
+            cfg.clear_color.0[3], 1.0,
+            "A must be 1 for opaque black clear"
+        );
     }
 
     #[test]
     fn render_pass_config_default_sample_count_is_1() {
         let cfg = RenderPassConfig::default();
-        assert_eq!(cfg.sample_count, 1, "default sample_count must be 1 (no MSAA)");
+        assert_eq!(
+            cfg.sample_count, 1,
+            "default sample_count must be 1 (no MSAA)"
+        );
     }
 
     #[test]
@@ -3355,7 +3872,10 @@ mod tests {
     fn render_pass_config_different_sample_counts_not_equal() {
         let no_msaa = RenderPassConfig::default();
         let msaa = RenderPassConfig::msaa4();
-        assert_ne!(no_msaa, msaa, "configs with different sample_count must not be equal");
+        assert_ne!(
+            no_msaa, msaa,
+            "configs with different sample_count must not be equal"
+        );
     }
 
     #[test]
@@ -3364,9 +3884,18 @@ mod tests {
             clear_color: LinearRgba([0.1, 0.2, 0.3, 1.0]),
             ..RenderPassConfig::default()
         };
-        assert!((cfg.clear_color.0[0] - 0.1).abs() < 1e-6, "R channel must be 0.1");
-        assert!((cfg.clear_color.0[1] - 0.2).abs() < 1e-6, "G channel must be 0.2");
-        assert!((cfg.clear_color.0[2] - 0.3).abs() < 1e-6, "B channel must be 0.3");
+        assert!(
+            (cfg.clear_color.0[0] - 0.1).abs() < 1e-6,
+            "R channel must be 0.1"
+        );
+        assert!(
+            (cfg.clear_color.0[1] - 0.2).abs() < 1e-6,
+            "G channel must be 0.2"
+        );
+        assert!(
+            (cfg.clear_color.0[2] - 0.3).abs() < 1e-6,
+            "B channel must be 0.3"
+        );
     }
 
     #[test]
@@ -3379,13 +3908,16 @@ mod tests {
     #[test]
     fn render_pass_config_copy_produces_equal_value() {
         let cfg = RenderPassConfig::msaa4();
-        let copy = cfg;  // Copy semantics via #[derive(Copy)]
+        let copy = cfg; // Copy semantics via #[derive(Copy)]
         assert_eq!(cfg, copy, "copied RenderPassConfig must equal original");
     }
 
     #[test]
     fn render_pass_config_depth_clear_can_be_zero() {
-        let cfg = RenderPassConfig { depth_clear: 0.0, ..RenderPassConfig::default() };
+        let cfg = RenderPassConfig {
+            depth_clear: 0.0,
+            ..RenderPassConfig::default()
+        };
         assert_eq!(cfg.depth_clear, 0.0, "depth_clear 0.0 must be preserved");
     }
 
@@ -3396,14 +3928,23 @@ mod tests {
     #[test]
     fn pipeline_descriptor_vertex_shader_is_nonempty_string() {
         let d = describe_quad_pipeline();
-        assert!(!d.vertex_shader.is_empty(), "vertex_shader must be a non-empty string");
-        assert!(d.vertex_shader.len() > 10, "vertex_shader must have substantial content");
+        assert!(
+            !d.vertex_shader.is_empty(),
+            "vertex_shader must be a non-empty string"
+        );
+        assert!(
+            d.vertex_shader.len() > 10,
+            "vertex_shader must have substantial content"
+        );
     }
 
     #[test]
     fn pipeline_descriptor_topology_is_triangle_list_quad_pipeline() {
         let d = describe_quad_pipeline();
-        assert_eq!(d.topology, "triangle-list", "quad pipeline topology must be triangle-list");
+        assert_eq!(
+            d.topology, "triangle-list",
+            "quad pipeline topology must be triangle-list"
+        );
     }
 
     #[test]
@@ -3411,7 +3952,9 @@ mod tests {
         let d = describe_quad_pipeline();
         assert!(!d.vertex_entry.is_empty(), "vertex_entry must not be empty");
         assert!(
-            d.vertex_entry.chars().all(|c| c.is_alphanumeric() || c == '_'),
+            d.vertex_entry
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '_'),
             "vertex_entry must be a valid identifier: {}",
             d.vertex_entry
         );
@@ -3420,9 +3963,14 @@ mod tests {
     #[test]
     fn pipeline_descriptor_fragment_entry_is_valid_identifier() {
         let d = describe_quad_pipeline();
-        assert!(!d.fragment_entry.is_empty(), "fragment_entry must not be empty");
         assert!(
-            d.fragment_entry.chars().all(|c| c.is_alphanumeric() || c == '_'),
+            !d.fragment_entry.is_empty(),
+            "fragment_entry must not be empty"
+        );
+        assert!(
+            d.fragment_entry
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '_'),
             "fragment_entry must be a valid identifier: {}",
             d.fragment_entry
         );
@@ -3467,7 +4015,11 @@ mod tests {
         let mut r = Renderer::new();
         r.begin_frame().unwrap();
         r.draw_quads_gpu(&[QuadInstance::default()]).unwrap();
-        assert_eq!(r.stats().quads_drawn, 1, "quads_drawn must be 1 after one quad");
+        assert_eq!(
+            r.stats().quads_drawn,
+            1,
+            "quads_drawn must be 1 after one quad"
+        );
     }
 
     #[test]
@@ -3476,7 +4028,11 @@ mod tests {
         let mut scene = Scene::new();
         scene.push_poly_sprite(crate::scene::PolychromeSprite::default());
         r.draw(&mut scene);
-        assert_eq!(r.stats().sprites_drawn, 1, "sprites_drawn must be 1 after one polychrome sprite");
+        assert_eq!(
+            r.stats().sprites_drawn,
+            1,
+            "sprites_drawn must be 1 after one polychrome sprite"
+        );
     }
 
     #[test]
@@ -3486,7 +4042,10 @@ mod tests {
         scene.push_quad(crate::scene::Quad::default());
         scene.push_shadow(crate::scene::Shadow::default());
         r.draw(&mut scene);
-        assert!(r.stats().quads_drawn > 0, "must have quads before reset check");
+        assert!(
+            r.stats().quads_drawn > 0,
+            "must have quads before reset check"
+        );
 
         let fresh = Renderer::new();
         let s = fresh.stats();
@@ -3525,7 +4084,11 @@ mod tests {
             scene.push_underline(crate::scene::Underline::default());
         }
         r.draw(&mut scene);
-        assert_eq!(r.stats().underlines_drawn, 3, "underlines_drawn must count pushed underlines");
+        assert_eq!(
+            r.stats().underlines_drawn,
+            3,
+            "underlines_drawn must count pushed underlines"
+        );
     }
 
     #[test]
@@ -3548,8 +4111,14 @@ mod tests {
         let m = ortho_projection(w, h);
         let ndc_x = 0.0_f32 * m[0][0] + m[3][0];
         let ndc_y = 0.0_f32 * m[1][1] + m[3][1];
-        assert!((ndc_x - (-1.0)).abs() < 1e-5, "top-left x → NDC -1, got {ndc_x}");
-        assert!((ndc_y - 1.0).abs() < 1e-5, "top-left y → NDC 1, got {ndc_y}");
+        assert!(
+            (ndc_x - (-1.0)).abs() < 1e-5,
+            "top-left x → NDC -1, got {ndc_x}"
+        );
+        assert!(
+            (ndc_y - 1.0).abs() < 1e-5,
+            "top-left y → NDC 1, got {ndc_y}"
+        );
     }
 
     #[test]
@@ -3558,8 +4127,14 @@ mod tests {
         let m = ortho_projection(w, h);
         let ndc_x = w * m[0][0] + m[3][0];
         let ndc_y = h * m[1][1] + m[3][1];
-        assert!((ndc_x - 1.0).abs() < 1e-5, "bottom-right x → NDC 1, got {ndc_x}");
-        assert!((ndc_y - (-1.0)).abs() < 1e-5, "bottom-right y → NDC -1, got {ndc_y}");
+        assert!(
+            (ndc_x - 1.0).abs() < 1e-5,
+            "bottom-right x → NDC 1, got {ndc_x}"
+        );
+        assert!(
+            (ndc_y - (-1.0)).abs() < 1e-5,
+            "bottom-right y → NDC -1, got {ndc_y}"
+        );
     }
 
     #[test]
@@ -3581,12 +4156,14 @@ mod tests {
             assert!(
                 (ndc_x - 0.0).abs() < 1e-4,
                 "center NDC x must be 0 for {}x{}, got {ndc_x}",
-                w, h
+                w,
+                h
             );
             assert!(
                 (ndc_y - 0.0).abs() < 1e-4,
                 "center NDC y must be 0 for {}x{}, got {ndc_y}",
-                w, h
+                w,
+                h
             );
         }
     }
@@ -3602,19 +4179,31 @@ mod tests {
         let mut atlas = TextureAtlas::new(0);
         for i in 0..200u32 {
             atlas.pack_glyph(
-                GlyphCacheKey { font_id: 0, font_size_px: 120, glyph_id: i + 10000, subpixel_index: 0 },
+                GlyphCacheKey {
+                    font_id: 0,
+                    font_size_px: 120,
+                    glyph_id: i + 10000,
+                    subpixel_index: 0,
+                },
                 32,
                 32,
             );
             let ratio = atlas.fill_ratio();
-            assert!(ratio <= 1.0, "fill_ratio must be <= 1.0, got {ratio} after packing glyph {i}");
+            assert!(
+                ratio <= 1.0,
+                "fill_ratio must be <= 1.0, got {ratio} after packing glyph {i}"
+            );
         }
     }
 
     #[test]
     fn atlas_eviction_batch_size_matches_constant() {
         use crate::atlas::TextureAtlas;
-        assert_eq!(TextureAtlas::EVICTION_BATCH, 32, "EVICTION_BATCH constant must be 32");
+        assert_eq!(
+            TextureAtlas::EVICTION_BATCH,
+            32,
+            "EVICTION_BATCH constant must be 32"
+        );
     }
 
     #[test]
@@ -3624,18 +4213,31 @@ mod tests {
         let mut atlas = TextureAtlas::new(0);
         for i in 0..(TextureAtlas::EVICTION_BATCH + 1) as u32 {
             atlas.pack_glyph(
-                GlyphCacheKey { font_id: 0, font_size_px: 120, glyph_id: i + 20000, subpixel_index: 0 },
+                GlyphCacheKey {
+                    font_id: 0,
+                    font_size_px: 120,
+                    glyph_id: i + 20000,
+                    subpixel_index: 0,
+                },
                 8,
                 8,
             );
         }
         atlas.clear();
         let result = atlas.pack_glyph(
-            GlyphCacheKey { font_id: 0, font_size_px: 120, glyph_id: 99999, subpixel_index: 0 },
+            GlyphCacheKey {
+                font_id: 0,
+                font_size_px: 120,
+                glyph_id: 99999,
+                subpixel_index: 0,
+            },
             8,
             8,
         );
-        assert!(result.is_some(), "new allocation after eviction/clear must succeed");
+        assert!(
+            result.is_some(),
+            "new allocation after eviction/clear must succeed"
+        );
     }
 
     #[test]
@@ -3644,14 +4246,23 @@ mod tests {
 
         let mut atlas = TextureAtlas::new(0);
         let keys: Vec<GlyphCacheKey> = (0..5u32)
-            .map(|i| GlyphCacheKey { font_id: 0, font_size_px: 120, glyph_id: i + 30000, subpixel_index: 0 })
+            .map(|i| GlyphCacheKey {
+                font_id: 0,
+                font_size_px: 120,
+                glyph_id: i + 30000,
+                subpixel_index: 0,
+            })
             .collect();
 
         for &key in &keys {
             atlas.pack_glyph(key, 8, 8).unwrap();
         }
         for &key in &keys {
-            assert!(atlas.get(&key).is_some(), "key glyph_id={} must exist before eviction", key.glyph_id);
+            assert!(
+                atlas.get(&key).is_some(),
+                "key glyph_id={} must exist before eviction",
+                key.glyph_id
+            );
         }
 
         atlas.clear();
@@ -3669,7 +4280,11 @@ mod tests {
     fn atlas_fill_ratio_is_zero_on_fresh_atlas() {
         use crate::atlas::TextureAtlas;
         let atlas = TextureAtlas::new(0);
-        assert_eq!(atlas.fill_ratio(), 0.0, "fresh atlas must have fill_ratio=0");
+        assert_eq!(
+            atlas.fill_ratio(),
+            0.0,
+            "fresh atlas must have fill_ratio=0"
+        );
     }
 
     // ------------------------------------------------------------------
@@ -3678,32 +4293,59 @@ mod tests {
 
     #[test]
     fn render_pass_config_stencil_clear_can_be_nonzero() {
-        let cfg = RenderPassConfig { stencil_clear: 255, ..RenderPassConfig::default() };
-        assert_eq!(cfg.stencil_clear, 255, "stencil_clear 255 must be preserved");
+        let cfg = RenderPassConfig {
+            stencil_clear: 255,
+            ..RenderPassConfig::default()
+        };
+        assert_eq!(
+            cfg.stencil_clear, 255,
+            "stencil_clear 255 must be preserved"
+        );
     }
 
     #[test]
     fn render_pass_config_sample_count_1_means_no_msaa() {
         let cfg = RenderPassConfig::default();
-        assert_eq!(cfg.sample_count, 1, "sample_count=1 represents a non-MSAA pass");
-        assert_ne!(cfg.sample_count, 4, "non-MSAA pass must not have sample_count=4");
+        assert_eq!(
+            cfg.sample_count, 1,
+            "sample_count=1 represents a non-MSAA pass"
+        );
+        assert_ne!(
+            cfg.sample_count, 4,
+            "non-MSAA pass must not have sample_count=4"
+        );
     }
 
     #[test]
     fn render_pass_config_msaa4_differs_from_default() {
         let default = RenderPassConfig::default();
         let msaa = RenderPassConfig::msaa4();
-        assert_ne!(default.sample_count, msaa.sample_count, "msaa4 and default must differ in sample_count");
+        assert_ne!(
+            default.sample_count, msaa.sample_count,
+            "msaa4 and default must differ in sample_count"
+        );
     }
 
     #[test]
     fn pipeline_descriptor_sprite_clone_equal() {
         let d = describe_sprite_pipeline();
         let copy = d;
-        assert_eq!(d.topology, copy.topology, "copied sprite descriptor topology must match");
-        assert_eq!(d.color_format, copy.color_format, "copied sprite descriptor color_format must match");
-        assert_eq!(d.vertex_entry, copy.vertex_entry, "copied sprite descriptor vertex_entry must match");
-        assert_eq!(d.fragment_entry, copy.fragment_entry, "copied sprite descriptor fragment_entry must match");
+        assert_eq!(
+            d.topology, copy.topology,
+            "copied sprite descriptor topology must match"
+        );
+        assert_eq!(
+            d.color_format, copy.color_format,
+            "copied sprite descriptor color_format must match"
+        );
+        assert_eq!(
+            d.vertex_entry, copy.vertex_entry,
+            "copied sprite descriptor vertex_entry must match"
+        );
+        assert_eq!(
+            d.fragment_entry, copy.fragment_entry,
+            "copied sprite descriptor fragment_entry must match"
+        );
     }
 
     #[test]
@@ -3713,7 +4355,11 @@ mod tests {
         scene.push_sprite(crate::scene::MonochromeSprite::default());
         scene.push_sprite(crate::scene::MonochromeSprite::default());
         r.draw(&mut scene);
-        assert_eq!(r.stats().mono_sprites_drawn, 2, "mono_sprites_drawn must count pushed monochrome sprites");
+        assert_eq!(
+            r.stats().mono_sprites_drawn,
+            2,
+            "mono_sprites_drawn must count pushed monochrome sprites"
+        );
     }
 
     #[test]
@@ -3722,7 +4368,11 @@ mod tests {
         let mut scene = Scene::new();
         scene.push_path(crate::scene::Path::default());
         r.draw(&mut scene);
-        assert_eq!(r.stats().paths_drawn, 1, "paths_drawn must count pushed paths");
+        assert_eq!(
+            r.stats().paths_drawn,
+            1,
+            "paths_drawn must count pushed paths"
+        );
     }
 
     #[test]
@@ -3730,8 +4380,14 @@ mod tests {
         // Column-major layout: the translation is in m[3][0] and m[3][1].
         let m = ortho_projection(800.0, 600.0);
         // m[3][0] = tx = -1, m[3][1] = ty = 1
-        assert!((m[3][0] - (-1.0)).abs() < 1e-6, "tx must be -1 (column 3, row 0)");
-        assert!((m[3][1] - 1.0).abs() < 1e-6, "ty must be 1 (column 3, row 1)");
+        assert!(
+            (m[3][0] - (-1.0)).abs() < 1e-6,
+            "tx must be -1 (column 3, row 0)"
+        );
+        assert!(
+            (m[3][1] - 1.0).abs() < 1e-6,
+            "ty must be 1 (column 3, row 1)"
+        );
     }
 
     #[test]
@@ -3750,44 +4406,79 @@ mod tests {
 
     #[test]
     fn adapter_info_empty_name_is_valid() {
-        let info = AdapterInfo { name: String::new(), vendor: 0, device: 0, backend: String::from("unknown") };
+        let info = AdapterInfo {
+            name: String::new(),
+            vendor: 0,
+            device: 0,
+            backend: String::from("unknown"),
+        };
         assert!(info.name.is_empty(), "empty name must be accepted");
     }
 
     #[test]
     fn adapter_info_backend_round_trips_as_string() {
-        let info = AdapterInfo { name: String::from("Test"), vendor: 0, device: 0, backend: String::from("vulkan") };
+        let info = AdapterInfo {
+            name: String::from("Test"),
+            vendor: 0,
+            device: 0,
+            backend: String::from("vulkan"),
+        };
         assert_eq!(info.backend, "vulkan", "backend must round-trip as string");
     }
 
     #[test]
     fn adapter_info_backend_metal_round_trips() {
-        let info = AdapterInfo { name: String::new(), vendor: 0, device: 0, backend: String::from("metal") };
+        let info = AdapterInfo {
+            name: String::new(),
+            vendor: 0,
+            device: 0,
+            backend: String::from("metal"),
+        };
         assert_eq!(info.backend, "metal");
     }
 
     #[test]
     fn adapter_info_backend_dx12_round_trips() {
-        let info = AdapterInfo { name: String::new(), vendor: 0, device: 0, backend: String::from("dx12") };
+        let info = AdapterInfo {
+            name: String::new(),
+            vendor: 0,
+            device: 0,
+            backend: String::from("dx12"),
+        };
         assert_eq!(info.backend, "dx12");
     }
 
     #[test]
     fn adapter_info_clone_equals_original() {
-        let info = AdapterInfo { name: String::from("GPU"), vendor: 0x10de, device: 0x2204, backend: String::from("vulkan") };
+        let info = AdapterInfo {
+            name: String::from("GPU"),
+            vendor: 0x10de,
+            device: 0x2204,
+            backend: String::from("vulkan"),
+        };
         let cloned = info.clone();
         assert_eq!(info, cloned, "cloned AdapterInfo must equal original");
     }
 
     #[test]
     fn adapter_info_vendor_preserved() {
-        let info = AdapterInfo { name: String::new(), vendor: 0x8086, device: 0, backend: String::from("gl") };
+        let info = AdapterInfo {
+            name: String::new(),
+            vendor: 0x8086,
+            device: 0,
+            backend: String::from("gl"),
+        };
         assert_eq!(info.vendor, 0x8086);
     }
 
     #[test]
     fn adapter_info_device_preserved() {
-        let info = AdapterInfo { name: String::new(), vendor: 0, device: 0xabcd, backend: String::from("gl") };
+        let info = AdapterInfo {
+            name: String::new(),
+            vendor: 0,
+            device: 0xabcd,
+            backend: String::from("gl"),
+        };
         assert_eq!(info.device, 0xabcd);
     }
 
@@ -3797,45 +4488,84 @@ mod tests {
 
     #[test]
     fn device_descriptor_no_label_is_valid() {
-        let desc = DeviceDescriptor { label: None, required_features: 0, required_limits: String::from("default") };
+        let desc = DeviceDescriptor {
+            label: None,
+            required_features: 0,
+            required_limits: String::from("default"),
+        };
         assert!(desc.label.is_none(), "None label must be accepted");
     }
 
     #[test]
     fn device_descriptor_with_label_is_valid() {
-        let desc = DeviceDescriptor { label: Some(String::from("test-device")), required_features: 0, required_limits: String::from("default") };
+        let desc = DeviceDescriptor {
+            label: Some(String::from("test-device")),
+            required_features: 0,
+            required_limits: String::from("default"),
+        };
         assert_eq!(desc.label.as_deref(), Some("test-device"));
     }
 
     #[test]
     fn device_descriptor_required_features_zero_is_valid() {
-        let desc = DeviceDescriptor { label: None, required_features: 0, required_limits: String::from("default") };
-        assert_eq!(desc.required_features, 0, "required_features=0 means no features required");
+        let desc = DeviceDescriptor {
+            label: None,
+            required_features: 0,
+            required_limits: String::from("default"),
+        };
+        assert_eq!(
+            desc.required_features, 0,
+            "required_features=0 means no features required"
+        );
     }
 
     #[test]
     fn device_descriptor_required_features_nonzero_preserved() {
-        let desc = DeviceDescriptor { label: None, required_features: 0b1010, required_limits: String::from("default") };
+        let desc = DeviceDescriptor {
+            label: None,
+            required_features: 0b1010,
+            required_limits: String::from("default"),
+        };
         assert_eq!(desc.required_features, 0b1010);
     }
 
     #[test]
     fn device_descriptor_two_with_same_fields_are_equal() {
-        let a = DeviceDescriptor { label: None, required_features: 0, required_limits: String::from("default") };
-        let b = DeviceDescriptor { label: None, required_features: 0, required_limits: String::from("default") };
+        let a = DeviceDescriptor {
+            label: None,
+            required_features: 0,
+            required_limits: String::from("default"),
+        };
+        let b = DeviceDescriptor {
+            label: None,
+            required_features: 0,
+            required_limits: String::from("default"),
+        };
         assert_eq!(a, b, "two DeviceDescriptors with same fields must be equal");
     }
 
     #[test]
     fn device_descriptor_different_labels_are_not_equal() {
-        let a = DeviceDescriptor { label: Some(String::from("a")), required_features: 0, required_limits: String::from("default") };
-        let b = DeviceDescriptor { label: Some(String::from("b")), required_features: 0, required_limits: String::from("default") };
+        let a = DeviceDescriptor {
+            label: Some(String::from("a")),
+            required_features: 0,
+            required_limits: String::from("default"),
+        };
+        let b = DeviceDescriptor {
+            label: Some(String::from("b")),
+            required_features: 0,
+            required_limits: String::from("default"),
+        };
         assert_ne!(a, b);
     }
 
     #[test]
     fn device_descriptor_clone_equals_original() {
-        let desc = DeviceDescriptor { label: Some(String::from("x")), required_features: 42, required_limits: String::from("downlevel_webgl2") };
+        let desc = DeviceDescriptor {
+            label: Some(String::from("x")),
+            required_features: 42,
+            required_limits: String::from("downlevel_webgl2"),
+        };
         let cloned = desc.clone();
         assert_eq!(desc, cloned);
     }
@@ -3847,26 +4577,46 @@ mod tests {
     #[test]
     fn negotiate_surface_format_single_element_bgra_returns_it() {
         let result = Renderer::negotiate_surface_format(&["bgra8unorm-srgb"]);
-        assert_eq!(result, Some("bgra8unorm-srgb"), "single-element bgra8 must be returned");
+        assert_eq!(
+            result,
+            Some("bgra8unorm-srgb"),
+            "single-element bgra8 must be returned"
+        );
     }
 
     #[test]
     fn negotiate_surface_format_single_element_rgba_returns_it() {
         let result = Renderer::negotiate_surface_format(&["rgba8unorm-srgb"]);
-        assert_eq!(result, Some("rgba8unorm-srgb"), "single-element rgba8 must be returned");
+        assert_eq!(
+            result,
+            Some("rgba8unorm-srgb"),
+            "single-element rgba8 must be returned"
+        );
     }
 
     #[test]
     fn negotiate_surface_format_all_unsupported_returns_none() {
         let candidates = &["r32float", "rg16float", "rgba32float", "r8unorm"];
-        assert_eq!(Renderer::negotiate_surface_format(candidates), None, "all unsupported → None");
+        assert_eq!(
+            Renderer::negotiate_surface_format(candidates),
+            None,
+            "all unsupported → None"
+        );
     }
 
     #[test]
     fn negotiate_surface_format_10_element_list_returns_first_preferred() {
         let candidates = &[
-            "r8unorm", "rg8unorm", "rgba32float", "r16float", "rg16float",
-            "rgba16float", "r32float", "bgra8unorm-srgb", "rgba8unorm-srgb", "rg32float",
+            "r8unorm",
+            "rg8unorm",
+            "rgba32float",
+            "r16float",
+            "rg16float",
+            "rgba16float",
+            "r32float",
+            "bgra8unorm-srgb",
+            "rgba8unorm-srgb",
+            "rg32float",
         ];
         assert_eq!(
             Renderer::negotiate_surface_format(candidates),
@@ -3895,19 +4645,38 @@ mod tests {
     #[test]
     fn render_target_default_sample_count_is_1() {
         let rt = RenderTarget::default();
-        assert_eq!(rt.sample_count, 1, "default sample_count must be 1 (no MSAA)");
+        assert_eq!(
+            rt.sample_count, 1,
+            "default sample_count must be 1 (no MSAA)"
+        );
     }
 
     #[test]
     fn render_target_zero_width_is_valid() {
-        let rt = RenderTarget { width: 0, height: 0, format: String::from("bgra8unorm-srgb"), sample_count: 1 };
-        assert_eq!(rt.width, 0, "width=0 must be accepted for offscreen targets");
-        assert_eq!(rt.height, 0, "height=0 must be accepted for offscreen targets");
+        let rt = RenderTarget {
+            width: 0,
+            height: 0,
+            format: String::from("bgra8unorm-srgb"),
+            sample_count: 1,
+        };
+        assert_eq!(
+            rt.width, 0,
+            "width=0 must be accepted for offscreen targets"
+        );
+        assert_eq!(
+            rt.height, 0,
+            "height=0 must be accepted for offscreen targets"
+        );
     }
 
     #[test]
     fn render_target_clone_preserves_all_fields() {
-        let rt = RenderTarget { width: 1920, height: 1080, format: String::from("rgba8unorm-srgb"), sample_count: 4 };
+        let rt = RenderTarget {
+            width: 1920,
+            height: 1080,
+            format: String::from("rgba8unorm-srgb"),
+            sample_count: 4,
+        };
         let cloned = rt.clone();
         assert_eq!(rt, cloned, "cloned RenderTarget must equal original");
         assert_eq!(cloned.width, 1920);
@@ -3919,23 +4688,57 @@ mod tests {
     #[test]
     fn render_target_matches_swapchain_config_dimensions() {
         let sc = SwapchainConfig::default_for_size(1280, 720);
-        let rt = RenderTarget { width: sc.width, height: sc.height, format: sc.format.to_string(), sample_count: 1 };
-        assert_eq!(rt.width, sc.width, "RenderTarget width must match SwapchainConfig");
-        assert_eq!(rt.height, sc.height, "RenderTarget height must match SwapchainConfig");
+        let rt = RenderTarget {
+            width: sc.width,
+            height: sc.height,
+            format: sc.format.to_string(),
+            sample_count: 1,
+        };
+        assert_eq!(
+            rt.width, sc.width,
+            "RenderTarget width must match SwapchainConfig"
+        );
+        assert_eq!(
+            rt.height, sc.height,
+            "RenderTarget height must match SwapchainConfig"
+        );
     }
 
     #[test]
     fn render_target_partial_eq_two_identical() {
-        let a = RenderTarget { width: 800, height: 600, format: String::from("bgra8unorm-srgb"), sample_count: 1 };
-        let b = RenderTarget { width: 800, height: 600, format: String::from("bgra8unorm-srgb"), sample_count: 1 };
+        let a = RenderTarget {
+            width: 800,
+            height: 600,
+            format: String::from("bgra8unorm-srgb"),
+            sample_count: 1,
+        };
+        let b = RenderTarget {
+            width: 800,
+            height: 600,
+            format: String::from("bgra8unorm-srgb"),
+            sample_count: 1,
+        };
         assert_eq!(a, b, "two identical RenderTargets must be equal");
     }
 
     #[test]
     fn render_target_different_sample_counts_not_equal() {
-        let a = RenderTarget { width: 800, height: 600, format: String::from("bgra8unorm-srgb"), sample_count: 1 };
-        let b = RenderTarget { width: 800, height: 600, format: String::from("bgra8unorm-srgb"), sample_count: 4 };
-        assert_ne!(a, b, "different sample_counts must make RenderTargets unequal");
+        let a = RenderTarget {
+            width: 800,
+            height: 600,
+            format: String::from("bgra8unorm-srgb"),
+            sample_count: 1,
+        };
+        let b = RenderTarget {
+            width: 800,
+            height: 600,
+            format: String::from("bgra8unorm-srgb"),
+            sample_count: 4,
+        };
+        assert_ne!(
+            a, b,
+            "different sample_counts must make RenderTargets unequal"
+        );
     }
 
     // ------------------------------------------------------------------
@@ -3944,59 +4747,103 @@ mod tests {
 
     #[test]
     fn format_is_srgb_bgra8unorm_srgb() {
-        assert!(format_is_srgb("bgra8unorm-srgb"), "bgra8unorm-srgb must be detected as sRGB");
+        assert!(
+            format_is_srgb("bgra8unorm-srgb"),
+            "bgra8unorm-srgb must be detected as sRGB"
+        );
     }
 
     #[test]
     fn format_is_srgb_rgba8unorm_srgb() {
-        assert!(format_is_srgb("rgba8unorm-srgb"), "rgba8unorm-srgb must be detected as sRGB");
+        assert!(
+            format_is_srgb("rgba8unorm-srgb"),
+            "rgba8unorm-srgb must be detected as sRGB"
+        );
     }
 
     #[test]
     fn format_is_srgb_linear_format_is_false() {
-        assert!(!format_is_srgb("bgra8unorm"), "linear bgra8unorm must not be sRGB");
-        assert!(!format_is_srgb("rgba8unorm"), "linear rgba8unorm must not be sRGB");
+        assert!(
+            !format_is_srgb("bgra8unorm"),
+            "linear bgra8unorm must not be sRGB"
+        );
+        assert!(
+            !format_is_srgb("rgba8unorm"),
+            "linear rgba8unorm must not be sRGB"
+        );
     }
 
     #[test]
     fn format_is_srgb_depth_format_is_false() {
-        assert!(!format_is_srgb("depth32float"), "depth format must not be sRGB");
+        assert!(
+            !format_is_srgb("depth32float"),
+            "depth format must not be sRGB"
+        );
     }
 
     #[test]
     fn format_is_depth_depth32float() {
-        assert!(format_is_depth("depth32float"), "depth32float must be detected as depth format");
+        assert!(
+            format_is_depth("depth32float"),
+            "depth32float must be detected as depth format"
+        );
     }
 
     #[test]
     fn format_is_depth_depth24plus_stencil8() {
-        assert!(format_is_depth("depth24plus-stencil8"), "depth24plus-stencil8 must be detected as depth");
+        assert!(
+            format_is_depth("depth24plus-stencil8"),
+            "depth24plus-stencil8 must be detected as depth"
+        );
     }
 
     #[test]
     fn format_is_depth_rgba8_is_false() {
-        assert!(!format_is_depth("rgba8unorm"), "rgba8unorm must not be a depth format");
+        assert!(
+            !format_is_depth("rgba8unorm"),
+            "rgba8unorm must not be a depth format"
+        );
     }
 
     #[test]
     fn format_bytes_per_pixel_rgba8_is_4() {
-        assert_eq!(format_bytes_per_pixel("rgba8unorm"), Some(4), "rgba8 must be 4 bytes per pixel");
+        assert_eq!(
+            format_bytes_per_pixel("rgba8unorm"),
+            Some(4),
+            "rgba8 must be 4 bytes per pixel"
+        );
     }
 
     #[test]
     fn format_bytes_per_pixel_bgra8srgb_is_4() {
-        assert_eq!(format_bytes_per_pixel("bgra8unorm-srgb"), Some(4), "bgra8unorm-srgb must be 4 bytes per pixel");
+        assert_eq!(
+            format_bytes_per_pixel("bgra8unorm-srgb"),
+            Some(4),
+            "bgra8unorm-srgb must be 4 bytes per pixel"
+        );
     }
 
     #[test]
     fn format_bytes_per_pixel_rgba16_is_8() {
-        assert_eq!(format_bytes_per_pixel("rgba16float"), Some(8), "rgba16float must be 8 bytes per pixel");
+        assert_eq!(
+            format_bytes_per_pixel("rgba16float"),
+            Some(8),
+            "rgba16float must be 8 bytes per pixel"
+        );
     }
 
     #[test]
     fn format_bytes_per_pixel_unknown_returns_none() {
-        assert_eq!(format_bytes_per_pixel("depth32float"), None, "depth32float has no pixel byte size");
-        assert_eq!(format_bytes_per_pixel("my_custom_format"), None, "unknown format returns None");
+        assert_eq!(
+            format_bytes_per_pixel("depth32float"),
+            None,
+            "depth32float has no pixel byte size"
+        );
+        assert_eq!(
+            format_bytes_per_pixel("my_custom_format"),
+            None,
+            "unknown format returns None"
+        );
     }
 
     // ------------------------------------------------------------------
@@ -4011,7 +4858,11 @@ mod tests {
             r.draw_quads_gpu(&[QuadInstance::default()]).unwrap();
             r.end_frame().unwrap();
         }
-        assert_eq!(r.stats().quads_drawn, 100, "100 draw calls must yield total_draws=100");
+        assert_eq!(
+            r.stats().quads_drawn,
+            100,
+            "100 draw calls must yield total_draws=100"
+        );
     }
 
     #[test]
@@ -4021,22 +4872,44 @@ mod tests {
             r.begin_frame().unwrap();
             r.end_frame().unwrap();
         }
-        assert_eq!(r.stats().frames, 100, "100 end_frames must yield frames=100");
+        assert_eq!(
+            r.stats().frames,
+            100,
+            "100 end_frames must yield frames=100"
+        );
         assert_eq!(r.frame_count, 100);
     }
 
     #[test]
     fn frame_stats_serialized_to_key_value_pairs() {
         // Verify FrameStats fields can be formatted as key=value pairs.
-        let s = FrameStats { quads_drawn: 5, shadows_drawn: 2, frosted_drawn: 1, paths_drawn: 0, mono_sprites_drawn: 3, sprites_drawn: 4, underlines_drawn: 1, frames: 7 };
+        let s = FrameStats {
+            quads_drawn: 5,
+            shadows_drawn: 2,
+            frosted_drawn: 1,
+            paths_drawn: 0,
+            mono_sprites_drawn: 3,
+            sprites_drawn: 4,
+            underlines_drawn: 1,
+            frames: 7,
+        };
         let kv = format!(
             "quads={} shadows={} frosted={} paths={} mono_sprites={} sprites={} underlines={} frames={}",
             s.quads_drawn, s.shadows_drawn, s.frosted_drawn, s.paths_drawn,
             s.mono_sprites_drawn, s.sprites_drawn, s.underlines_drawn, s.frames
         );
-        assert!(kv.contains("quads=5"), "serialized must contain quads=5, got: {kv}");
-        assert!(kv.contains("frames=7"), "serialized must contain frames=7, got: {kv}");
-        assert!(kv.contains("shadows=2"), "serialized must contain shadows=2, got: {kv}");
+        assert!(
+            kv.contains("quads=5"),
+            "serialized must contain quads=5, got: {kv}"
+        );
+        assert!(
+            kv.contains("frames=7"),
+            "serialized must contain frames=7, got: {kv}"
+        );
+        assert!(
+            kv.contains("shadows=2"),
+            "serialized must contain shadows=2, got: {kv}"
+        );
     }
 
     #[test]
@@ -4054,8 +4927,14 @@ mod tests {
             underlines_drawn: a.underlines_drawn + b.underlines_drawn,
             frames: a.frames + b.frames,
         };
-        assert_eq!(combined.quads_drawn, 0, "merged empty stats quads_drawn = 0");
-        assert_eq!(combined.shadows_drawn, 0, "merged empty stats shadows_drawn = 0");
+        assert_eq!(
+            combined.quads_drawn, 0,
+            "merged empty stats quads_drawn = 0"
+        );
+        assert_eq!(
+            combined.shadows_drawn, 0,
+            "merged empty stats shadows_drawn = 0"
+        );
         assert_eq!(combined.frames, 0, "merged empty stats frames = 0");
     }
 
@@ -4067,7 +4946,11 @@ mod tests {
             r.draw_quads_gpu(&[QuadInstance::default()]).unwrap();
             r.end_frame().unwrap();
         }
-        assert_eq!(r.stats().quads_drawn, 50, "50 single-quad frames must give quads_drawn=50");
+        assert_eq!(
+            r.stats().quads_drawn,
+            50,
+            "50 single-quad frames must give quads_drawn=50"
+        );
     }
 
     #[test]
@@ -4093,7 +4976,11 @@ mod tests {
     #[test]
     fn get_frame_count_returns_zero_on_new_renderer() {
         let r = Renderer::new();
-        assert_eq!(r.get_frame_count(), 0, "new renderer must have frame count = 0");
+        assert_eq!(
+            r.get_frame_count(),
+            0,
+            "new renderer must have frame count = 0"
+        );
     }
 
     #[test]
@@ -4109,7 +4996,11 @@ mod tests {
         let mut r = Renderer::new();
         r.begin_frame().unwrap();
         r.end_frame().unwrap();
-        assert_eq!(r.get_frame_count(), 1, "one end_frame must give frame count = 1");
+        assert_eq!(
+            r.get_frame_count(),
+            1,
+            "one end_frame must give frame count = 1"
+        );
     }
 
     #[test]
@@ -4119,19 +5010,31 @@ mod tests {
             let mut scene = Scene::new();
             r.draw(&mut scene);
         }
-        assert_eq!(r.get_frame_count(), r.frame_count, "get_frame_count must mirror frame_count field");
+        assert_eq!(
+            r.get_frame_count(),
+            r.frame_count,
+            "get_frame_count must mirror frame_count field"
+        );
     }
 
     #[test]
     fn get_pipeline_count_returns_eight() {
         let r = Renderer::new();
-        assert_eq!(r.get_pipeline_count(), 8, "renderer must have 8 pipeline slots");
+        assert_eq!(
+            r.get_pipeline_count(),
+            8,
+            "renderer must have 8 pipeline slots"
+        );
     }
 
     #[test]
     fn get_pipeline_count_matches_pipeline_count_field() {
         let r = Renderer::new();
-        assert_eq!(r.get_pipeline_count(), r.pipeline_count, "get_pipeline_count must mirror pipeline_count field");
+        assert_eq!(
+            r.get_pipeline_count(),
+            r.pipeline_count,
+            "get_pipeline_count must mirror pipeline_count field"
+        );
     }
 
     #[test]
@@ -4140,7 +5043,11 @@ mod tests {
         let mut scene = Scene::new();
         scene.push_quad(crate::scene::Quad::default());
         r.draw(&mut scene);
-        assert_eq!(r.get_pipeline_count(), 8, "pipeline_count must not change after draw");
+        assert_eq!(
+            r.get_pipeline_count(),
+            8,
+            "pipeline_count must not change after draw"
+        );
     }
 
     #[test]
@@ -4150,7 +5057,10 @@ mod tests {
         scene.push_quad(crate::scene::Quad::default());
         scene.push_shadow(crate::scene::Shadow::default());
         r.draw(&mut scene);
-        assert!(r.stats().quads_drawn > 0, "precondition: quads_drawn must be > 0");
+        assert!(
+            r.stats().quads_drawn > 0,
+            "precondition: quads_drawn must be > 0"
+        );
         assert!(r.stats().frames > 0, "precondition: frames must be > 0");
         r.reset_stats();
         let s = r.stats();
@@ -4159,9 +5069,15 @@ mod tests {
         assert_eq!(s.frames, 0, "reset_stats must zero frames");
         assert_eq!(s.frosted_drawn, 0, "reset_stats must zero frosted_drawn");
         assert_eq!(s.paths_drawn, 0, "reset_stats must zero paths_drawn");
-        assert_eq!(s.mono_sprites_drawn, 0, "reset_stats must zero mono_sprites_drawn");
+        assert_eq!(
+            s.mono_sprites_drawn, 0,
+            "reset_stats must zero mono_sprites_drawn"
+        );
         assert_eq!(s.sprites_drawn, 0, "reset_stats must zero sprites_drawn");
-        assert_eq!(s.underlines_drawn, 0, "reset_stats must zero underlines_drawn");
+        assert_eq!(
+            s.underlines_drawn, 0,
+            "reset_stats must zero underlines_drawn"
+        );
     }
 
     #[test]
@@ -4186,7 +5102,11 @@ mod tests {
         let mut scene2 = Scene::new();
         scene2.push_quad(crate::scene::Quad::default());
         r.draw(&mut scene2);
-        assert_eq!(r.stats().quads_drawn, 1, "after reset, fresh draw must give quads_drawn=1");
+        assert_eq!(
+            r.stats().quads_drawn,
+            1,
+            "after reset, fresh draw must give quads_drawn=1"
+        );
     }
 
     #[test]
@@ -4207,7 +5127,11 @@ mod tests {
             r.begin_frame().unwrap();
             r.end_frame().unwrap();
         }
-        assert_eq!(r.get_frame_count(), 7, "7 end_frame calls must give frame count = 7");
+        assert_eq!(
+            r.get_frame_count(),
+            7,
+            "7 end_frame calls must give frame count = 7"
+        );
     }
 
     #[test]
@@ -4219,7 +5143,11 @@ mod tests {
         assert_eq!(r.stats().quads_drawn, 3);
         r.reset_stats();
         // pending_quads still holds the 3 queued instances.
-        assert_eq!(r.pending_quads().len(), 3, "reset_stats must not clear pending_quads");
+        assert_eq!(
+            r.pending_quads().len(),
+            3,
+            "reset_stats must not clear pending_quads"
+        );
         r.end_frame().unwrap();
     }
 
@@ -4227,6 +5155,10 @@ mod tests {
     fn get_pipeline_count_is_consistent_with_pipeline_kind_count() {
         // PipelineKind has 8 variants (Quad=0 through Reserved7=7).
         let r = Renderer::new();
-        assert_eq!(r.get_pipeline_count(), 8, "must have one slot per PipelineKind variant");
+        assert_eq!(
+            r.get_pipeline_count(),
+            8,
+            "must have one slot per PipelineKind variant"
+        );
     }
 }

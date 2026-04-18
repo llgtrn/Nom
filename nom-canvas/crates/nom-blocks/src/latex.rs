@@ -175,7 +175,10 @@ mod tests {
         let result = b.validate_balanced_braces();
         assert!(result.is_err());
         let msg = result.unwrap_err();
-        assert!(msg.contains("3"), "error should mention 3 unclosed braces, got: {msg}");
+        assert!(
+            msg.contains("3"),
+            "error should mention 3 unclosed braces, got: {msg}"
+        );
     }
 
     #[test]
@@ -231,7 +234,10 @@ mod tests {
     #[test]
     fn latex_default_is_inline_mode() {
         let b = LatexBlock::new(entity("l-inline"), r"x^2 + y^2 = z^2");
-        assert!(!b.display_mode, "new LatexBlock must be in inline mode by default");
+        assert!(
+            !b.display_mode,
+            "new LatexBlock must be in inline mode by default"
+        );
     }
 
     /// LatexBlock can be switched to display (block) mode.
@@ -239,6 +245,9 @@ mod tests {
     fn latex_set_display_mode_enables_block_rendering() {
         let mut b = LatexBlock::new(entity("l-display"), r"\int_0^\infty e^{-x} dx");
         b.set_display_mode(true);
-        assert!(b.display_mode, "display_mode must be true after set_display_mode(true)");
+        assert!(
+            b.display_mode,
+            "display_mode must be true after set_display_mode(true)"
+        );
     }
 }

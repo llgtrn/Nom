@@ -16,22 +16,34 @@ pub struct DataQuerySpec {
 impl DataQuerySpec {
     /// Build a SQL SELECT statement from the spec, resolved against `registry`.
     ///
-    /// Returns `None` if the model is not registered.
-    pub fn to_sql(&self, registry: &SemanticRegistry) -> Option<String> {
-        let model = registry.get(&self.model_name)?;
+    /// Returns `Err` if the model is not registered or any interpolated
+    /// identifier is unsafe.
+    pub fn to_sql(&self, registry: &SemanticRegistry) -> Result<String, String> {
+        let model = registry
+            .get(&self.model_name)
+            .ok_or_else(|| format!("unknown semantic model: {}", self.model_name))?;
+        if !is_safe_identifier(&model.source_table) {
+            return Err(format!("unsafe source table: {}", model.source_table));
+        }
         let col_list = if self.columns.is_empty() {
             "*".to_string()
         } else {
+            if let Some(unsafe_col) = self.columns.iter().find(|col| !is_safe_identifier(col)) {
+                return Err(format!("unsafe column identifier: {unsafe_col}"));
+            }
             self.columns.join(", ")
         };
         let mut sql = format!("SELECT {} FROM {}", col_list, model.source_table);
         if let Some(ref wh) = self.where_clause {
+            if !is_safe_where_clause(wh) {
+                return Err(format!("unsafe where clause: {wh}"));
+            }
             sql.push_str(&format!(" WHERE {}", wh));
         }
         if let Some(lim) = self.limit {
             sql.push_str(&format!(" LIMIT {}", lim));
         }
-        Some(sql)
+        Ok(sql)
     }
 }
 
@@ -42,7 +54,37 @@ pub fn is_safe_identifier(s: &str) -> bool {
     if s.is_empty() {
         return false;
     }
-    s.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '.')
+    s.chars()
+        .all(|c| c.is_alphanumeric() || c == '_' || c == '.')
+}
+
+fn is_safe_where_clause(s: &str) -> bool {
+    !s.is_empty()
+        && !s.contains(';')
+        && !s.contains("--")
+        && !s.contains("/*")
+        && !s.contains("*/")
+        && s.chars().all(|c| {
+            c.is_alphanumeric()
+                || matches!(
+                    c,
+                    '_' | '.'
+                        | ' '
+                        | '='
+                        | '!'
+                        | '<'
+                        | '>'
+                        | '('
+                        | ')'
+                        | '\''
+                        | '"'
+                        | '%'
+                        | '+'
+                        | '-'
+                        | '*'
+                        | '/'
+                )
+        })
 }
 
 /// Compose a data-query artifact using the semantic registry.
@@ -55,11 +97,12 @@ pub fn compose(
     store: &mut dyn ArtifactStore,
 ) -> ComposeResult {
     match spec.to_sql(registry) {
-        Some(sql) => {
+        Ok(sql) => {
             store.write(sql.as_bytes());
             Ok(())
         }
-        None => Err(format!("unknown semantic model: {}", spec.model_name)),
+        Err(err) if err.starts_with("unsafe") => Err(err),
+        Err(_) => Err(format!("unknown semantic model: {}", spec.model_name)),
     }
 }
 
@@ -135,8 +178,7 @@ mod tests {
         compose(&spec, &reg, &mut store).unwrap();
         assert_eq!(store.len(), 1);
         // Retrieve the stored artifact and check the SQL content.
-        let expected_sql =
-            "SELECT order_id, amount FROM raw.orders WHERE amount > 0 LIMIT 10";
+        let expected_sql = "SELECT order_id, amount FROM raw.orders WHERE amount > 0 LIMIT 10";
         let hash = store.write(expected_sql.as_bytes()); // idempotent — same bytes = same hash
         let stored = store.read(&hash).unwrap();
         assert_eq!(stored, expected_sql.as_bytes());
@@ -168,7 +210,7 @@ mod tests {
             where_clause: None,
             limit: None,
         };
-        assert!(spec.to_sql(&reg).is_none());
+        assert!(spec.to_sql(&reg).is_err());
     }
 
     #[test]
@@ -225,7 +267,10 @@ mod tests {
         let sql = spec.to_sql(&reg).unwrap();
         assert!(sql.contains("order_id"), "SQL must contain order_id");
         assert!(sql.contains("customer_id"), "SQL must contain customer_id");
-        assert!(!sql.contains("SELECT *"), "should not use star when columns specified");
+        assert!(
+            !sql.contains("SELECT *"),
+            "should not use star when columns specified"
+        );
     }
 
     #[test]
@@ -238,7 +283,10 @@ mod tests {
             limit: None,
         };
         let sql = spec.to_sql(&reg).unwrap();
-        assert!(sql.contains("WHERE customer_id = 42"), "WHERE clause must be in SQL");
+        assert!(
+            sql.contains("WHERE customer_id = 42"),
+            "WHERE clause must be in SQL"
+        );
     }
 
     #[test]
@@ -254,7 +302,10 @@ mod tests {
         };
         let sql = spec.to_sql(&reg).unwrap();
         assert!(!sql.contains("WHERE"), "no WHERE when clause is None");
-        assert!(!sql.contains("ORDER BY"), "no ORDER BY — field not supported");
+        assert!(
+            !sql.contains("ORDER BY"),
+            "no ORDER BY — field not supported"
+        );
     }
 
     #[test]
@@ -345,7 +396,8 @@ mod tests {
 
     #[test]
     fn data_query_select_count_star() {
-        // Simulate COUNT(*) by using column name "COUNT(*)" directly.
+        // COUNT(*) is rejected by the identifier guard; callers should expose
+        // aggregate expressions through a typed query model instead.
         let reg = make_registry();
         let spec = DataQuerySpec {
             model_name: "orders".into(),
@@ -353,8 +405,7 @@ mod tests {
             where_clause: None,
             limit: None,
         };
-        let sql = spec.to_sql(&reg).unwrap();
-        assert!(sql.contains("COUNT(*)"), "COUNT(*) must appear in SQL");
+        assert!(spec.to_sql(&reg).is_err());
     }
 
     #[test]
@@ -370,14 +421,20 @@ mod tests {
         };
         let sql = spec.to_sql(&reg).unwrap();
         assert!(!sql.contains("JOIN"), "no JOIN support in DataQuerySpec");
-        assert!(sql.contains("FROM raw.orders"), "FROM clause must name the source table");
+        assert!(
+            sql.contains("FROM raw.orders"),
+            "FROM clause must name the source table"
+        );
     }
 
     // ── AL-SQL-INJECT: is_safe_identifier tests ──────────────────────────────
 
     #[test]
     fn is_safe_identifier_valid_table_name() {
-        assert!(super::is_safe_identifier("valid_table"), "valid_table must be safe");
+        assert!(
+            super::is_safe_identifier("valid_table"),
+            "valid_table must be safe"
+        );
     }
 
     #[test]
@@ -390,7 +447,10 @@ mod tests {
 
     #[test]
     fn is_safe_identifier_column_with_dot() {
-        assert!(super::is_safe_identifier("column.name"), "column.name with dot must be safe");
+        assert!(
+            super::is_safe_identifier("column.name"),
+            "column.name with dot must be safe"
+        );
     }
 
     #[test]
@@ -403,61 +463,111 @@ mod tests {
 
     #[test]
     fn is_safe_identifier_empty_string_returns_false() {
-        assert!(!super::is_safe_identifier(""), "empty string must not be safe");
-    }
-
-    #[test]
-    fn is_safe_identifier_numbers_only_returns_true() {
-        assert!(super::is_safe_identifier("123"), "all-numeric identifier must be safe");
-    }
-
-    #[test]
-    fn is_safe_identifier_mixed_alpha_underscore_dot() {
         assert!(
-            super::is_safe_identifier("a_b.c_d"),
-            "a_b.c_d must be safe"
+            !super::is_safe_identifier(""),
+            "empty string must not be safe"
         );
     }
 
     #[test]
+    fn is_safe_identifier_numbers_only_returns_true() {
+        assert!(
+            super::is_safe_identifier("123"),
+            "all-numeric identifier must be safe"
+        );
+    }
+
+    #[test]
+    fn is_safe_identifier_mixed_alpha_underscore_dot() {
+        assert!(super::is_safe_identifier("a_b.c_d"), "a_b.c_d must be safe");
+    }
+
+    #[test]
     fn is_safe_identifier_semicolon_returns_false() {
-        assert!(!super::is_safe_identifier(";"), "semicolon alone must not be safe");
+        assert!(
+            !super::is_safe_identifier(";"),
+            "semicolon alone must not be safe"
+        );
     }
 
     #[test]
     fn is_safe_identifier_space_returns_false() {
-        assert!(!super::is_safe_identifier("my table"), "space in name must not be safe");
+        assert!(
+            !super::is_safe_identifier("my table"),
+            "space in name must not be safe"
+        );
     }
 
     #[test]
     fn is_safe_identifier_dash_returns_false() {
-        assert!(!super::is_safe_identifier("my-table"), "dash in name must not be safe");
+        assert!(
+            !super::is_safe_identifier("my-table"),
+            "dash in name must not be safe"
+        );
     }
 
     #[test]
     fn is_safe_identifier_double_underscore_ok() {
-        assert!(super::is_safe_identifier("my__table"), "double underscore is safe");
+        assert!(
+            super::is_safe_identifier("my__table"),
+            "double underscore is safe"
+        );
     }
 
     #[test]
     fn is_safe_identifier_schema_dot_table() {
-        assert!(super::is_safe_identifier("schema.table_name"), "schema.table_name must be safe");
+        assert!(
+            super::is_safe_identifier("schema.table_name"),
+            "schema.table_name must be safe"
+        );
     }
 
     #[test]
     fn is_safe_identifier_backslash_returns_false() {
-        assert!(!super::is_safe_identifier("table\\name"), "backslash must not be safe");
+        assert!(
+            !super::is_safe_identifier("table\\name"),
+            "backslash must not be safe"
+        );
     }
 
     #[test]
     fn is_safe_identifier_unicode_alpha_ok() {
         // Unicode alphabetic chars are alphanumeric per Rust char::is_alphanumeric().
-        assert!(super::is_safe_identifier("tên"), "unicode alpha chars pass is_alphanumeric");
+        assert!(
+            super::is_safe_identifier("tên"),
+            "unicode alpha chars pass is_alphanumeric"
+        );
     }
 
     #[test]
     fn is_safe_identifier_only_dots_ok() {
         // Dots are allowed characters even alone.
-        assert!(super::is_safe_identifier("..."), "only dots must be allowed");
+        assert!(
+            super::is_safe_identifier("..."),
+            "only dots must be allowed"
+        );
+    }
+
+    #[test]
+    fn data_query_rejects_injected_column_and_where() {
+        let reg = make_registry();
+        let bad_column = DataQuerySpec {
+            model_name: "orders".into(),
+            columns: vec!["amount;DROP TABLE orders".into()],
+            where_clause: None,
+            limit: None,
+        };
+        assert!(bad_column
+            .to_sql(&reg)
+            .unwrap_err()
+            .contains("unsafe column"));
+
+        let bad_where = DataQuerySpec {
+            model_name: "orders".into(),
+            columns: vec!["amount".into()],
+            where_clause: Some("amount > 0; DROP TABLE orders".into()),
+            limit: None,
+        };
+        assert!(bad_where.to_sql(&reg).unwrap_err().contains("unsafe where"));
     }
 }

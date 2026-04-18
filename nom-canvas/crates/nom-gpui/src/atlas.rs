@@ -37,7 +37,8 @@ pub struct TextureAtlas {
     pub texture_id: u32,
     /// etagere shelf-packing allocator — replaces manual next_x/next_y/row_height fields.
     allocator: BucketedAtlasAllocator,
-    cache: std::collections::HashMap<GlyphCacheKey, AtlasTile>,
+    /// Cache storing both the `Allocation` handle (for `deallocate`) and the tile UV coords.
+    cache: std::collections::HashMap<GlyphCacheKey, (Allocation, AtlasTile)>,
     /// LRU tracking — front = least-recently used.
     access_order: std::collections::VecDeque<GlyphCacheKey>,
 }
@@ -75,7 +76,7 @@ impl TextureAtlas {
         glyph_height: u32,
     ) -> Option<AtlasTile> {
         // Cache hit — update LRU and return existing tile.
-        if let Some(&tile) = self.cache.get(&key) {
+        if let Some(&(_, tile)) = self.cache.get(&key) {
             self.touch(key);
             return Some(tile);
         }
@@ -112,14 +113,14 @@ impl TextureAtlas {
             padding: 1.0,
         };
 
-        self.cache.insert(key, tile);
+        self.cache.insert(key, (alloc, tile));
         self.access_order.push_back(key);
         Some(tile)
     }
 
     /// Return a cached tile without triggering rasterization.
     pub fn get(&self, key: &GlyphCacheKey) -> Option<AtlasTile> {
-        self.cache.get(key).copied()
+        self.cache.get(key).map(|&(_, tile)| tile)
     }
 
     /// Fill ratio (0.0 – 1.0) used to decide when to trigger LRU eviction.
@@ -132,22 +133,26 @@ impl TextureAtlas {
         (used as f32) / (total as f32)
     }
 
-    /// Evict `EVICTION_BATCH` least-recently-used glyphs and reset the allocator.
+    /// Evict least-recently-used glyphs and deallocate their atlas regions.
     ///
-    /// Returns `true` if eviction succeeded (enough entries existed), `false`
-    /// if the cache was too small to perform a batch eviction.
+    /// Evicts up to `EVICTION_BATCH` entries (or all entries if fewer exist),
+    /// calling `deallocate` on each allocation handle so the allocator can
+    /// reuse the freed rectangles without clearing the entire atlas.
+    ///
+    /// Returns `true` if at least one entry was evicted, `false` if the cache
+    /// was already empty.
     fn evict_lru(&mut self) -> bool {
-        if self.access_order.len() < Self::EVICTION_BATCH {
+        if self.access_order.is_empty() {
             return false;
         }
-        for _ in 0..Self::EVICTION_BATCH {
+        let to_evict = Self::EVICTION_BATCH.min(self.access_order.len());
+        for _ in 0..to_evict {
             if let Some(key) = self.access_order.pop_front() {
-                self.cache.remove(&key);
+                if let Some((alloc, _)) = self.cache.remove(&key) {
+                    self.allocator.deallocate(alloc.id);
+                }
             }
         }
-        // Reset the allocator and repack surviving tiles are not tracked spatially;
-        // callers must re-rasterize on next lookup miss.
-        self.allocator.clear();
         true
     }
 
@@ -505,7 +510,10 @@ mod tests {
         for i in 0..10u32 {
             atlas.pack_glyph(make_key(i + 2000), 64, 64).unwrap();
         }
-        assert!(atlas.fill_ratio() > 0.0, "fill_ratio must be > 0 after allocations");
+        assert!(
+            atlas.fill_ratio() > 0.0,
+            "fill_ratio must be > 0 after allocations"
+        );
     }
 
     #[test]
@@ -533,16 +541,33 @@ mod tests {
         let mut atlas = TextureAtlas::new(0);
         let tile = atlas.pack_glyph(make_key(5000), 16, 16).unwrap();
         let b = tile.bounds;
-        assert!(b.left < b.right, "left must be less than right: {} < {}", b.left, b.right);
-        assert!(b.top < b.bottom, "top must be less than bottom: {} < {}", b.top, b.bottom);
+        assert!(
+            b.left < b.right,
+            "left must be less than right: {} < {}",
+            b.left,
+            b.right
+        );
+        assert!(
+            b.top < b.bottom,
+            "top must be less than bottom: {} < {}",
+            b.top,
+            b.bottom
+        );
         assert!(b.right <= atlas.width, "right must not exceed atlas width");
-        assert!(b.bottom <= atlas.height, "bottom must not exceed atlas height");
+        assert!(
+            b.bottom <= atlas.height,
+            "bottom must not exceed atlas height"
+        );
     }
 
     #[test]
     fn atlas_empty_atlas_zero_used() {
         let atlas = TextureAtlas::new(0);
-        assert_eq!(atlas.fill_ratio(), 0.0, "empty atlas must have 0 fill ratio");
+        assert_eq!(
+            atlas.fill_ratio(),
+            0.0,
+            "empty atlas must have 0 fill ratio"
+        );
     }
 
     #[test]
@@ -573,7 +598,10 @@ mod tests {
         // get() must return None for all previously packed keys.
         for i in 0..5u32 {
             let key = make_key(i + 7000);
-            assert!(atlas.get(&key).is_none(), "cleared atlas must not contain key {i}");
+            assert!(
+                atlas.get(&key).is_none(),
+                "cleared atlas must not contain key {i}"
+            );
         }
     }
 
@@ -583,7 +611,11 @@ mod tests {
 
     #[test]
     fn atlas_default_size_is_2048() {
-        assert_eq!(TextureAtlas::DEFAULT_SIZE, 2048, "default atlas size must be 2048");
+        assert_eq!(
+            TextureAtlas::DEFAULT_SIZE,
+            2048,
+            "default atlas size must be 2048"
+        );
     }
 
     #[test]
@@ -594,17 +626,28 @@ mod tests {
     #[test]
     fn atlas_eviction_threshold_is_0_9() {
         let threshold = TextureAtlas::EVICTION_THRESHOLD;
-        assert!((threshold - 0.9).abs() < 1e-6, "eviction threshold must be 0.9, got {threshold}");
+        assert!(
+            (threshold - 0.9).abs() < 1e-6,
+            "eviction threshold must be 0.9, got {threshold}"
+        );
     }
 
     #[test]
     fn atlas_eviction_batch_is_32() {
-        assert_eq!(TextureAtlas::EVICTION_BATCH, 32, "eviction batch size must be 32");
+        assert_eq!(
+            TextureAtlas::EVICTION_BATCH,
+            32,
+            "eviction batch size must be 32"
+        );
     }
 
     #[test]
     fn atlas_subpixel_variants_is_16() {
-        assert_eq!(TextureAtlas::SUBPIXEL_VARIANTS, 16, "must have 16 subpixel variants (4x4 grid)");
+        assert_eq!(
+            TextureAtlas::SUBPIXEL_VARIANTS,
+            16,
+            "must have 16 subpixel variants (4x4 grid)"
+        );
     }
 
     #[test]
@@ -618,7 +661,11 @@ mod tests {
         let mut atlas = TextureAtlas::new(0);
         let key = make_key(8001);
         let tile = atlas.pack_glyph(key, 10, 10).unwrap();
-        assert!((tile.padding - 1.0).abs() < 1e-6, "tile padding must be 1.0, got {}", tile.padding);
+        assert!(
+            (tile.padding - 1.0).abs() < 1e-6,
+            "tile padding must be 1.0, got {}",
+            tile.padding
+        );
     }
 
     #[test]
@@ -634,14 +681,20 @@ mod tests {
                 found[idx] = true;
             }
         }
-        assert!(found.iter().all(|&x| x), "all 16 subpixel indices must be reachable");
+        assert!(
+            found.iter().all(|&x| x),
+            "all 16 subpixel indices must be reachable"
+        );
     }
 
     #[test]
     fn atlas_get_returns_none_for_unknown_key() {
         let atlas = TextureAtlas::new(0);
         let key = make_key(9999);
-        assert!(atlas.get(&key).is_none(), "get on unknown key must return None");
+        assert!(
+            atlas.get(&key).is_none(),
+            "get on unknown key must return None"
+        );
     }
 
     #[test]
@@ -665,7 +718,11 @@ mod tests {
     fn entry_count_increases_after_pack() {
         let mut atlas = TextureAtlas::new(0);
         atlas.pack_glyph(make_key(10001), 8, 8).unwrap();
-        assert_eq!(atlas.entry_count(), 1, "entry_count must be 1 after one pack");
+        assert_eq!(
+            atlas.entry_count(),
+            1,
+            "entry_count must be 1 after one pack"
+        );
     }
 
     #[test]
@@ -674,7 +731,11 @@ mod tests {
         for i in 0..5u32 {
             atlas.pack_glyph(make_key(20000 + i), 8, 8).unwrap();
         }
-        assert_eq!(atlas.entry_count(), 5, "5 distinct packs must give entry_count=5");
+        assert_eq!(
+            atlas.entry_count(),
+            5,
+            "5 distinct packs must give entry_count=5"
+        );
     }
 
     #[test]
@@ -684,7 +745,11 @@ mod tests {
         atlas.pack_glyph(key, 8, 8).unwrap();
         // Same key again — cache hit, no new entry.
         atlas.pack_glyph(key, 8, 8).unwrap();
-        assert_eq!(atlas.entry_count(), 1, "cache hit must not increase entry_count");
+        assert_eq!(
+            atlas.entry_count(),
+            1,
+            "cache hit must not increase entry_count"
+        );
     }
 
     #[test]
@@ -699,14 +764,21 @@ mod tests {
     #[test]
     fn capacity_is_positive_for_default_atlas() {
         let atlas = TextureAtlas::new(0);
-        assert!(atlas.capacity() > 0, "capacity must be > 0 for a 2048×2048 atlas");
+        assert!(
+            atlas.capacity() > 0,
+            "capacity must be > 0 for a 2048×2048 atlas"
+        );
     }
 
     #[test]
     fn capacity_equals_area_div_nine() {
         let atlas = TextureAtlas::new(0);
         let expected = (atlas.width as usize) * (atlas.height as usize) / 9;
-        assert_eq!(atlas.capacity(), expected, "capacity must equal width*height/9");
+        assert_eq!(
+            atlas.capacity(),
+            expected,
+            "capacity must equal width*height/9"
+        );
     }
 
     #[test]
@@ -716,13 +788,21 @@ mod tests {
         for i in 0..10u32 {
             atlas.pack_glyph(make_key(50000 + i), 16, 16).unwrap();
         }
-        assert_eq!(atlas.capacity(), cap_before, "capacity must not change after packing glyphs");
+        assert_eq!(
+            atlas.capacity(),
+            cap_before,
+            "capacity must not change after packing glyphs"
+        );
     }
 
     #[test]
     fn utilization_zero_on_empty_atlas() {
         let atlas = TextureAtlas::new(0);
-        assert_eq!(atlas.utilization(), 0.0, "empty atlas must have utilization = 0.0");
+        assert_eq!(
+            atlas.utilization(),
+            0.0,
+            "empty atlas must have utilization = 0.0"
+        );
     }
 
     #[test]
@@ -731,7 +811,12 @@ mod tests {
         let before = atlas.utilization();
         atlas.pack_glyph(make_key(60001), 8, 8).unwrap();
         let after = atlas.utilization();
-        assert!(after > before, "utilization must increase after packing: {} > {}", after, before);
+        assert!(
+            after > before,
+            "utilization must increase after packing: {} > {}",
+            after,
+            before
+        );
     }
 
     #[test]
@@ -741,7 +826,10 @@ mod tests {
             atlas.pack_glyph(make_key(70000 + i), 8, 8).unwrap();
         }
         let u = atlas.utilization();
-        assert!(u >= 0.0 && u <= 1.0, "utilization must be in [0.0, 1.0], got {u}");
+        assert!(
+            u >= 0.0 && u <= 1.0,
+            "utilization must be in [0.0, 1.0], got {u}"
+        );
     }
 
     #[test]
@@ -749,7 +837,11 @@ mod tests {
         let mut atlas = TextureAtlas::new(0);
         atlas.pack_glyph(make_key(80001), 8, 8).unwrap();
         atlas.clear();
-        assert_eq!(atlas.utilization(), 0.0, "utilization must be 0.0 after clear");
+        assert_eq!(
+            atlas.utilization(),
+            0.0,
+            "utilization must be 0.0 after clear"
+        );
     }
 
     #[test]
@@ -760,7 +852,10 @@ mod tests {
         }
         let expected = (atlas.entry_count() as f32) / (atlas.capacity() as f32);
         let actual = atlas.utilization();
-        assert!((actual - expected).abs() < 1e-6, "utilization must equal entry_count/capacity: expected {expected}, got {actual}");
+        assert!(
+            (actual - expected).abs() < 1e-6,
+            "utilization must equal entry_count/capacity: expected {expected}, got {actual}"
+        );
     }
 
     #[test]
@@ -770,14 +865,21 @@ mod tests {
             atlas.pack_glyph(make_key(100000 + i), 8, 8).unwrap();
         }
         // entry_count is backed by cache.len()
-        assert_eq!(atlas.entry_count(), 7, "entry_count must equal number of distinct packs");
+        assert_eq!(
+            atlas.entry_count(),
+            7,
+            "entry_count must equal number of distinct packs"
+        );
     }
 
     #[test]
     fn capacity_for_2048_atlas_is_at_least_100000() {
         // 2048*2048 / 9 = 466,489 — a reasonable lower bound for capacity.
         let atlas = TextureAtlas::new(0);
-        assert!(atlas.capacity() >= 100_000, "2048×2048 atlas must have capacity >= 100_000");
+        assert!(
+            atlas.capacity() >= 100_000,
+            "2048×2048 atlas must have capacity >= 100_000"
+        );
     }
 
     #[test]
@@ -788,14 +890,21 @@ mod tests {
         let k_b = make_key_font(11, 65);
         atlas.pack_glyph(k_a, 8, 8).unwrap();
         atlas.pack_glyph(k_b, 8, 8).unwrap();
-        assert_eq!(atlas.entry_count(), 2, "different font_ids must produce 2 distinct entries");
+        assert_eq!(
+            atlas.entry_count(),
+            2,
+            "different font_ids must produce 2 distinct entries"
+        );
     }
 
     #[test]
     fn utilization_greater_than_zero_after_single_pack() {
         let mut atlas = TextureAtlas::new(0);
         atlas.pack_glyph(make_key(110001), 8, 8).unwrap();
-        assert!(atlas.utilization() > 0.0, "utilization must be > 0 after one pack");
+        assert!(
+            atlas.utilization() > 0.0,
+            "utilization must be > 0 after one pack"
+        );
     }
 
     #[test]
@@ -807,6 +916,9 @@ mod tests {
         assert_eq!(atlas.entry_count(), 20);
         let u = atlas.utilization();
         let expected = 20.0 / (atlas.capacity() as f32);
-        assert!((u - expected).abs() < 1e-6, "utilization {u} must equal 20/capacity {expected}");
+        assert!(
+            (u - expected).abs() < 1e-6,
+            "utilization {u} must equal 20/capacity {expected}"
+        );
     }
 }

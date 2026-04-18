@@ -3,7 +3,8 @@
 /// Phase 1: AABB broadphase (check `bounds.contains(pt)`).
 /// Phase 2: Precise — rect uses inverse-rotation test; ellipse uses normalised
 ///          ellipse equation; connectors use `dist_to_bezier < HIT_RADIUS`.
-use crate::elements::{CanvasArrow, CanvasConnector, CanvasEllipse, CanvasLine, CanvasRect};
+use crate::elements::{CanvasArrow, CanvasConnector, CanvasEllipse, CanvasLine, CanvasRect, ElementBounds};
+use crate::spatial_index::SpatialIndex;
 use nom_gpui::types::{Bounds, Pixels};
 
 /// Pixel radius within which a click is considered a hit on a curve/line.
@@ -181,6 +182,54 @@ pub fn dist_to_bezier(pt: [f32; 2], p0: [f32; 2], c1: [f32; 2], c2: [f32; 2], p3
             (dx * dx + dy * dy).sqrt()
         })
         .fold(f32::INFINITY, f32::min)
+}
+
+// ─── Production broadphase hit tester ───────────────────────────────────────
+
+/// Hit tester that uses a [`SpatialIndex`] for O(log n) broadphase candidate
+/// selection, followed by precise per-element hit tests.
+pub struct CanvasHitTester {
+    spatial_index: SpatialIndex,
+}
+
+impl CanvasHitTester {
+    /// Create a new, empty hit tester.
+    pub fn new() -> Self {
+        Self {
+            spatial_index: SpatialIndex::new(),
+        }
+    }
+
+    /// Register an element's axis-aligned bounding box in the spatial index.
+    pub fn insert(&mut self, bounds: ElementBounds) {
+        self.spatial_index.insert(bounds);
+    }
+
+    /// Remove an element from the spatial index by id and bounds.
+    pub fn remove(&mut self, id: u64, bounds: ElementBounds) {
+        self.spatial_index.remove(id, bounds);
+    }
+
+    /// Point hit test using the spatial index as broadphase.
+    ///
+    /// Returns all element IDs whose AABB contains `pt`.  Callers may apply
+    /// a precise secondary test on the returned candidates.
+    pub fn hit_test_at(&self, pt: [f32; 2]) -> Vec<u64> {
+        // Use a 1-pixel query region around the point as the broadphase.
+        let candidates = self.spatial_index.query_in_bounds(pt, pt);
+        candidates
+    }
+
+    /// Region selection: return all element IDs whose AABB intersects `[min, max]`.
+    pub fn query_region(&self, min: [f32; 2], max: [f32; 2]) -> Vec<u64> {
+        self.spatial_index.query_in_bounds(min, max)
+    }
+}
+
+impl Default for CanvasHitTester {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[cfg(test)]
@@ -776,7 +825,10 @@ mod tests {
         };
         // Point at (100, 30): dx/rx = (100-50)/50 = 1, dy/ry = 0 → sum=1 → on boundary, hits
         // Point at (101, 30): dx/rx > 1 → misses
-        assert!(!hit_test_ellipse([101.0, 30.0], &e, 0.0), "just outside ellipse must miss");
+        assert!(
+            !hit_test_ellipse([101.0, 30.0], &e, 0.0),
+            "just outside ellipse must miss"
+        );
     }
 
     /// dist_to_bezier: point at the start of the bezier has near-zero distance.
@@ -881,9 +933,15 @@ mod tests {
             z_index: 0,
         };
         // Midpoint is (1.5, 0.0); 2px above should hit with HIT_RADIUS=5.
-        assert!(hit_test_line([1.5, 2.0], &l, HIT_RADIUS), "midpoint of short wire must hit");
+        assert!(
+            hit_test_line([1.5, 2.0], &l, HIT_RADIUS),
+            "midpoint of short wire must hit"
+        );
         // Point far away must miss.
-        assert!(!hit_test_line([100.0, 100.0], &l, HIT_RADIUS), "far point must miss short wire");
+        assert!(
+            !hit_test_line([100.0, 100.0], &l, HIT_RADIUS),
+            "far point must miss short wire"
+        );
     }
 
     /// Wire with zero length (degenerate point): hit test on that point.
@@ -923,7 +981,10 @@ mod tests {
         // Centre is always inside.
         let cx = 0.0 + 100.0 / 2.0;
         let cy = 40.0 + 20.0 / 2.0;
-        assert!(hit_test_rect([cx, cy], &r, 0.0), "centre of rotated rect must hit");
+        assert!(
+            hit_test_rect([cx, cy], &r, 0.0),
+            "centre of rotated rect must hit"
+        );
     }
 
     // ── Wave AJ: bezier/curve tests ──────────────────────────────────────────
@@ -964,7 +1025,11 @@ mod tests {
         let mid_x = 50.0_f32;
         // dist_to_bezier from the curve midpoint should be small
         let d = dist_to_bezier([mid_x, 75.0], p0, c1, c2, p3);
-        assert!(d < 5.0, "midpoint of symmetric bezier must be near (50,75), dist={}", d);
+        assert!(
+            d < 5.0,
+            "midpoint of symmetric bezier must be near (50,75), dist={}",
+            d
+        );
     }
 
     /// Cubic bezier derivative at t=0: tangent points toward c1 from p0.
@@ -976,8 +1041,14 @@ mod tests {
         let c1 = [30.0, 0.0]; // directly right
         let tangent_x = 3.0 * (c1[0] - p0[0]); // 90
         let tangent_y = 3.0 * (c1[1] - p0[1]); // 0
-        assert!(tangent_x > 0.0, "tangent at t=0 must point toward c1 (positive x)");
-        assert!(tangent_y.abs() < 1e-6, "tangent at t=0 must have zero y for horizontal");
+        assert!(
+            tangent_x > 0.0,
+            "tangent at t=0 must point toward c1 (positive x)"
+        );
+        assert!(
+            tangent_y.abs() < 1e-6,
+            "tangent at t=0 must have zero y for horizontal"
+        );
     }
 
     /// Quadratic bezier at t=0 returns p0.
@@ -1010,12 +1081,12 @@ mod tests {
         let c2 = [80.0, 40.0];
         let p3 = [100.0, 0.0];
         // Compute the split point at t=0.5 using De Casteljau's algorithm.
-        let m01 = [(p0[0]+c1[0])/2.0, (p0[1]+c1[1])/2.0];
-        let m12 = [(c1[0]+c2[0])/2.0, (c1[1]+c2[1])/2.0];
-        let m23 = [(c2[0]+p3[0])/2.0, (c2[1]+p3[1])/2.0];
-        let m012 = [(m01[0]+m12[0])/2.0, (m01[1]+m12[1])/2.0];
-        let m123 = [(m12[0]+m23[0])/2.0, (m12[1]+m23[1])/2.0];
-        let split = [(m012[0]+m123[0])/2.0, (m012[1]+m123[1])/2.0];
+        let m01 = [(p0[0] + c1[0]) / 2.0, (p0[1] + c1[1]) / 2.0];
+        let m12 = [(c1[0] + c2[0]) / 2.0, (c1[1] + c2[1]) / 2.0];
+        let m23 = [(c2[0] + p3[0]) / 2.0, (c2[1] + p3[1]) / 2.0];
+        let m012 = [(m01[0] + m12[0]) / 2.0, (m01[1] + m12[1]) / 2.0];
+        let m123 = [(m12[0] + m23[0]) / 2.0, (m12[1] + m23[1]) / 2.0];
+        let split = [(m012[0] + m123[0]) / 2.0, (m012[1] + m123[1]) / 2.0];
         // Sub-curve 1: p0 → m01 → m012 → split
         // Sub-curve 2: split → m123 → m23 → p3
         // Verify that sub-curve 1 starts at p0 and sub-curve 2 ends at p3.
@@ -1038,8 +1109,16 @@ mod tests {
         // Left half: p0→split; right half: split→p3.
         let d_left_start = dist_to_bezier(p0, p0, [16.5, 0.0], [33.0, 0.0], split);
         let d_right_end = dist_to_bezier(p3, split, [66.0, 0.0], [83.5, 0.0], p3);
-        assert!(d_left_start < 1.0, "left half must start at p0, dist={}", d_left_start);
-        assert!(d_right_end < 1.0, "right half must end at p3, dist={}", d_right_end);
+        assert!(
+            d_left_start < 1.0,
+            "left half must start at p0, dist={}",
+            d_left_start
+        );
+        assert!(
+            d_right_end < 1.0,
+            "right half must end at p3, dist={}",
+            d_right_end
+        );
     }
 
     /// Arc length of a non-degenerate bezier is positive.
@@ -1055,15 +1134,29 @@ mod tests {
         for i in 1..=100 {
             let t = i as f32 / 100.0;
             let mt = 1.0 - t;
-            let bx = mt.powi(3)*p0[0] + 3.0*mt*mt*t*c1[0] + 3.0*mt*t*t*c2[0] + t.powi(3)*p3[0];
-            let by = mt.powi(3)*p0[1] + 3.0*mt*mt*t*c1[1] + 3.0*mt*t*t*c2[1] + t.powi(3)*p3[1];
+            let bx = mt.powi(3) * p0[0]
+                + 3.0 * mt * mt * t * c1[0]
+                + 3.0 * mt * t * t * c2[0]
+                + t.powi(3) * p3[0];
+            let by = mt.powi(3) * p0[1]
+                + 3.0 * mt * mt * t * c1[1]
+                + 3.0 * mt * t * t * c2[1]
+                + t.powi(3) * p3[1];
             let dx = bx - prev[0];
             let dy = by - prev[1];
-            arc_len += (dx*dx + dy*dy).sqrt();
+            arc_len += (dx * dx + dy * dy).sqrt();
             prev = [bx, by];
         }
-        assert!(arc_len > 0.0, "arc length of non-degenerate bezier must be positive, got {}", arc_len);
-        assert!(arc_len >= 100.0, "arc length of arched bezier must exceed straight-line distance of 100, got {}", arc_len);
+        assert!(
+            arc_len > 0.0,
+            "arc length of non-degenerate bezier must be positive, got {}",
+            arc_len
+        );
+        assert!(
+            arc_len >= 100.0,
+            "arc length of arched bezier must exceed straight-line distance of 100, got {}",
+            arc_len
+        );
     }
 
     /// Bounding box computed from bezier samples contains all sample points.
@@ -1080,18 +1173,40 @@ mod tests {
         for i in 0..=100 {
             let t = i as f32 / 100.0;
             let mt = 1.0 - t;
-            let bx = mt.powi(3)*p0[0] + 3.0*mt*mt*t*c1[0] + 3.0*mt*t*t*c2[0] + t.powi(3)*p3[0];
-            let by = mt.powi(3)*p0[1] + 3.0*mt*mt*t*c1[1] + 3.0*mt*t*t*c2[1] + t.powi(3)*p3[1];
-            if bx < min_x { min_x = bx; }
-            if bx > max_x { max_x = bx; }
-            if by < min_y { min_y = by; }
-            if by > max_y { max_y = by; }
+            let bx = mt.powi(3) * p0[0]
+                + 3.0 * mt * mt * t * c1[0]
+                + 3.0 * mt * t * t * c2[0]
+                + t.powi(3) * p3[0];
+            let by = mt.powi(3) * p0[1]
+                + 3.0 * mt * mt * t * c1[1]
+                + 3.0 * mt * t * t * c2[1]
+                + t.powi(3) * p3[1];
+            if bx < min_x {
+                min_x = bx;
+            }
+            if bx > max_x {
+                max_x = bx;
+            }
+            if by < min_y {
+                min_y = by;
+            }
+            if by > max_y {
+                max_y = by;
+            }
         }
         // All sample points must fall within [min_x, max_x] x [min_y, max_y].
-        assert!(min_x <= 0.1, "min_x must be near 0 for this curve, got {}", min_x);
+        assert!(
+            min_x <= 0.1,
+            "min_x must be near 0 for this curve, got {}",
+            min_x
+        );
         assert!(max_x >= 99.9, "max_x must be near 100, got {}", max_x);
         assert!(min_y >= -0.1, "min_y must be >= 0, got {}", min_y);
-        assert!(max_y > 50.0, "max_y must exceed 50 for arched bezier, got {}", max_y);
+        assert!(
+            max_y > 50.0,
+            "max_y must exceed 50 for arched bezier, got {}",
+            max_y
+        );
     }
 
     /// Cubic bezier inflection-point count is 0, 1, or 2 (structural property).
@@ -1103,13 +1218,22 @@ mod tests {
         let c2 = [66.0, 0.0];
         let p3 = [100.0, 0.0];
         // Verify the curve is straight (no y variation) → 0 inflection points.
-        let max_y_deviation = (0..=100).map(|i| {
-            let t = i as f32 / 100.0;
-            let mt = 1.0 - t;
-            let by = mt.powi(3)*p0[1] + 3.0*mt*mt*t*c1[1] + 3.0*mt*t*t*c2[1] + t.powi(3)*p3[1];
-            by.abs()
-        }).fold(0.0_f32, f32::max);
-        assert!(max_y_deviation < 1e-5, "straight-line cubic must have zero y deviation, got {}", max_y_deviation);
+        let max_y_deviation = (0..=100)
+            .map(|i| {
+                let t = i as f32 / 100.0;
+                let mt = 1.0 - t;
+                let by = mt.powi(3) * p0[1]
+                    + 3.0 * mt * mt * t * c1[1]
+                    + 3.0 * mt * t * t * c2[1]
+                    + t.powi(3) * p3[1];
+                by.abs()
+            })
+            .fold(0.0_f32, f32::max);
+        assert!(
+            max_y_deviation < 1e-5,
+            "straight-line cubic must have zero y deviation, got {}",
+            max_y_deviation
+        );
     }
 
     /// Nearest point on curve: query point near one of the curve endpoints is closest to that endpoint.
@@ -1123,11 +1247,23 @@ mod tests {
         let d_near_p0 = dist_to_bezier([1.0, 0.0], p0, c1, c2, p3);
         // Query point close to p3: distance to p3 should be very small.
         let d_near_p3 = dist_to_bezier([99.0, 0.0], p0, c1, c2, p3);
-        assert!(d_near_p0 < 2.0, "query near p0 must be close to the curve, dist={}", d_near_p0);
-        assert!(d_near_p3 < 2.0, "query near p3 must be close to the curve, dist={}", d_near_p3);
+        assert!(
+            d_near_p0 < 2.0,
+            "query near p0 must be close to the curve, dist={}",
+            d_near_p0
+        );
+        assert!(
+            d_near_p3 < 2.0,
+            "query near p3 must be close to the curve, dist={}",
+            d_near_p3
+        );
         // Query far from the curve: much larger distance.
         let d_far = dist_to_bezier([50.0, 500.0], p0, c1, c2, p3);
-        assert!(d_far > 400.0, "query far from curve must have large distance, got {}", d_far);
+        assert!(
+            d_far > 400.0,
+            "query far from curve must have large distance, got {}",
+            d_far
+        );
     }
 
     /// Bezier with all 4 points identical (degenerate): distance from any point near origin is small.
@@ -1135,26 +1271,63 @@ mod tests {
     fn bezier_all_points_same_degenerate() {
         let p = [50.0_f32, 50.0];
         let d = dist_to_bezier(p, p, p, p, p);
-        assert!(d < 0.5, "degenerate bezier (all same) must have near-zero self-distance, got {}", d);
+        assert!(
+            d < 0.5,
+            "degenerate bezier (all same) must have near-zero self-distance, got {}",
+            d
+        );
         // A point far from the degenerate bezier must have large distance.
         let d_far = dist_to_bezier([200.0, 200.0], p, p, p, p);
-        assert!(d_far > 100.0, "far point from degenerate bezier must have large distance, got {}", d_far);
+        assert!(
+            d_far > 100.0,
+            "far point from degenerate bezier must have large distance, got {}",
+            d_far
+        );
     }
 
     /// Group hit testing returns the element with the highest z_index.
     #[test]
     fn group_hit_returns_topmost() {
         let group = vec![
-            CanvasRect { id: 1, bounds: ([0.0, 0.0], [100.0, 100.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 2 },
-            CanvasRect { id: 2, bounds: ([0.0, 0.0], [100.0, 100.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 7 },
-            CanvasRect { id: 3, bounds: ([0.0, 0.0], [100.0, 100.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 4 },
+            CanvasRect {
+                id: 1,
+                bounds: ([0.0, 0.0], [100.0, 100.0]),
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: 2,
+            },
+            CanvasRect {
+                id: 2,
+                bounds: ([0.0, 0.0], [100.0, 100.0]),
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: 7,
+            },
+            CanvasRect {
+                id: 3,
+                bounds: ([0.0, 0.0], [100.0, 100.0]),
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: 4,
+            },
         ];
         let pt = [50.0, 50.0];
-        let topmost = group.iter()
+        let topmost = group
+            .iter()
             .filter(|r| hit_test_rect(pt, r, 0.0))
             .max_by_key(|r| r.z_index);
         assert!(topmost.is_some(), "at least one element must be hit");
-        assert_eq!(topmost.unwrap().id, 2, "element with z_index=7 must be topmost");
+        assert_eq!(
+            topmost.unwrap().id,
+            2,
+            "element with z_index=7 must be topmost"
+        );
     }
 
     /// Connector with exactly 4 points uses the bezier path.
@@ -1170,11 +1343,20 @@ mod tests {
             z_index: 0,
         };
         // Point near the start (0,0) must hit.
-        assert!(hit_test_connector([0.0, 0.0], &conn, HIT_RADIUS), "start of bezier must hit");
+        assert!(
+            hit_test_connector([0.0, 0.0], &conn, HIT_RADIUS),
+            "start of bezier must hit"
+        );
         // Point near the end (100,0) must hit.
-        assert!(hit_test_connector([100.0, 0.0], &conn, HIT_RADIUS), "end of bezier must hit");
+        assert!(
+            hit_test_connector([100.0, 0.0], &conn, HIT_RADIUS),
+            "end of bezier must hit"
+        );
         // Point far from the curve must miss.
-        assert!(!hit_test_connector([50.0, 200.0], &conn, HIT_RADIUS), "far point must miss bezier");
+        assert!(
+            !hit_test_connector([50.0, 200.0], &conn, HIT_RADIUS),
+            "far point must miss bezier"
+        );
     }
 
     /// hit_test_rect_aabb: point on right edge hits.
@@ -1190,7 +1372,11 @@ mod tests {
         // Perpendicular distance from (5, 0) to the segment.
         let d = dist_to_segment([5.0, 0.0], [0.0, 0.0], [10.0, 10.0]);
         // Perpendicular distance = |5 - 5*cos45| ≈ 3.535
-        assert!(d > 3.0 && d < 4.0, "diagonal perpendicular distance should be ~3.5, got {}", d);
+        assert!(
+            d > 3.0 && d < 4.0,
+            "diagonal perpendicular distance should be ~3.5, got {}",
+            d
+        );
     }
 
     /// Rect with 90° rotation: test centre still hits.
@@ -1208,7 +1394,10 @@ mod tests {
         };
         let cx = 50.0;
         let cy = 20.0;
-        assert!(hit_test_rect([cx, cy], &r, 0.0), "centre of 90°-rotated rect must hit");
+        assert!(
+            hit_test_rect([cx, cy], &r, 0.0),
+            "centre of 90°-rotated rect must hit"
+        );
     }
 
     // ── Wave AH: additional hit_test tests ───────────────────────────────────
@@ -1225,7 +1414,10 @@ mod tests {
             rotation: 0.0,
             z_index: 0,
         };
-        assert!(hit_test_rect([50.0, 50.0], &r, 0.0), "interior point must hit");
+        assert!(
+            hit_test_rect([50.0, 50.0], &r, 0.0),
+            "interior point must hit"
+        );
     }
 
     /// Point outside rect returns false.
@@ -1240,7 +1432,10 @@ mod tests {
             rotation: 0.0,
             z_index: 0,
         };
-        assert!(!hit_test_rect([150.0, 50.0], &r, 0.0), "exterior point must miss");
+        assert!(
+            !hit_test_rect([150.0, 50.0], &r, 0.0),
+            "exterior point must miss"
+        );
     }
 
     /// Point exactly on the rect boundary returns true (inclusive).
@@ -1256,9 +1451,15 @@ mod tests {
             z_index: 0,
         };
         // Left boundary x=10, middle of height
-        assert!(hit_test_rect([10.0, 40.0], &r, 0.0), "left boundary must hit");
+        assert!(
+            hit_test_rect([10.0, 40.0], &r, 0.0),
+            "left boundary must hit"
+        );
         // Right boundary x=10+80=90
-        assert!(hit_test_rect([90.0, 40.0], &r, 0.0), "right boundary must hit");
+        assert!(
+            hit_test_rect([90.0, 40.0], &r, 0.0),
+            "right boundary must hit"
+        );
     }
 
     /// Point near a bezier control point: distance is within threshold.
@@ -1276,7 +1477,10 @@ mod tests {
             z_index: 0,
         };
         // The curve passes through the start (0,0) — should always hit with any positive threshold.
-        assert!(hit_test_connector([0.0, 0.0], &conn, HIT_RADIUS), "start of bezier must hit");
+        assert!(
+            hit_test_connector([0.0, 0.0], &conn, HIT_RADIUS),
+            "start of bezier must hit"
+        );
     }
 
     /// Point far from a bezier curve returns false.
@@ -1292,19 +1496,28 @@ mod tests {
             z_index: 0,
         };
         // Curve lies along y=0; point at y=200 is far away.
-        assert!(!hit_test_connector([50.0, 200.0], &conn, HIT_RADIUS), "point far from bezier must miss");
+        assert!(
+            !hit_test_connector([50.0, 200.0], &conn, HIT_RADIUS),
+            "point far from bezier must miss"
+        );
     }
 
     /// Circle hit at centre returns true.
     #[test]
     fn hit_test_circle_center_true() {
-        assert!(hit_test_circle([0.0, 0.0], 0.0, 0.0, 50.0), "centre must hit");
+        assert!(
+            hit_test_circle([0.0, 0.0], 0.0, 0.0, 50.0),
+            "centre must hit"
+        );
     }
 
     /// Circle: point outside radius returns false.
     #[test]
     fn hit_test_circle_outside_radius_false() {
-        assert!(!hit_test_circle([100.0, 0.0], 0.0, 0.0, 50.0), "outside radius must miss");
+        assert!(
+            !hit_test_circle([100.0, 0.0], 0.0, 0.0, 50.0),
+            "outside radius must miss"
+        );
     }
 
     /// Line segment: point near the segment returns true.
@@ -1320,7 +1533,10 @@ mod tests {
             z_index: 0,
         };
         // 4px above the line — within HIT_RADIUS=5.
-        assert!(hit_test_line([50.0, 4.0], &l, HIT_RADIUS), "nearby point must hit");
+        assert!(
+            hit_test_line([50.0, 4.0], &l, HIT_RADIUS),
+            "nearby point must hit"
+        );
     }
 
     /// Line segment: point far from segment returns false.
@@ -1336,7 +1552,10 @@ mod tests {
             z_index: 0,
         };
         // 100px above the line — way outside HIT_RADIUS.
-        assert!(!hit_test_line([50.0, 100.0], &l, HIT_RADIUS), "far point must miss");
+        assert!(
+            !hit_test_line([50.0, 100.0], &l, HIT_RADIUS),
+            "far point must miss"
+        );
     }
 
     /// With zero tolerance, only exact hit on the shape returns true.
@@ -1352,9 +1571,15 @@ mod tests {
             z_index: 0,
         };
         // Point just outside right edge — no tolerance.
-        assert!(!hit_test_rect([101.0, 50.0], &r, 0.0), "point 1px outside must miss at zero tolerance");
+        assert!(
+            !hit_test_rect([101.0, 50.0], &r, 0.0),
+            "point 1px outside must miss at zero tolerance"
+        );
         // Point on the edge — must hit.
-        assert!(hit_test_rect([100.0, 50.0], &r, 0.0), "point on edge must hit at zero tolerance");
+        assert!(
+            hit_test_rect([100.0, 50.0], &r, 0.0),
+            "point on edge must hit at zero tolerance"
+        );
     }
 
     /// With large tolerance, a nearby point that misses exactly is accepted.
@@ -1370,21 +1595,52 @@ mod tests {
             z_index: 0,
         };
         // Point 20px outside — accepted with tolerance=25.
-        assert!(hit_test_rect([120.0, 50.0], &r, 25.0), "point within large tolerance must hit");
+        assert!(
+            hit_test_rect([120.0, 50.0], &r, 25.0),
+            "point within large tolerance must hit"
+        );
         // Point 30px outside — still outside tolerance=25.
-        assert!(!hit_test_rect([130.0, 50.0], &r, 25.0), "point beyond tolerance must miss");
+        assert!(
+            !hit_test_rect([130.0, 50.0], &r, 25.0),
+            "point beyond tolerance must miss"
+        );
     }
 
     /// Multiple overlapping elements: highest z_index is topmost hit.
     #[test]
     fn hit_test_multiple_elements_returns_topmost() {
         let elements = vec![
-            CanvasRect { id: 10, bounds: ([0.0, 0.0], [100.0, 100.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 1 },
-            CanvasRect { id: 20, bounds: ([0.0, 0.0], [100.0, 100.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 8 },
-            CanvasRect { id: 30, bounds: ([0.0, 0.0], [100.0, 100.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 4 },
+            CanvasRect {
+                id: 10,
+                bounds: ([0.0, 0.0], [100.0, 100.0]),
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: 1,
+            },
+            CanvasRect {
+                id: 20,
+                bounds: ([0.0, 0.0], [100.0, 100.0]),
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: 8,
+            },
+            CanvasRect {
+                id: 30,
+                bounds: ([0.0, 0.0], [100.0, 100.0]),
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: 4,
+            },
         ];
         let pt = [50.0, 50.0];
-        let topmost = elements.iter()
+        let topmost = elements
+            .iter()
             .filter(|r| hit_test_rect(pt, r, 0.0))
             .max_by_key(|r| r.z_index)
             .unwrap();
@@ -1400,13 +1656,18 @@ mod tests {
         let r = CanvasRect {
             id: 600,
             bounds: ([0.0, 0.0], [80.0, 40.0]),
-            fill: None, stroke: None, corner_radius: 0.0,
+            fill: None,
+            stroke: None,
+            corner_radius: 0.0,
             rotation: FRAC_PI_4,
             z_index: 0,
         };
         let cx = 0.0 + 80.0 / 2.0; // 40
         let cy = 0.0 + 40.0 / 2.0; // 20
-        assert!(hit_test_rect([cx, cy], &r, 0.0), "centre of rotated rect must always hit");
+        assert!(
+            hit_test_rect([cx, cy], &r, 0.0),
+            "centre of rotated rect must always hit"
+        );
     }
 
     /// An empty scene (no elements) returns no hit.
@@ -1422,12 +1683,37 @@ mod tests {
     #[test]
     fn hit_test_overlapping_z_returns_top() {
         let elements = vec![
-            CanvasRect { id: 1, bounds: ([0.0, 0.0], [100.0, 100.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 5 },
-            CanvasRect { id: 2, bounds: ([0.0, 0.0], [100.0, 100.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 20 },
-            CanvasRect { id: 3, bounds: ([0.0, 0.0], [100.0, 100.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 10 },
+            CanvasRect {
+                id: 1,
+                bounds: ([0.0, 0.0], [100.0, 100.0]),
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: 5,
+            },
+            CanvasRect {
+                id: 2,
+                bounds: ([0.0, 0.0], [100.0, 100.0]),
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: 20,
+            },
+            CanvasRect {
+                id: 3,
+                bounds: ([0.0, 0.0], [100.0, 100.0]),
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: 10,
+            },
         ];
         let pt = [50.0, 50.0];
-        let top = elements.iter()
+        let top = elements
+            .iter()
             .filter(|r| hit_test_rect(pt, r, 0.0))
             .max_by_key(|r| r.z_index)
             .unwrap();
@@ -1439,16 +1725,37 @@ mod tests {
     fn hit_test_locked_element_skipped() {
         // Simulate "locked" elements as z_index=0 and skip them.
         let elements = vec![
-            CanvasRect { id: 1, bounds: ([0.0, 0.0], [100.0, 100.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 0 },
-            CanvasRect { id: 2, bounds: ([0.0, 0.0], [100.0, 100.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 5 },
+            CanvasRect {
+                id: 1,
+                bounds: ([0.0, 0.0], [100.0, 100.0]),
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: 0,
+            },
+            CanvasRect {
+                id: 2,
+                bounds: ([0.0, 0.0], [100.0, 100.0]),
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: 5,
+            },
         ];
         let pt = [50.0, 50.0];
         // Skip elements with z_index=0 (locked).
-        let hit = elements.iter()
+        let hit = elements
+            .iter()
             .filter(|r| r.z_index > 0 && hit_test_rect(pt, r, 0.0))
             .max_by_key(|r| r.z_index);
         assert!(hit.is_some(), "non-locked element must be hit");
-        assert_eq!(hit.unwrap().id, 2, "only non-locked element must be returned");
+        assert_eq!(
+            hit.unwrap().id,
+            2,
+            "only non-locked element must be returned"
+        );
     }
 
     /// Transparent elements (fill=None) can be modelled as invisible and skipped.
@@ -1456,27 +1763,73 @@ mod tests {
     fn hit_test_transparent_element_skipped() {
         // "Transparent" = fill is None; skip these in hit-test.
         let elements = vec![
-            CanvasRect { id: 10, bounds: ([0.0, 0.0], [100.0, 100.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 5 },
-            CanvasRect { id: 11, bounds: ([0.0, 0.0], [100.0, 100.0]), fill: Some([1.0, 0.0, 0.0, 1.0]), stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 3 },
+            CanvasRect {
+                id: 10,
+                bounds: ([0.0, 0.0], [100.0, 100.0]),
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: 5,
+            },
+            CanvasRect {
+                id: 11,
+                bounds: ([0.0, 0.0], [100.0, 100.0]),
+                fill: Some([1.0, 0.0, 0.0, 1.0]),
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: 3,
+            },
         ];
         let pt = [50.0, 50.0];
-        let hit = elements.iter()
+        let hit = elements
+            .iter()
             .filter(|r| r.fill.is_some() && hit_test_rect(pt, r, 0.0))
             .max_by_key(|r| r.z_index);
         assert!(hit.is_some(), "opaque element must be hit");
-        assert_eq!(hit.unwrap().id, 11, "only non-transparent element must be returned");
+        assert_eq!(
+            hit.unwrap().id,
+            11,
+            "only non-transparent element must be returned"
+        );
     }
 
     /// hit_test_all_elements_at_pos: all elements overlapping a point are returned.
     #[test]
     fn hit_test_all_elements_at_pos() {
         let elements = vec![
-            CanvasRect { id: 1, bounds: ([0.0, 0.0], [100.0, 100.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 1 },
-            CanvasRect { id: 2, bounds: ([50.0, 50.0], [100.0, 100.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 2 },
-            CanvasRect { id: 3, bounds: ([200.0, 200.0], [100.0, 100.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 3 },
+            CanvasRect {
+                id: 1,
+                bounds: ([0.0, 0.0], [100.0, 100.0]),
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: 1,
+            },
+            CanvasRect {
+                id: 2,
+                bounds: ([50.0, 50.0], [100.0, 100.0]),
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: 2,
+            },
+            CanvasRect {
+                id: 3,
+                bounds: ([200.0, 200.0], [100.0, 100.0]),
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: 3,
+            },
         ];
         let pt = [70.0, 70.0]; // inside elements 1 and 2
-        let hits: Vec<u64> = elements.iter()
+        let hits: Vec<u64> = elements
+            .iter()
             .filter(|r| hit_test_rect(pt, r, 0.0))
             .map(|r| r.id)
             .collect();
@@ -1492,13 +1845,18 @@ mod tests {
         let r = CanvasRect {
             id: 700,
             bounds: ([0.0, 0.0], [60.0, 30.0]),
-            fill: None, stroke: None, corner_radius: 0.0,
+            fill: None,
+            stroke: None,
+            corner_radius: 0.0,
             rotation: FRAC_PI_2,
             z_index: 0,
         };
         let cx = 30.0_f32;
         let cy = 15.0_f32;
-        assert!(hit_test_rect([cx, cy], &r, 0.0), "centre of 90°-rotated rect must hit");
+        assert!(
+            hit_test_rect([cx, cy], &r, 0.0),
+            "centre of 90°-rotated rect must hit"
+        );
     }
 
     /// Hit test with a large threshold accepts a distant point.
@@ -1507,29 +1865,68 @@ mod tests {
         let r = CanvasRect {
             id: 800,
             bounds: ([0.0, 0.0], [50.0, 50.0]),
-            fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 0,
+            fill: None,
+            stroke: None,
+            corner_radius: 0.0,
+            rotation: 0.0,
+            z_index: 0,
         };
         // Point 18px outside right edge; threshold 20 accepts it.
-        assert!(hit_test_rect([68.0, 25.0], &r, 20.0), "large threshold must accept nearby point");
+        assert!(
+            hit_test_rect([68.0, 25.0], &r, 20.0),
+            "large threshold must accept nearby point"
+        );
         // Point 25px outside; threshold 20 does not accept it.
-        assert!(!hit_test_rect([75.0, 25.0], &r, 20.0), "large threshold must still reject very distant point");
+        assert!(
+            !hit_test_rect([75.0, 25.0], &r, 20.0),
+            "large threshold must still reject very distant point"
+        );
     }
 
     /// Hit results sorted by z_index descending give front-to-back order.
     #[test]
     fn hit_test_sorted_by_z_desc() {
         let elements = vec![
-            CanvasRect { id: 1, bounds: ([0.0, 0.0], [100.0, 100.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 10 },
-            CanvasRect { id: 2, bounds: ([0.0, 0.0], [100.0, 100.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 30 },
-            CanvasRect { id: 3, bounds: ([0.0, 0.0], [100.0, 100.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 20 },
+            CanvasRect {
+                id: 1,
+                bounds: ([0.0, 0.0], [100.0, 100.0]),
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: 10,
+            },
+            CanvasRect {
+                id: 2,
+                bounds: ([0.0, 0.0], [100.0, 100.0]),
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: 30,
+            },
+            CanvasRect {
+                id: 3,
+                bounds: ([0.0, 0.0], [100.0, 100.0]),
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: 20,
+            },
         ];
         let pt = [50.0, 50.0];
-        let mut hits: Vec<&CanvasRect> = elements.iter()
+        let mut hits: Vec<&CanvasRect> = elements
+            .iter()
             .filter(|r| hit_test_rect(pt, r, 0.0))
             .collect();
         hits.sort_by(|a, b| b.z_index.cmp(&a.z_index)); // descending
         let ids: Vec<u64> = hits.iter().map(|r| r.id).collect();
-        assert_eq!(ids, vec![2, 3, 1], "sorted by z_index descending must give [2,3,1]");
+        assert_eq!(
+            ids,
+            vec![2, 3, 1],
+            "sorted by z_index descending must give [2,3,1]"
+        );
     }
 
     // ── Wave AK: requested hit_test scenarios ────────────────────────────────
@@ -1539,13 +1936,38 @@ mod tests {
     #[test]
     fn overlapping_elements_last_on_top_semantics() {
         let elements = vec![
-            CanvasRect { id: 1, bounds: ([0.0, 0.0], [100.0, 100.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 1 },
-            CanvasRect { id: 2, bounds: ([0.0, 0.0], [100.0, 100.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 3 },
-            CanvasRect { id: 3, bounds: ([0.0, 0.0], [100.0, 100.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 2 },
+            CanvasRect {
+                id: 1,
+                bounds: ([0.0, 0.0], [100.0, 100.0]),
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: 1,
+            },
+            CanvasRect {
+                id: 2,
+                bounds: ([0.0, 0.0], [100.0, 100.0]),
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: 3,
+            },
+            CanvasRect {
+                id: 3,
+                bounds: ([0.0, 0.0], [100.0, 100.0]),
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: 2,
+            },
         ];
         let pt = [50.0, 50.0];
         // All three overlap at the point; highest z_index (last-on-top) wins.
-        let top = elements.iter()
+        let top = elements
+            .iter()
             .filter(|r| hit_test_rect(pt, r, 0.0))
             .max_by_key(|r| r.z_index)
             .unwrap();
@@ -1558,13 +1980,23 @@ mod tests {
         let r = CanvasRect {
             id: 900,
             bounds: ([50.0, 50.0], [0.0, 0.0]), // zero size
-            fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 1,
+            fill: None,
+            stroke: None,
+            corner_radius: 0.0,
+            rotation: 0.0,
+            z_index: 1,
         };
         // A point well away from the zero-size element must miss.
-        assert!(!hit_test_rect([100.0, 100.0], &r, 0.0), "zero-size element must not be hit at distant point");
+        assert!(
+            !hit_test_rect([100.0, 100.0], &r, 0.0),
+            "zero-size element must not be hit at distant point"
+        );
         // Even at the exact origin with zero threshold it collapses to a point; a nearby
         // point should only hit with a positive threshold.
-        assert!(!hit_test_rect([60.0, 60.0], &r, 0.0), "zero-size element must not be hit 10px away with no threshold");
+        assert!(
+            !hit_test_rect([60.0, 60.0], &r, 0.0),
+            "zero-size element must not be hit 10px away with no threshold"
+        );
     }
 
     /// Hit test inside a nested group checks children: a child rect that is hit
@@ -1575,55 +2007,117 @@ mod tests {
         let group = CanvasRect {
             id: 1000,
             bounds: ([0.0, 0.0], [200.0, 200.0]),
-            fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 1,
+            fill: None,
+            stroke: None,
+            corner_radius: 0.0,
+            rotation: 0.0,
+            z_index: 1,
         };
         // Child rect entirely inside the group.
         let child = CanvasRect {
             id: 1001,
             bounds: ([50.0, 50.0], [80.0, 80.0]),
-            fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 2,
+            fill: None,
+            stroke: None,
+            corner_radius: 0.0,
+            rotation: 0.0,
+            z_index: 2,
         };
         let pt = [90.0, 90.0]; // inside both group and child
-        // The group hit implies its children are checked; if child hits, group is considered hit.
+                               // The group hit implies its children are checked; if child hits, group is considered hit.
         let group_hit = hit_test_rect(pt, &group, 0.0);
         let child_hit = hit_test_rect(pt, &child, 0.0);
         assert!(group_hit, "outer group rect must be hit");
         assert!(child_hit, "child rect must be hit when point is inside it");
         // A point inside the group but outside the child should only hit the group.
         let pt_group_only = [10.0, 10.0];
-        assert!(hit_test_rect(pt_group_only, &group, 0.0), "group must still be hit at group-only point");
-        assert!(!hit_test_rect(pt_group_only, &child, 0.0), "child must not be hit at group-only point");
+        assert!(
+            hit_test_rect(pt_group_only, &group, 0.0),
+            "group must still be hit at group-only point"
+        );
+        assert!(
+            !hit_test_rect(pt_group_only, &child, 0.0),
+            "child must not be hit at group-only point"
+        );
     }
 
     /// Hit test miss: a point outside all elements returns no hit (None pattern).
     #[test]
     fn hit_test_miss_returns_none() {
         let elements = vec![
-            CanvasRect { id: 1, bounds: ([0.0, 0.0], [50.0, 50.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 1 },
-            CanvasRect { id: 2, bounds: ([100.0, 100.0], [50.0, 50.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 2 },
+            CanvasRect {
+                id: 1,
+                bounds: ([0.0, 0.0], [50.0, 50.0]),
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: 1,
+            },
+            CanvasRect {
+                id: 2,
+                bounds: ([100.0, 100.0], [50.0, 50.0]),
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: 2,
+            },
         ];
         // Point completely outside both elements.
         let pt = [300.0, 300.0];
-        let hit = elements.iter()
+        let hit = elements
+            .iter()
             .filter(|r| hit_test_rect(pt, r, 0.0))
             .max_by_key(|r| r.z_index);
-        assert!(hit.is_none(), "no element at point (300,300) — must return None");
+        assert!(
+            hit.is_none(),
+            "no element at point (300,300) — must return None"
+        );
     }
 
     /// Multiple elements at the same point: topmost (max z_index) is returned.
     #[test]
     fn multiple_elements_same_point_returns_topmost() {
         let elements = vec![
-            CanvasRect { id: 10, bounds: ([0.0, 0.0], [100.0, 100.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 5 },
-            CanvasRect { id: 20, bounds: ([0.0, 0.0], [100.0, 100.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 15 },
-            CanvasRect { id: 30, bounds: ([0.0, 0.0], [100.0, 100.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 10 },
+            CanvasRect {
+                id: 10,
+                bounds: ([0.0, 0.0], [100.0, 100.0]),
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: 5,
+            },
+            CanvasRect {
+                id: 20,
+                bounds: ([0.0, 0.0], [100.0, 100.0]),
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: 15,
+            },
+            CanvasRect {
+                id: 30,
+                bounds: ([0.0, 0.0], [100.0, 100.0]),
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: 10,
+            },
         ];
         let pt = [50.0, 50.0];
-        let top = elements.iter()
+        let top = elements
+            .iter()
             .filter(|r| hit_test_rect(pt, r, 0.0))
             .max_by_key(|r| r.z_index)
             .unwrap();
-        assert_eq!(top.id, 20, "element with z_index=15 must be topmost at the shared point");
+        assert_eq!(
+            top.id, 20,
+            "element with z_index=15 must be topmost at the shared point"
+        );
     }
 
     /// A point just outside the bounding box of every element misses all of them.
@@ -1632,7 +2126,11 @@ mod tests {
         let r = CanvasRect {
             id: 1100,
             bounds: ([10.0, 10.0], [40.0, 40.0]),
-            fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 1,
+            fill: None,
+            stroke: None,
+            corner_radius: 0.0,
+            rotation: 0.0,
+            z_index: 1,
         };
         // 1px beyond each edge.
         assert!(!hit_test_rect([9.0, 25.0], &r, 0.0), "left miss");
@@ -1646,16 +2144,44 @@ mod tests {
     fn group_children_topmost_child_wins_hit() {
         // Three children of a group, all at the same location.
         let children = vec![
-            CanvasRect { id: 1, bounds: ([20.0, 20.0], [60.0, 60.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 1 },
-            CanvasRect { id: 2, bounds: ([20.0, 20.0], [60.0, 60.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 4 },
-            CanvasRect { id: 3, bounds: ([20.0, 20.0], [60.0, 60.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 2 },
+            CanvasRect {
+                id: 1,
+                bounds: ([20.0, 20.0], [60.0, 60.0]),
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: 1,
+            },
+            CanvasRect {
+                id: 2,
+                bounds: ([20.0, 20.0], [60.0, 60.0]),
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: 4,
+            },
+            CanvasRect {
+                id: 3,
+                bounds: ([20.0, 20.0], [60.0, 60.0]),
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: 2,
+            },
         ];
         let pt = [50.0, 50.0];
-        let top_child = children.iter()
+        let top_child = children
+            .iter()
             .filter(|r| hit_test_rect(pt, r, 0.0))
             .max_by_key(|r| r.z_index)
             .unwrap();
-        assert_eq!(top_child.id, 2, "child with z_index=4 must win within the group");
+        assert_eq!(
+            top_child.id, 2,
+            "child with z_index=4 must win within the group"
+        );
     }
 
     /// A zero-size ellipse returns no hit for any point with zero threshold.
@@ -1664,32 +2190,58 @@ mod tests {
         let e = CanvasEllipse {
             id: 1200,
             bounds: ([50.0, 50.0], [0.0, 0.0]), // zero radii
-            fill: None, stroke: None, z_index: 0,
+            fill: None,
+            stroke: None,
+            z_index: 0,
         };
         // Any point other than the degenerate centre should miss at zero threshold.
         // (rx=0, ry=0: the ellipse eq produces +Inf for any non-centre point)
-        assert!(!hit_test_ellipse([100.0, 100.0], &e, 0.0), "zero-size ellipse must miss distant point");
+        assert!(
+            !hit_test_ellipse([100.0, 100.0], &e, 0.0),
+            "zero-size ellipse must miss distant point"
+        );
     }
 
     /// Overlapping stacked elements: verify all are hit at the shared region.
     #[test]
     fn overlapping_stacked_elements_all_hit_at_shared_region() {
         let elements = vec![
-            CanvasRect { id: 1, bounds: ([0.0, 0.0], [100.0, 100.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 1 },
-            CanvasRect { id: 2, bounds: ([0.0, 0.0], [100.0, 100.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 2 },
+            CanvasRect {
+                id: 1,
+                bounds: ([0.0, 0.0], [100.0, 100.0]),
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: 1,
+            },
+            CanvasRect {
+                id: 2,
+                bounds: ([0.0, 0.0], [100.0, 100.0]),
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: 2,
+            },
         ];
         let pt = [50.0, 50.0];
-        let hits: Vec<u64> = elements.iter()
+        let hits: Vec<u64> = elements
+            .iter()
             .filter(|r| hit_test_rect(pt, r, 0.0))
             .map(|r| r.id)
             .collect();
-        assert_eq!(hits.len(), 2, "both overlapping elements must be hit at shared region");
+        assert_eq!(
+            hits.len(),
+            2,
+            "both overlapping elements must be hit at shared region"
+        );
     }
 
     // ── Wave AO: spatial-index–backed hit tests ──────────────────────────────
 
-    use crate::spatial_index::SpatialIndex;
     use crate::elements::ElementBounds;
+    use crate::spatial_index::SpatialIndex;
 
     fn make_bounds_ht(id: u64, min: [f32; 2], max: [f32; 2]) -> ElementBounds {
         ElementBounds { id, min, max }
@@ -1741,9 +2293,16 @@ mod tests {
         let r = CanvasRect {
             id: 1,
             bounds: ([0.0, 0.0], [80.0, 80.0]),
-            fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 1,
+            fill: None,
+            stroke: None,
+            corner_radius: 0.0,
+            rotation: 0.0,
+            z_index: 1,
         };
-        assert!(hit_test_rect([40.0, 40.0], &r, 0.0), "precise hit must confirm broadphase result");
+        assert!(
+            hit_test_rect([40.0, 40.0], &r, 0.0),
+            "precise hit must confirm broadphase result"
+        );
     }
 
     /// Broadphase returns no candidate → precise test skipped → no hit.
@@ -1753,7 +2312,10 @@ mod tests {
         idx.insert(make_bounds_ht(1, [200.0, 200.0], [280.0, 280.0]));
         // Click at (0,0): broadphase returns nothing.
         let candidates = idx.query_in_bounds([0.0, 0.0], [0.0, 0.0]);
-        assert!(candidates.is_empty(), "broadphase must return nothing for click far away");
+        assert!(
+            candidates.is_empty(),
+            "broadphase must return nothing for click far away"
+        );
     }
 
     /// Multiple elements in broadphase → precise test selects topmost z_index.
@@ -1763,13 +2325,34 @@ mod tests {
         idx.insert(make_bounds_ht(1, [0.0, 0.0], [100.0, 100.0]));
         idx.insert(make_bounds_ht(2, [0.0, 0.0], [100.0, 100.0]));
         let candidates = idx.query_in_bounds([50.0, 50.0], [50.0, 50.0]);
-        assert_eq!(candidates.len(), 2, "broadphase must return 2 overlapping elements");
+        assert_eq!(
+            candidates.len(),
+            2,
+            "broadphase must return 2 overlapping elements"
+        );
         let rects = vec![
-            CanvasRect { id: 1, bounds: ([0.0, 0.0], [100.0, 100.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 5 },
-            CanvasRect { id: 2, bounds: ([0.0, 0.0], [100.0, 100.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 10 },
+            CanvasRect {
+                id: 1,
+                bounds: ([0.0, 0.0], [100.0, 100.0]),
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: 5,
+            },
+            CanvasRect {
+                id: 2,
+                bounds: ([0.0, 0.0], [100.0, 100.0]),
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: 10,
+            },
         ];
         let pt = [50.0, 50.0];
-        let topmost = rects.iter()
+        let topmost = rects
+            .iter()
             .filter(|r| candidates.contains(&r.id) && hit_test_rect(pt, r, 0.0))
             .max_by_key(|r| r.z_index);
         assert!(topmost.is_some());
@@ -1784,7 +2367,10 @@ mod tests {
         idx.insert(b);
         idx.remove(1, b);
         let candidates = idx.query_in_bounds([0.0, 0.0], [50.0, 50.0]);
-        assert!(candidates.is_empty(), "removed element must not appear in broadphase");
+        assert!(
+            candidates.is_empty(),
+            "removed element must not appear in broadphase"
+        );
     }
 
     /// Nearest returns element containing the query point (distance=0).
@@ -1794,7 +2380,11 @@ mod tests {
         idx.insert(make_bounds_ht(1, [0.0, 0.0], [100.0, 100.0]));
         // Point inside the element: AABB distance_2=0.
         let hit = idx.nearest([50.0, 50.0], 0.0);
-        assert_eq!(hit, Some(1), "point inside element must have distance=0 → nearest hit");
+        assert_eq!(
+            hit,
+            Some(1),
+            "point inside element must have distance=0 → nearest hit"
+        );
     }
 
     /// Hit test via broadphase + precise for a line connector.
@@ -1805,13 +2395,23 @@ mod tests {
         // Add a bounding box around the connector path.
         idx.insert(make_bounds_ht(30, [0.0, -5.0], [100.0, 5.0]));
         let candidates = idx.query_in_bounds([50.0, 0.0], [50.0, 0.0]);
-        assert!(!candidates.is_empty(), "broadphase must return connector candidate");
+        assert!(
+            !candidates.is_empty(),
+            "broadphase must return connector candidate"
+        );
         let conn = CanvasConnector {
-            id: 30, src_id: 1, dst_id: 2,
+            id: 30,
+            src_id: 1,
+            dst_id: 2,
             route: vec![[0.0, 0.0], [33.0, 0.0], [66.0, 0.0], [100.0, 0.0]],
-            confidence: 1.0, reason: String::new(), z_index: 1,
+            confidence: 1.0,
+            reason: String::new(),
+            z_index: 1,
         };
-        assert!(hit_test_connector([50.0, 3.0], &conn, HIT_RADIUS), "precise connector hit must succeed");
+        assert!(
+            hit_test_connector([50.0, 3.0], &conn, HIT_RADIUS),
+            "precise connector hit must succeed"
+        );
     }
 
     /// Query a zero-size point region: only elements that contain the point are returned.
@@ -1822,8 +2422,14 @@ mod tests {
         idx.insert(make_bounds_ht(2, [70.0, 70.0], [120.0, 120.0]));
         // Point query at (30, 30): inside element 1 only.
         let candidates = idx.query_in_bounds([30.0, 30.0], [30.0, 30.0]);
-        assert!(candidates.contains(&1), "element 1 must contain the query point");
-        assert!(!candidates.contains(&2), "element 2 must not contain the query point");
+        assert!(
+            candidates.contains(&1),
+            "element 1 must contain the query point"
+        );
+        assert!(
+            !candidates.contains(&2),
+            "element 2 must not contain the query point"
+        );
     }
 
     /// Broadphase returns multiple candidates; precise test on all returns correct subset.
@@ -1836,13 +2442,34 @@ mod tests {
         idx.insert(make_bounds_ht(2, [80.0, 80.0], [120.0, 120.0]));
         // Click at (100, 100): both A and B contain it.
         let candidates = idx.query_in_bounds([100.0, 100.0], [100.0, 100.0]);
-        assert_eq!(candidates.len(), 2, "broadphase must return both elements at (100,100)");
+        assert_eq!(
+            candidates.len(),
+            2,
+            "broadphase must return both elements at (100,100)"
+        );
         let rects = vec![
-            CanvasRect { id: 1, bounds: ([0.0, 0.0], [200.0, 200.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 1 },
-            CanvasRect { id: 2, bounds: ([80.0, 80.0], [40.0, 40.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 2 },
+            CanvasRect {
+                id: 1,
+                bounds: ([0.0, 0.0], [200.0, 200.0]),
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: 1,
+            },
+            CanvasRect {
+                id: 2,
+                bounds: ([80.0, 80.0], [40.0, 40.0]),
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: 2,
+            },
         ];
         let pt = [100.0, 100.0];
-        let hits: Vec<u64> = rects.iter()
+        let hits: Vec<u64> = rects
+            .iter()
             .filter(|r| candidates.contains(&r.id) && hit_test_rect(pt, r, 0.0))
             .map(|r| r.id)
             .collect();

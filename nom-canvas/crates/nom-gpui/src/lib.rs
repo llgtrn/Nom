@@ -1,12 +1,12 @@
 #![deny(unsafe_code)]
 
 pub mod animation;
-pub mod pixel_diff;
 pub mod atlas;
 pub mod element;
 pub mod event;
 pub mod focus;
 pub mod layout;
+pub mod pixel_diff;
 pub mod platform;
 pub mod renderer;
 pub mod scene;

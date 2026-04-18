@@ -2,7 +2,7 @@
 use crate::dock::{fill_quad, Dock, DockPosition};
 use crate::pane::PaneGroup;
 use nom_gpui::scene::Scene;
-use nom_theme::tokens::{self, PANEL_RIGHT_WIDTH, SIDEBAR_W, STATUSBAR_H, TOOLBAR_H};
+use nom_theme::tokens::{self, PANEL_RIGHT_WIDTH, SIDEBAR_W, STATUSBAR_H, TOOLBAR_HEIGHT};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ShellMode {
@@ -20,7 +20,7 @@ pub struct ShellLayout {
 impl Default for ShellLayout {
     fn default() -> Self {
         Self {
-            toolbar_h: TOOLBAR_H,
+            toolbar_h: TOOLBAR_HEIGHT,
             statusbar_h: STATUSBAR_H,
             left_w: SIDEBAR_W,
             right_w: PANEL_RIGHT_WIDTH,
@@ -134,8 +134,8 @@ mod tests {
         // 1440 - 248 - 320 = 872
         assert!((w - 872.0).abs() < 1.0);
         let h = shell.layout.center_h(900.0);
-        // 900 - 48 - 24 = 828
-        assert!((h - 828.0).abs() < 1.0);
+        // 900 - 36 - 24 = 840
+        assert!((h - 840.0).abs() < 1.0);
     }
 
     #[test]

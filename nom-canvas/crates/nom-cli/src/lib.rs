@@ -1314,7 +1314,10 @@ mod tests {
         let path = "src/main.nom";
         let cmd1 = parse_args(&["format", path]).unwrap();
         let cmd2 = parse_args(&["format", path]).unwrap();
-        assert_eq!(cmd1, cmd2, "format command is idempotent: same input yields same output");
+        assert_eq!(
+            cmd1, cmd2,
+            "format command is idempotent: same input yields same output"
+        );
     }
 
     #[test]
@@ -1325,12 +1328,16 @@ mod tests {
         // Both must equal CliCommand::Format with the same path.
         assert_eq!(
             once,
-            CliCommand::Format { path: path.to_string() },
+            CliCommand::Format {
+                path: path.to_string()
+            },
             "first parse must produce expected Format"
         );
         assert_eq!(
             twice,
-            CliCommand::Format { path: path.to_string() },
+            CliCommand::Format {
+                path: path.to_string()
+            },
             "second parse must produce the same Format (idempotent)"
         );
     }
@@ -1386,13 +1393,19 @@ mod tests {
         let cmd = parse_args(&["version"]).unwrap();
         // The CliCommand::Version variant's Debug representation contains "Version".
         let dbg = format!("{cmd:?}");
-        assert!(dbg.contains("Version"), "version debug must contain 'Version'");
+        assert!(
+            dbg.contains("Version"),
+            "version debug must contain 'Version'"
+        );
     }
 
     #[test]
     fn cli_version_variant_matches_version() {
         let cmd = parse_args(&["version"]).unwrap();
-        assert!(matches!(cmd, CliCommand::Version), "version command must parse as Version variant");
+        assert!(
+            matches!(cmd, CliCommand::Version),
+            "version command must parse as Version variant"
+        );
     }
 
     #[test]
@@ -1553,7 +1566,10 @@ mod tests {
         // parse_args(["format", x]) called twice with same args returns same result.
         let a = parse_args(&["format", "src.nom"]).unwrap();
         let b = parse_args(&["format", "src.nom"]).unwrap();
-        assert_eq!(a, b, "format command must be idempotent — same args same result");
+        assert_eq!(
+            a, b,
+            "format command must be idempotent — same args same result"
+        );
     }
 
     #[test]
@@ -1567,7 +1583,10 @@ mod tests {
     fn cli_version_string_nonempty() {
         let cmd = parse_args(&["version"]).unwrap();
         let dbg = format!("{cmd:?}");
-        assert!(!dbg.is_empty(), "Version command debug string must not be empty");
+        assert!(
+            !dbg.is_empty(),
+            "Version command debug string must not be empty"
+        );
     }
 
     #[test]
@@ -1620,7 +1639,10 @@ mod tests {
         // --release flag must change the Build variant.
         let no_flag = parse_args(&["build", "x"]).unwrap();
         let with_flag = parse_args(&["build", "--release", "x"]).unwrap();
-        assert_ne!(no_flag, with_flag, "--release flag must produce different variant");
+        assert_ne!(
+            no_flag, with_flag,
+            "--release flag must produce different variant"
+        );
     }
 
     #[test]
@@ -1819,7 +1841,10 @@ mod tests {
         let parts: Vec<&str> = version.split('.').collect();
         assert_eq!(parts.len(), 3, "version must have 3 semver parts");
         for part in &parts {
-            assert!(part.parse::<u32>().is_ok(), "each semver part must be numeric");
+            assert!(
+                part.parse::<u32>().is_ok(),
+                "each semver part must be numeric"
+            );
         }
     }
 
@@ -1921,8 +1946,14 @@ mod tests {
     #[test]
     fn cli_output_no_trailing_whitespace_in_error_message() {
         let err = parse_args(&["bogus_command"]).unwrap_err();
-        assert!(!err.ends_with(' '), "error message must not end with trailing whitespace");
-        assert!(!err.ends_with('\t'), "error message must not end with trailing tab");
+        assert!(
+            !err.ends_with(' '),
+            "error message must not end with trailing whitespace"
+        );
+        assert!(
+            !err.ends_with('\t'),
+            "error message must not end with trailing tab"
+        );
     }
 
     #[test]
@@ -1938,7 +1969,10 @@ mod tests {
     fn cli_exit_code_1_on_lint_error_simulated() {
         // Simulate: lint command on a path is parsed successfully.
         let cmd = parse_args(&["lint", "src/main.nom"]).unwrap();
-        assert!(matches!(cmd, CliCommand::Lint { .. }), "lint must parse to Lint variant");
+        assert!(
+            matches!(cmd, CliCommand::Lint { .. }),
+            "lint must parse to Lint variant"
+        );
     }
 
     #[test]
@@ -1953,13 +1987,19 @@ mod tests {
     fn cli_quiet_flag_unknown_returns_err() {
         // "--quiet" is not a recognized command; must return an error.
         let result = parse_args(&["--quiet", "run", "f.nom"]);
-        assert!(result.is_err(), "--quiet must not be recognized as a top-level command");
+        assert!(
+            result.is_err(),
+            "--quiet must not be recognized as a top-level command"
+        );
     }
 
     #[test]
     fn cli_verbose_flag_unknown_returns_err() {
         let result = parse_args(&["--verbose"]);
-        assert!(result.is_err(), "--verbose must not be recognized as a top-level command");
+        assert!(
+            result.is_err(),
+            "--verbose must not be recognized as a top-level command"
+        );
     }
 
     #[test]
@@ -2122,13 +2162,19 @@ mod tests {
     #[test]
     fn output_format_check_produces_check_variant() {
         let cmd = parse_args(&["check", "foo.nom"]).unwrap();
-        assert!(matches!(cmd, CliCommand::Check { .. }), "check must produce Check variant");
+        assert!(
+            matches!(cmd, CliCommand::Check { .. }),
+            "check must produce Check variant"
+        );
     }
 
     #[test]
     fn output_format_lint_produces_lint_variant() {
         let cmd = parse_args(&["lint", "foo.nom"]).unwrap();
-        assert!(matches!(cmd, CliCommand::Lint { .. }), "lint must produce Lint variant");
+        assert!(
+            matches!(cmd, CliCommand::Lint { .. }),
+            "lint must produce Lint variant"
+        );
     }
 
     #[test]
@@ -2212,7 +2258,10 @@ mod tests {
     fn integration_rag_and_rag_with_k_differ() {
         let basic = parse_args(&["rag", "query"]).unwrap();
         let with_k = parse_args(&["rag", "--top-k", "10", "query"]).unwrap();
-        assert_ne!(basic, with_k, "rag and rag-with-k must be different variants");
+        assert_ne!(
+            basic, with_k,
+            "rag and rag-with-k must be different variants"
+        );
     }
 
     #[test]
@@ -2255,7 +2304,10 @@ mod tests {
                 CliCommand::Format { path: p } => p,
                 other => panic!("unexpected variant: {other:?}"),
             };
-            assert_eq!(extracted_path, path, "{cmd}: path must be preserved exactly");
+            assert_eq!(
+                extracted_path, path,
+                "{cmd}: path must be preserved exactly"
+            );
         }
     }
 
@@ -2312,7 +2364,12 @@ mod tests {
     #[test]
     fn cli_check_dot_path() {
         let cmd = parse_args(&["check", "."]).unwrap();
-        assert_eq!(cmd, CliCommand::Check { path: ".".to_string() });
+        assert_eq!(
+            cmd,
+            CliCommand::Check {
+                path: ".".to_string()
+            }
+        );
     }
 
     #[test]
@@ -2346,7 +2403,10 @@ mod tests {
         let result = parse_args(&["foobar"]);
         assert!(result.is_err(), "unknown subcommand must return Err");
         let msg = result.unwrap_err();
-        assert!(msg.contains("foobar"), "error must mention the unknown command");
+        assert!(
+            msg.contains("foobar"),
+            "error must mention the unknown command"
+        );
     }
 
     #[test]
@@ -2375,7 +2435,12 @@ mod tests {
     fn cli_lint_exit_1_on_errors_parse_succeeds() {
         // parse must succeed; exit code is a runtime concern, not parse concern.
         let cmd = parse_args(&["lint", "src/main.nom"]).unwrap();
-        assert_eq!(cmd, CliCommand::Lint { path: "src/main.nom".into() });
+        assert_eq!(
+            cmd,
+            CliCommand::Lint {
+                path: "src/main.nom".into()
+            }
+        );
     }
 
     #[test]
@@ -2418,14 +2483,24 @@ mod tests {
     #[test]
     fn cli_run_with_path_flag() {
         let cmd = parse_args(&["run", "app.nom"]).unwrap();
-        assert_eq!(cmd, CliCommand::Run { path: "app.nom".into() });
+        assert_eq!(
+            cmd,
+            CliCommand::Run {
+                path: "app.nom".into()
+            }
+        );
     }
 
     #[test]
     fn cli_run_with_config_flag_uses_path() {
         // Config is encoded in the path; parser stores whatever path is given.
         let cmd = parse_args(&["run", "config/main.nom"]).unwrap();
-        assert_eq!(cmd, CliCommand::Run { path: "config/main.nom".into() });
+        assert_eq!(
+            cmd,
+            CliCommand::Run {
+                path: "config/main.nom".into()
+            }
+        );
     }
 
     #[test]
@@ -2442,7 +2517,12 @@ mod tests {
     #[test]
     fn cli_graph_query_runs() {
         let cmd = parse_args(&["graph", "canvas node graph"]).unwrap();
-        assert_eq!(cmd, CliCommand::Graph { query: "canvas node graph".into() });
+        assert_eq!(
+            cmd,
+            CliCommand::Graph {
+                query: "canvas node graph".into()
+            }
+        );
     }
 
     #[test]
@@ -2498,13 +2578,23 @@ mod tests {
     #[test]
     fn cli_lint_path_with_extension_preserved() {
         let cmd = parse_args(&["lint", "src/lib.nom"]).unwrap();
-        assert_eq!(cmd, CliCommand::Lint { path: "src/lib.nom".into() });
+        assert_eq!(
+            cmd,
+            CliCommand::Lint {
+                path: "src/lib.nom".into()
+            }
+        );
     }
 
     #[test]
     fn cli_format_path_with_extension_preserved() {
         let cmd = parse_args(&["format", "src/lib.nom"]).unwrap();
-        assert_eq!(cmd, CliCommand::Format { path: "src/lib.nom".into() });
+        assert_eq!(
+            cmd,
+            CliCommand::Format {
+                path: "src/lib.nom".into()
+            }
+        );
     }
 
     #[test]
@@ -2531,7 +2621,10 @@ mod tests {
     #[test]
     fn cli_check_error_message_contains_command_name() {
         let err = parse_args(&["unknown_cmd"]).unwrap_err();
-        assert!(err.contains("unknown"), "error must mention unknown command");
+        assert!(
+            err.contains("unknown"),
+            "error must mention unknown command"
+        );
     }
 
     #[test]
@@ -2767,7 +2860,10 @@ mod tests {
         // by checking that a Graph query with "json" in the query string parses.
         let cmd = parse_args(&["graph", "--format json results"]).unwrap();
         if let CliCommand::Graph { query } = cmd {
-            assert!(query.contains("json"), "query must preserve --format json hint");
+            assert!(
+                query.contains("json"),
+                "query must preserve --format json hint"
+            );
         } else {
             panic!("expected Graph");
         }
@@ -2802,7 +2898,10 @@ mod tests {
     fn cli_subcommand_test_via_check_exists() {
         // "test" maps to "check" in this CLI surface; verify check parses.
         let result = parse_args(&["check", "src/main.nom"]);
-        assert!(result.is_ok(), "check/test subcommand must parse successfully");
+        assert!(
+            result.is_ok(),
+            "check/test subcommand must parse successfully"
+        );
         assert!(matches!(result.unwrap(), CliCommand::Check { .. }));
     }
 
@@ -2821,7 +2920,10 @@ mod tests {
     fn cli_no_args_shows_usage_error_non_empty() {
         // No arguments → error message must be non-empty (help/usage text).
         let err = parse_args(&[]).unwrap_err();
-        assert!(!err.is_empty(), "empty args must return non-empty error/usage message");
+        assert!(
+            !err.is_empty(),
+            "empty args must return non-empty error/usage message"
+        );
     }
 
     #[test]
@@ -2890,17 +2992,17 @@ mod tests {
     fn cli_run_and_build_are_distinct_variants() {
         let run = parse_args(&["run", "main.nom"]).unwrap();
         let build = parse_args(&["build", "main.nom"]).unwrap();
-        assert_ne!(
-            std::mem::discriminant(&run),
-            std::mem::discriminant(&build)
-        );
+        assert_ne!(std::mem::discriminant(&run), std::mem::discriminant(&build));
     }
 
     #[test]
     fn cli_build_release_false_by_default_explicit() {
         let cmd = parse_args(&["build", "x.nom"]).unwrap();
         if let CliCommand::Build { release, .. } = cmd {
-            assert!(!release, "release must be false when --release is not given");
+            assert!(
+                !release,
+                "release must be false when --release is not given"
+            );
         }
     }
 
@@ -2916,10 +3018,7 @@ mod tests {
     fn cli_format_and_run_are_distinct_variants() {
         let fmt = parse_args(&["format", "main.nom"]).unwrap();
         let run = parse_args(&["run", "main.nom"]).unwrap();
-        assert_ne!(
-            std::mem::discriminant(&fmt),
-            std::mem::discriminant(&run)
-        );
+        assert_ne!(std::mem::discriminant(&fmt), std::mem::discriminant(&run));
     }
 
     #[test]
@@ -2969,10 +3068,7 @@ mod tests {
     fn cli_rag_and_rag_with_k_are_distinct_variants() {
         let rag = parse_args(&["rag", "query"]).unwrap();
         let rag_k = parse_args(&["rag", "--top-k", "5", "query"]).unwrap();
-        assert_ne!(
-            std::mem::discriminant(&rag),
-            std::mem::discriminant(&rag_k)
-        );
+        assert_ne!(std::mem::discriminant(&rag), std::mem::discriminant(&rag_k));
     }
 
     #[test]
@@ -2991,7 +3087,9 @@ mod tests {
     fn cli_build_release_and_non_release_produce_different_commands() {
         let r = parse_args(&["build", "--release", "x.nom"]).unwrap();
         let nr = parse_args(&["build", "x.nom"]).unwrap();
-        if let (CliCommand::Build { release: r1, .. }, CliCommand::Build { release: r2, .. }) = (r, nr) {
+        if let (CliCommand::Build { release: r1, .. }, CliCommand::Build { release: r2, .. }) =
+            (r, nr)
+        {
             assert_ne!(r1, r2);
         }
     }
@@ -3036,10 +3134,7 @@ mod tests {
     fn cli_format_and_lint_distinct_variants() {
         let fmt = parse_args(&["format", "x.nom"]).unwrap();
         let lint = parse_args(&["lint", "x.nom"]).unwrap();
-        assert_ne!(
-            std::mem::discriminant(&fmt),
-            std::mem::discriminant(&lint)
-        );
+        assert_ne!(std::mem::discriminant(&fmt), std::mem::discriminant(&lint));
     }
 
     // -----------------------------------------------------------------------
@@ -3108,7 +3203,10 @@ mod tests {
     #[test]
     fn cli_error_contains_unknown_subcommand_name() {
         let err = parse_args(&["publish", "."]).unwrap_err();
-        assert!(err.contains("publish"), "error must name the unknown subcommand");
+        assert!(
+            err.contains("publish"),
+            "error must name the unknown subcommand"
+        );
     }
 
     #[test]
@@ -3137,7 +3235,10 @@ mod tests {
         let parts: Vec<&str> = version.split('.').collect();
         assert_eq!(parts.len(), 3);
         for part in &parts {
-            assert!(part.parse::<u32>().is_ok(), "each semver part must be numeric");
+            assert!(
+                part.parse::<u32>().is_ok(),
+                "each semver part must be numeric"
+            );
         }
     }
 
@@ -3337,7 +3438,10 @@ mod tests {
     fn output_plain_hint_in_rag_query_does_not_contain_json() {
         let cmd = parse_args(&["rag", "--output plain"]).unwrap();
         if let CliCommand::Rag { query, .. } = cmd {
-            assert!(!query.contains("json"), "plain output hint must not contain 'json'");
+            assert!(
+                !query.contains("json"),
+                "plain output hint must not contain 'json'"
+            );
         } else {
             panic!("expected Rag");
         }
@@ -3354,14 +3458,20 @@ mod tests {
     #[test]
     fn output_empty_string_flag_returns_err() {
         let result = parse_args(&["--output", ""]);
-        assert!(result.is_err(), "--output with empty value must return an error");
+        assert!(
+            result.is_err(),
+            "--output with empty value must return an error"
+        );
     }
 
     #[test]
     fn default_output_no_flag_graph_parses_ok() {
         // No --output flag: graph command must parse successfully.
         let result = parse_args(&["graph", "render pipeline"]);
-        assert!(result.is_ok(), "default output (no --output flag) must parse");
+        assert!(
+            result.is_ok(),
+            "default output (no --output flag) must parse"
+        );
     }
 
     #[test]
@@ -3377,7 +3487,10 @@ mod tests {
         let query = "search results format=json";
         let cmd = parse_args(&["rag", query]).unwrap();
         if let CliCommand::Rag { query: q, .. } = cmd {
-            assert_eq!(q, query, "query string with format hint must be preserved exactly");
+            assert_eq!(
+                q, query,
+                "query string with format hint must be preserved exactly"
+            );
         } else {
             panic!("expected Rag");
         }
@@ -3396,7 +3509,10 @@ mod tests {
     fn subcommand_build_release_flag_recognized() {
         let cmd = parse_args(&["build", "--release", "main.nom"]).unwrap();
         if let CliCommand::Build { release, .. } = cmd {
-            assert!(release, "--release flag must be recognized and set release=true");
+            assert!(
+                release,
+                "--release flag must be recognized and set release=true"
+            );
         } else {
             panic!("expected Build");
         }
@@ -3407,7 +3523,10 @@ mod tests {
         // Without --release the build is in debug mode (release=false).
         let cmd = parse_args(&["build", "main.nom"]).unwrap();
         if let CliCommand::Build { release, .. } = cmd {
-            assert!(!release, "build without --release must default to debug mode");
+            assert!(
+                !release,
+                "build without --release must default to debug mode"
+            );
         } else {
             panic!("expected Build");
         }
@@ -3556,13 +3675,19 @@ mod tests {
     fn error_positional_before_subcommand_is_err() {
         // A stray positional argument before the subcommand is not recognized.
         let result = parse_args(&["somefile.nom", "build"]);
-        assert!(result.is_err(), "positional before subcommand must be an error");
+        assert!(
+            result.is_err(),
+            "positional before subcommand must be an error"
+        );
     }
 
     #[test]
     fn error_double_dash_separator_treated_as_unknown() {
         // "--" is not a recognized subcommand; the parser should return an error.
         let result = parse_args(&["--", "run", "f.nom"]);
-        assert!(result.is_err(), "-- separator must not be a recognized subcommand");
+        assert!(
+            result.is_err(),
+            "-- separator must not be a recognized subcommand"
+        );
     }
 }

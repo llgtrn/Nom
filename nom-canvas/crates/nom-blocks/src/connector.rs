@@ -2,7 +2,7 @@
 #![deny(unsafe_code)]
 use crate::dict_reader::DictReader;
 use crate::graph_node::NodeId;
-use serde::{Deserialize, Serialize};
+use serde::{de, Deserialize, Deserializer, Serialize};
 
 /// Unique identifier for a connector.
 pub type ConnectorId = String;
@@ -31,7 +31,7 @@ pub struct ConnectorValidation<'a> {
 
 /// A wire between two graph nodes. can_wire_result is NON-OPTIONAL.
 /// Grammar-backed validation is required at construction time.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct Connector {
     /// Unique connector ID.
     pub id: ConnectorId,
@@ -51,7 +51,24 @@ pub struct Connector {
     can_wire_result: (bool, f32, String),
 }
 
+impl<'de> Deserialize<'de> for Connector {
+    fn deserialize<D>(_deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Err(de::Error::custom(
+            "Connector deserialization is disabled; use Connector::from_trusted with grammar validation",
+        ))
+    }
+}
+
 impl Connector {
+    /// Rehydrate a connector only after the caller has loaded trusted persisted
+    /// fields and revalidated them against the current grammar dictionary.
+    pub fn from_trusted(request: ConnectorValidation<'_>) -> Self {
+        Self::new_with_validation(request)
+    }
+
     /// Append a reasoning step and return self (builder pattern).
     pub fn with_reason(mut self, reason: String) -> Self {
         self.reason_chain.push(reason);
@@ -545,7 +562,10 @@ mod tests {
             from_kind: "",
             to_kind: "concept",
         });
-        assert!(!c.is_valid(), "type mismatch with empty from_kind must fail");
+        assert!(
+            !c.is_valid(),
+            "type mismatch with empty from_kind must fail"
+        );
     }
 
     #[test]
@@ -702,18 +722,14 @@ mod tests {
         assert!(good.is_valid());
     }
 
-    /// Connector serializes and deserializes to identical field values.
+    /// Connectors serialize for persistence, but raw JSON cannot deserialize
+    /// them without the grammar dictionary revalidation path.
     #[test]
-    fn connector_from_serialized_round_trip() {
+    fn connector_json_deserialize_is_rejected() {
         let c = valid_connector();
         let json = serde_json::to_string(&c).expect("serialize");
-        let c2: Connector = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(c.id, c2.id);
-        assert_eq!(c.src, c2.src);
-        assert_eq!(c.dst, c2.dst);
-        assert!((c.confidence - c2.confidence).abs() < f32::EPSILON);
-        assert_eq!(c.reason, c2.reason);
-        assert_eq!(c.is_valid(), c2.is_valid());
+        let err = serde_json::from_str::<Connector>(&json).unwrap_err();
+        assert!(err.to_string().contains("deserialization is disabled"));
     }
 
     /// Two independently constructed connectors with the same fields have equal field values.
@@ -872,7 +888,10 @@ mod tests {
             to_kind: "concept",
         });
         let s = format!("{c:?}");
-        assert!(s.contains("node-source-xyz"), "debug must contain source node id");
+        assert!(
+            s.contains("node-source-xyz"),
+            "debug must contain source node id"
+        );
     }
 
     /// Debug representation contains the target node id.
@@ -890,7 +909,10 @@ mod tests {
             to_kind: "concept",
         });
         let s = format!("{c:?}");
-        assert!(s.contains("node-target-xyz"), "debug must contain target node id");
+        assert!(
+            s.contains("node-target-xyz"),
+            "debug must contain target node id"
+        );
     }
 
     /// Debug representation contains the connector id.
@@ -908,7 +930,10 @@ mod tests {
             to_kind: "concept",
         });
         let s = format!("{c:?}");
-        assert!(s.contains("wire-kind-check"), "debug must contain connector id");
+        assert!(
+            s.contains("wire-kind-check"),
+            "debug must contain connector id"
+        );
     }
 
     // ── wave AB: additional connector tests ────────────────────────────────────

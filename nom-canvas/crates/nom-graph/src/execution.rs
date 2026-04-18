@@ -78,6 +78,52 @@ impl ExecutionEngine {
         }
     }
 
+    /// Execute a pre-computed plan (list of [`NodeId`]) against the given DAG.
+    ///
+    /// For each node in plan order, collects cached outputs of upstream nodes as inputs,
+    /// computes a cache key from the node kind + combined input hash, and stores a
+    /// [`NodeOutput`] entry in the result map.
+    ///
+    /// Returns early with partial results if `cancel()` has been called.
+    pub fn execute(&mut self, dag: &Dag, plan: &[NodeId]) -> HashMap<NodeId, NodeOutput> {
+        let mut results: HashMap<NodeId, NodeOutput> = HashMap::new();
+        for node_id in plan {
+            if self.is_cancelled() {
+                break;
+            }
+            if let Some(node) = dag.nodes.get(node_id) {
+                // Collect upstream output hashes as the combined input hash.
+                let input_hash = dag
+                    .edges
+                    .iter()
+                    .filter(|e| &e.dst_node == node_id)
+                    .fold(0u64, |acc, edge| {
+                        let upstream_hash = results
+                            .get(&edge.src_node)
+                            .map(|o| o.cache_key)
+                            .unwrap_or(0);
+                        acc.wrapping_add(upstream_hash.rotate_left(17))
+                    });
+                let cache_key = Self::compute_cache_key(&node.kind, input_hash);
+                let was_cached = self.cache.get(cache_key).is_some();
+                if !was_cached {
+                    // Store a placeholder so downstream nodes see the new key.
+                    self.cache.put(cache_key, crate::cache::CachedValue::Bytes(vec![]));
+                }
+                results.insert(
+                    node_id.clone(),
+                    NodeOutput {
+                        node_id: node_id.clone(),
+                        outputs: HashMap::new(),
+                        cache_key,
+                        was_cached,
+                    },
+                );
+            }
+        }
+        results
+    }
+
     /// Execute DAG: sort -> filter by cache -> dispatch in order
     /// Returns execution plan (list of nodes to actually run), or `Err` if cancelled or cycle detected.
     pub fn plan_execution(&self, dag: &Dag) -> Result<Vec<NodeId>, Vec<NodeId>> {

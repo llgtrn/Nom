@@ -113,8 +113,14 @@ mod tests {
             .map(|line| line.replace('\t', "    "))
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(!result.contains('\t'), "pasted content must have no tabs after conversion");
-        assert!(result.contains("    function"), "leading tab replaced by 4 spaces");
+        assert!(
+            !result.contains('\t'),
+            "pasted content must have no tabs after conversion"
+        );
+        assert!(
+            result.contains("    function"),
+            "leading tab replaced by 4 spaces"
+        );
     }
 
     #[test]
@@ -135,7 +141,10 @@ mod tests {
     fn indent_twice_doubles_indent() {
         let once = indent_line("x", 4);
         let twice = indent_line(&once, 4);
-        assert!(twice.starts_with("        "), "double-indent must start with 8 spaces");
+        assert!(
+            twice.starts_with("        "),
+            "double-indent must start with 8 spaces"
+        );
         assert!(twice.ends_with('x'));
     }
 
@@ -198,7 +207,10 @@ mod tests {
         let base_indent = auto_indent_text(prev_line, 4);
         // Smart indent: add one more tab_size indent
         let smart = indent_line(&base_indent, 4);
-        assert!(smart.len() >= 4, "smart indent after '{{' must add at least one level");
+        assert!(
+            smart.len() >= 4,
+            "smart indent after '{{' must add at least one level"
+        );
     }
 
     /// Smart indent after colon: next line gets indented.
@@ -223,11 +235,15 @@ mod tests {
     #[test]
     fn editor_format_selection_only() {
         let selection = "  define foo    \n  result 42   ";
-        let formatted: String = selection.lines()
+        let formatted: String = selection
+            .lines()
             .map(|l| l.trim_end())
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(!formatted.contains("    \n"), "trailing spaces must be removed");
+        assert!(
+            !formatted.contains("    \n"),
+            "trailing spaces must be removed"
+        );
         assert!(formatted.contains("define foo"));
     }
 
@@ -235,10 +251,12 @@ mod tests {
     #[test]
     fn editor_trim_trailing_whitespace() {
         let source = "hello   \nworld  \nfoo\n";
-        let trimmed: String = source.lines()
+        let trimmed: String = source
+            .lines()
             .map(|l| l.trim_end())
             .collect::<Vec<_>>()
-            .join("\n") + "\n";
+            .join("\n")
+            + "\n";
         assert!(!trimmed.contains("   \n"), "trailing spaces must be gone");
         assert!(!trimmed.contains("  \n"), "trailing spaces must be gone");
     }
@@ -259,11 +277,15 @@ mod tests {
     #[test]
     fn editor_remove_blank_lines() {
         let source = "line1\n\nline2\n\n\nline3";
-        let without_blanks: String = source.lines()
+        let without_blanks: String = source
+            .lines()
             .filter(|l| !l.trim().is_empty())
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(!without_blanks.contains("\n\n"), "no blank lines must remain");
+        assert!(
+            !without_blanks.contains("\n\n"),
+            "no blank lines must remain"
+        );
         assert_eq!(without_blanks.lines().count(), 3);
     }
 
@@ -271,12 +293,16 @@ mod tests {
     #[test]
     fn editor_normalize_indentation() {
         let source = "\thello\n\t\tworld";
-        let normalized: String = source.lines()
+        let normalized: String = source
+            .lines()
             .map(|l| l.replace('\t', "    "))
             .collect::<Vec<_>>()
             .join("\n");
         assert!(!normalized.contains('\t'), "normalized must not have tabs");
-        assert!(normalized.starts_with("    hello"), "tab replaced with 4 spaces");
+        assert!(
+            normalized.starts_with("    hello"),
+            "tab replaced with 4 spaces"
+        );
     }
 
     /// Convert tabs to spaces: each tab becomes tab_size spaces.
@@ -392,7 +418,7 @@ mod tests {
         // base leading whitespace of prev_line is empty (no leading spaces)
         let base = auto_indent_text(prev_line, 4);
         assert_eq!(base, ""); // no leading whitespace
-        // smart indent: base + one level
+                              // smart indent: base + one level
         let smart = indent_line(&base, 4);
         assert_eq!(smart, "    ");
     }
@@ -431,7 +457,10 @@ mod tests {
         let mixed = "\t    mixed";
         let normalized = mixed.replace('\t', "    ");
         assert!(!normalized.contains('\t'), "no tabs after normalization");
-        assert!(normalized.starts_with("        "), "tab(4) + 4 spaces = 8 spaces");
+        assert!(
+            normalized.starts_with("        "),
+            "tab(4) + 4 spaces = 8 spaces"
+        );
     }
 
     /// auto_indent_text on a 2-space-indented line returns 2 spaces.

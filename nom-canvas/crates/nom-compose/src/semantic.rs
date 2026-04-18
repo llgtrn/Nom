@@ -67,12 +67,26 @@ impl SemanticModel {
     }
 
     /// Generate a simple SQL SELECT from this model.
-    pub fn to_select_sql(&self) -> String {
+    pub fn to_select_sql(&self) -> Result<String, String> {
+        if !crate::backends::data_query::is_safe_identifier(&self.source_table) {
+            return Err(format!("unsafe source table: {}", self.source_table));
+        }
         if self.columns.is_empty() {
-            return format!("SELECT * FROM {}", self.source_table);
+            return Ok(format!("SELECT * FROM {}", self.source_table));
+        }
+        if let Some(unsafe_col) = self
+            .columns
+            .iter()
+            .find(|c| !crate::backends::data_query::is_safe_identifier(&c.name))
+        {
+            return Err(format!("unsafe column identifier: {}", unsafe_col.name));
         }
         let cols: Vec<&str> = self.columns.iter().map(|c| c.name.as_str()).collect();
-        format!("SELECT {} FROM {}", cols.join(", "), self.source_table)
+        Ok(format!(
+            "SELECT {} FROM {}",
+            cols.join(", "),
+            self.source_table
+        ))
     }
 }
 
@@ -113,12 +127,12 @@ mod tests {
             data_type: SemanticDataType::String,
             description: None,
         });
-        assert_eq!(m.to_select_sql(), "SELECT id, name FROM raw.users");
+        assert_eq!(m.to_select_sql().unwrap(), "SELECT id, name FROM raw.users");
     }
     #[test]
     fn semantic_model_empty_columns_select_star() {
         let m = SemanticModel::new("t", "raw.t");
-        assert_eq!(m.to_select_sql(), "SELECT * FROM raw.t");
+        assert_eq!(m.to_select_sql().unwrap(), "SELECT * FROM raw.t");
     }
     #[test]
     fn semantic_data_type_from_str() {
@@ -167,7 +181,7 @@ mod tests {
             data_type: SemanticDataType::Timestamp,
             description: None,
         });
-        let sql = m.to_select_sql();
+        let sql = m.to_select_sql().unwrap();
         assert!(!sql.is_empty());
         assert!(sql.contains("raw.events"));
     }
@@ -220,6 +234,25 @@ mod tests {
     }
 
     #[test]
+    fn semantic_model_rejects_unsafe_identifiers() {
+        let mut m = SemanticModel::new("bad", "raw.users;DROP");
+        m.add_column(SemanticColumn {
+            name: "id".into(),
+            data_type: SemanticDataType::Integer,
+            description: None,
+        });
+        assert!(m.to_select_sql().unwrap_err().contains("unsafe source"));
+
+        let mut m = SemanticModel::new("bad_col", "raw.users");
+        m.add_column(SemanticColumn {
+            name: "id;DROP".into(),
+            data_type: SemanticDataType::Integer,
+            description: None,
+        });
+        assert!(m.to_select_sql().unwrap_err().contains("unsafe column"));
+    }
+
+    #[test]
     fn semantic_sql_join_style_multi_column() {
         let mut m = SemanticModel::new("orders", "raw.orders");
         for name in &["id", "user_id", "total", "created_at"] {
@@ -229,7 +262,7 @@ mod tests {
                 description: None,
             });
         }
-        let sql = m.to_select_sql();
+        let sql = m.to_select_sql().unwrap();
         assert!(sql.contains("id"));
         assert!(sql.contains("user_id"));
         assert!(sql.contains("total"));
@@ -364,7 +397,7 @@ mod tests {
             data_type: SemanticDataType::Boolean,
             description: None,
         });
-        assert_eq!(m.to_select_sql(), "SELECT only_col FROM raw.t");
+        assert_eq!(m.to_select_sql().unwrap(), "SELECT only_col FROM raw.t");
     }
 
     #[test]
@@ -394,8 +427,14 @@ mod tests {
 
     #[test]
     fn semantic_data_type_json_variants() {
-        assert_eq!(SemanticDataType::parse("json"), Some(SemanticDataType::Json));
-        assert_eq!(SemanticDataType::parse("jsonb"), Some(SemanticDataType::Json));
+        assert_eq!(
+            SemanticDataType::parse("json"),
+            Some(SemanticDataType::Json)
+        );
+        assert_eq!(
+            SemanticDataType::parse("jsonb"),
+            Some(SemanticDataType::Json)
+        );
     }
 
     #[test]
@@ -417,7 +456,7 @@ mod tests {
                 description: None,
             });
         }
-        let sql = m.to_select_sql();
+        let sql = m.to_select_sql().unwrap();
         let z_pos = sql.find('z').unwrap();
         let a_pos = sql.find('a').unwrap();
         let m_pos = sql.find('m').unwrap();
@@ -427,14 +466,20 @@ mod tests {
 
     #[test]
     fn semantic_data_type_date_variant() {
-        assert_eq!(SemanticDataType::parse("date"), Some(SemanticDataType::Date));
+        assert_eq!(
+            SemanticDataType::parse("date"),
+            Some(SemanticDataType::Date)
+        );
     }
 
     #[test]
     fn semantic_model_registry_ten_models() {
         let mut reg = SemanticRegistry::new();
         for i in 0..10 {
-            reg.register(SemanticModel::new(format!("model_{i}"), format!("raw.t{i}")));
+            reg.register(SemanticModel::new(
+                format!("model_{i}"),
+                format!("raw.t{i}"),
+            ));
         }
         assert_eq!(reg.model_count(), 10);
         for i in 0..10 {
@@ -454,7 +499,7 @@ mod tests {
     #[test]
     fn semantic_model_zero_columns_select_star() {
         let m = SemanticModel::new("empty", "raw.empty");
-        assert_eq!(m.to_select_sql(), "SELECT * FROM raw.empty");
+        assert_eq!(m.to_select_sql().unwrap(), "SELECT * FROM raw.empty");
     }
 
     #[test]
@@ -471,52 +516,106 @@ mod tests {
 
     #[test]
     fn semantic_data_type_string_aliases() {
-        assert_eq!(SemanticDataType::parse("string"), Some(SemanticDataType::String));
-        assert_eq!(SemanticDataType::parse("text"), Some(SemanticDataType::String));
-        assert_eq!(SemanticDataType::parse("varchar"), Some(SemanticDataType::String));
+        assert_eq!(
+            SemanticDataType::parse("string"),
+            Some(SemanticDataType::String)
+        );
+        assert_eq!(
+            SemanticDataType::parse("text"),
+            Some(SemanticDataType::String)
+        );
+        assert_eq!(
+            SemanticDataType::parse("varchar"),
+            Some(SemanticDataType::String)
+        );
     }
 
     #[test]
     fn semantic_data_type_integer_aliases() {
-        assert_eq!(SemanticDataType::parse("int"), Some(SemanticDataType::Integer));
-        assert_eq!(SemanticDataType::parse("integer"), Some(SemanticDataType::Integer));
-        assert_eq!(SemanticDataType::parse("bigint"), Some(SemanticDataType::Integer));
+        assert_eq!(
+            SemanticDataType::parse("int"),
+            Some(SemanticDataType::Integer)
+        );
+        assert_eq!(
+            SemanticDataType::parse("integer"),
+            Some(SemanticDataType::Integer)
+        );
+        assert_eq!(
+            SemanticDataType::parse("bigint"),
+            Some(SemanticDataType::Integer)
+        );
     }
 
     #[test]
     fn semantic_data_type_float_aliases() {
-        assert_eq!(SemanticDataType::parse("float"), Some(SemanticDataType::Float));
-        assert_eq!(SemanticDataType::parse("double"), Some(SemanticDataType::Float));
-        assert_eq!(SemanticDataType::parse("decimal"), Some(SemanticDataType::Float));
+        assert_eq!(
+            SemanticDataType::parse("float"),
+            Some(SemanticDataType::Float)
+        );
+        assert_eq!(
+            SemanticDataType::parse("double"),
+            Some(SemanticDataType::Float)
+        );
+        assert_eq!(
+            SemanticDataType::parse("decimal"),
+            Some(SemanticDataType::Float)
+        );
     }
 
     #[test]
     fn semantic_data_type_bool_aliases() {
-        assert_eq!(SemanticDataType::parse("bool"), Some(SemanticDataType::Boolean));
-        assert_eq!(SemanticDataType::parse("boolean"), Some(SemanticDataType::Boolean));
+        assert_eq!(
+            SemanticDataType::parse("bool"),
+            Some(SemanticDataType::Boolean)
+        );
+        assert_eq!(
+            SemanticDataType::parse("boolean"),
+            Some(SemanticDataType::Boolean)
+        );
     }
 
     #[test]
     fn semantic_data_type_timestamp_aliases() {
-        assert_eq!(SemanticDataType::parse("timestamp"), Some(SemanticDataType::Timestamp));
-        assert_eq!(SemanticDataType::parse("datetime"), Some(SemanticDataType::Timestamp));
+        assert_eq!(
+            SemanticDataType::parse("timestamp"),
+            Some(SemanticDataType::Timestamp)
+        );
+        assert_eq!(
+            SemanticDataType::parse("datetime"),
+            Some(SemanticDataType::Timestamp)
+        );
     }
 
     #[test]
     fn semantic_model_sql_contains_source_table() {
         let m = SemanticModel::new("snap", "dw.snap");
-        let sql = m.to_select_sql();
+        let sql = m.to_select_sql().unwrap();
         assert!(sql.contains("dw.snap"));
     }
 
     #[test]
     fn semantic_model_multiple_columns_sql_comma_separated() {
         let mut m = SemanticModel::new("t", "raw.t");
-        m.add_column(SemanticColumn { name: "a".into(), data_type: SemanticDataType::Integer, description: None });
-        m.add_column(SemanticColumn { name: "b".into(), data_type: SemanticDataType::String, description: None });
-        m.add_column(SemanticColumn { name: "c".into(), data_type: SemanticDataType::Boolean, description: None });
-        let sql = m.to_select_sql();
-        assert!(sql.contains("a, b, c"), "columns must be comma-separated: {sql}");
+        m.add_column(SemanticColumn {
+            name: "a".into(),
+            data_type: SemanticDataType::Integer,
+            description: None,
+        });
+        m.add_column(SemanticColumn {
+            name: "b".into(),
+            data_type: SemanticDataType::String,
+            description: None,
+        });
+        m.add_column(SemanticColumn {
+            name: "c".into(),
+            data_type: SemanticDataType::Boolean,
+            description: None,
+        });
+        let sql = m.to_select_sql().unwrap();
+        assert!(
+            sql.contains("a, b, c"),
+            "columns must be comma-separated: {sql}"
+        );
     }
 
     // ── Wave AK artifact-diff tests ──────────────────────────────────────────
@@ -535,7 +634,10 @@ mod tests {
     fn artifact_diff(a: &[u8], b: &[u8]) -> ArtifactDiff {
         let identical = a == b;
         let added_bytes = b.len() as i64 - a.len() as i64;
-        ArtifactDiff { added_bytes, identical }
+        ArtifactDiff {
+            added_bytes,
+            identical,
+        }
     }
 
     #[test]
@@ -551,7 +653,10 @@ mod tests {
         let a = vec![0u8; 100];
         let b = vec![0u8; 200];
         let diff = artifact_diff(&a, &b);
-        assert!(!diff.identical, "different-size payloads must not be identical");
+        assert!(
+            !diff.identical,
+            "different-size payloads must not be identical"
+        );
         assert_ne!(diff.added_bytes, 0, "size diff must be non-zero");
     }
 
@@ -560,7 +665,10 @@ mod tests {
         let a = vec![0u8; 50];
         let b = vec![0u8; 80];
         let diff = artifact_diff(&a, &b);
-        assert_eq!(diff.added_bytes, 30, "added_bytes must be 30 when new is 30 bytes larger");
+        assert_eq!(
+            diff.added_bytes, 30,
+            "added_bytes must be 30 when new is 30 bytes larger"
+        );
         assert!(!diff.identical);
     }
 
@@ -569,7 +677,10 @@ mod tests {
         let a = vec![0u8; 80];
         let b = vec![0u8; 50];
         let diff = artifact_diff(&a, &b);
-        assert_eq!(diff.added_bytes, -30, "added_bytes must be -30 when new is 30 bytes smaller");
+        assert_eq!(
+            diff.added_bytes, -30,
+            "added_bytes must be -30 when new is 30 bytes smaller"
+        );
         assert!(!diff.identical);
     }
 
@@ -579,12 +690,18 @@ mod tests {
         let content = b"NOM-ARTIFACT-v1".to_vec();
         let hash_a = {
             let mut h: u64 = 14695981039346656037;
-            for &b in &content { h ^= b as u64; h = h.wrapping_mul(1099511628211); }
+            for &b in &content {
+                h ^= b as u64;
+                h = h.wrapping_mul(1099511628211);
+            }
             h
         };
         let hash_b = {
             let mut h: u64 = 14695981039346656037;
-            for &b in &content { h ^= b as u64; h = h.wrapping_mul(1099511628211); }
+            for &b in &content {
+                h ^= b as u64;
+                h = h.wrapping_mul(1099511628211);
+            }
             h
         };
         assert_eq!(hash_a, hash_b, "same content must produce same hash");

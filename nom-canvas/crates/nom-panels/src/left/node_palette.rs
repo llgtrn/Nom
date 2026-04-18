@@ -308,9 +308,7 @@ mod tests {
     #[test]
     fn node_palette_search_partial_description_not_matched() {
         // search only covers kind_name and display_name, NOT description
-        let kinds: &[(&str, &str, &str)] = &[
-            ("K1", "Alpha", "unique_desc_xyz"),
-        ];
+        let kinds: &[(&str, &str, &str)] = &[("K1", "Alpha", "unique_desc_xyz")];
         let palette = NodePalette::load_from_kinds(kinds);
         // description not searched — "unique_desc_xyz" is only in description
         let results = palette.search("unique_desc_xyz");
@@ -410,7 +408,11 @@ mod tests {
         let bg_quads: Vec<_> = scene.quads.iter().step_by(2).collect();
         assert_eq!(bg_quads.len(), 50);
         for (i, q) in bg_quads.iter().enumerate() {
-            assert_eq!(q.bounds.origin.y, Pixels(i as f32 * 24.0), "row {i} y mismatch");
+            assert_eq!(
+                q.bounds.origin.y,
+                Pixels(i as f32 * 24.0),
+                "row {i} y mismatch"
+            );
         }
     }
 
@@ -427,7 +429,11 @@ mod tests {
         palette.paint_scene(paint_width, &mut scene);
         // Every bg quad should match paint_width
         for (i, q) in scene.quads.iter().step_by(2).enumerate() {
-            assert_eq!(q.bounds.size.width, Pixels(paint_width), "width mismatch at entry {i}");
+            assert_eq!(
+                q.bounds.size.width,
+                Pixels(paint_width),
+                "width mismatch at entry {i}"
+            );
         }
     }
 

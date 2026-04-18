@@ -1,18 +1,64 @@
 #![deny(unsafe_code)]
 
-/// Minimal WGSL quad vertex shader stub.
+/// Real WGSL quad vertex+fragment shader.
+///
+/// Uses instance attributes (QuadIn) for per-quad position, size, and color.
+/// A global uniform provides the viewport dimensions for pixel→clip transform.
 pub const QUAD_VERT_WGSL: &str = r#"
+struct GlobalUniforms {
+    viewport: vec4<f32>,  // x, y, width, height
+}
+@group(0) @binding(0) var<uniform> globals: GlobalUniforms;
+
+struct QuadIn {
+    @location(0) pos_size: vec4<f32>,         // x, y, w, h
+    @location(1) color: vec4<f32>,             // rgba
+    @location(2) border_color: vec4<f32>,      // rgba
+    @location(3) corner_radius: vec4<f32>,     // tl, tr, br, bl
+    @location(4) border_thickness: vec4<f32>,  // thickness, reserved...
+}
+
+struct VertOut {
+    @builtin(position) clip_pos: vec4<f32>,
+    @location(0) color: vec4<f32>,
+}
+
 @vertex
-fn vs_main(@builtin(vertex_index) vi: u32) -> @builtin(position) vec4<f32> {
-    return vec4<f32>(0.0, 0.0, 0.0, 1.0);
+fn vs_main(@builtin(vertex_index) vi: u32, quad: QuadIn) -> VertOut {
+    // 6 verts for 2 triangles forming a quad
+    let corners = array<vec2<f32>, 6>(
+        vec2(0.0, 0.0), vec2(1.0, 0.0), vec2(1.0, 1.0),
+        vec2(0.0, 0.0), vec2(1.0, 1.0), vec2(0.0, 1.0),
+    );
+    let local = corners[vi];
+    let world_x = quad.pos_size.x + local.x * quad.pos_size.z;
+    let world_y = quad.pos_size.y + local.y * quad.pos_size.w;
+    let vw = globals.viewport.z;
+    let vh = globals.viewport.w;
+    let clip_x = (world_x / vw) * 2.0 - 1.0;
+    let clip_y = 1.0 - (world_y / vh) * 2.0;
+    var out: VertOut;
+    out.clip_pos = vec4<f32>(clip_x, clip_y, 0.0, 1.0);
+    out.color = quad.color;
+    return out;
+}
+
+@fragment
+fn fs_main(in: VertOut) -> @location(0) vec4<f32> {
+    return in.color;
 }
 "#;
 
-/// Minimal WGSL quad fragment shader stub.
+/// WGSL quad fragment shader (matches the combined quad shader entry points).
 pub const QUAD_FRAG_WGSL: &str = r#"
+struct VertOut {
+    @builtin(position) clip_pos: vec4<f32>,
+    @location(0) color: vec4<f32>,
+}
+
 @fragment
-fn fs_main() -> @location(0) vec4<f32> {
-    return vec4<f32>(1.0, 0.0, 0.0, 1.0);
+fn fs_main(in: VertOut) -> @location(0) vec4<f32> {
+    return in.color;
 }
 "#;
 

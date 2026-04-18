@@ -339,7 +339,12 @@ mod tests {
 
     #[test]
     fn stroke_color_clone_equality() {
-        let c = StrokeColor { h: 0.1, s: 0.5, l: 0.4, a: 1.0 };
+        let c = StrokeColor {
+            h: 0.1,
+            s: 0.5,
+            l: 0.4,
+            a: 1.0,
+        };
         let cloned = c.clone();
         assert!((c.h - cloned.h).abs() < f32::EPSILON);
         assert!((c.s - cloned.s).abs() < f32::EPSILON);
@@ -389,7 +394,11 @@ mod tests {
         let mut found_diff = false;
         'outer: for i in 0..colors.len() {
             for j in (i + 1)..colors.len() {
-                if colors[i].iter().zip(colors[j].iter()).any(|(a, b)| (a - b).abs() > 0.01) {
+                if colors[i]
+                    .iter()
+                    .zip(colors[j].iter())
+                    .any(|(a, b)| (a - b).abs() > 0.01)
+                {
                     found_diff = true;
                     break 'outer;
                 }

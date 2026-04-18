@@ -254,7 +254,10 @@ mod tests {
         provider.add_hint(1, 5, "count:", HintKind::Parameter);
         let hints = provider.hints_for_line(1);
         assert_eq!(hints.len(), 1);
-        assert!(hints[0].label.ends_with(':'), "parameter hint label must end with ':'");
+        assert!(
+            hints[0].label.ends_with(':'),
+            "parameter hint label must end with ':'"
+        );
     }
 
     /// Hint tooltip field is None by default (add_hint does not set tooltip).
@@ -301,7 +304,10 @@ mod tests {
         let mut provider = InlayHintProvider::new();
         provider.add_hint(2, 5, ": f64", HintKind::Type);
         let hints = provider.hints_for_line(2);
-        assert!(hints[0].label.contains(':'), "type annotation hint label must contain ':'");
+        assert!(
+            hints[0].label.contains(':'),
+            "type annotation hint label must contain ':'"
+        );
     }
 
     /// Multiple hints on the same line ordered by col as inserted.
@@ -354,7 +360,10 @@ mod tests {
         let hints = provider.hints_for_line(7);
         assert_eq!(hints.len(), 1);
         assert_eq!(hints[0].kind, HintKind::Return);
-        assert!(hints[0].label.starts_with("->"), "return hint label must start with '->'");
+        assert!(
+            hints[0].label.starts_with("->"),
+            "return hint label must start with '->'"
+        );
     }
 
     /// Reference kind hint is distinct from type hint.

@@ -179,7 +179,11 @@ mod tests {
         let mut h2 = DefaultHasher::new();
         r1.hash(&mut h1);
         r2.hash(&mut h2);
-        assert_eq!(h1.finish(), h2.finish(), "same NomtuRef must produce same hash");
+        assert_eq!(
+            h1.finish(),
+            h2.finish(),
+            "same NomtuRef must produce same hash"
+        );
     }
 
     #[test]
@@ -194,7 +198,11 @@ mod tests {
         let mut h2 = DefaultHasher::new();
         r1.hash(&mut h1);
         r2.hash(&mut h2);
-        assert_ne!(h1.finish(), h2.finish(), "different id must produce different hash");
+        assert_ne!(
+            h1.finish(),
+            h2.finish(),
+            "different id must produce different hash"
+        );
     }
 
     #[test]

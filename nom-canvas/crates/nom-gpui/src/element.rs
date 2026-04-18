@@ -416,7 +416,10 @@ mod tests {
         let mut prev = r.next_id().0;
         for _ in 0..50 {
             let cur = r.next_id().0;
-            assert!(cur > prev, "LayoutId must strictly increase: {cur} > {prev}");
+            assert!(
+                cur > prev,
+                "LayoutId must strictly increase: {cur} > {prev}"
+            );
             prev = cur;
         }
     }
@@ -425,7 +428,11 @@ mod tests {
     fn layout_registry_default_same_as_new() {
         let mut r1 = LayoutRegistry::new();
         let mut r2 = LayoutRegistry::default();
-        assert_eq!(r1.next_id(), r2.next_id(), "new and default must start at same id");
+        assert_eq!(
+            r1.next_id(),
+            r2.next_id(),
+            "new and default must start at same id"
+        );
     }
 
     #[test]

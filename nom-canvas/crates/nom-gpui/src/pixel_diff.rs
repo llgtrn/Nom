@@ -38,13 +38,26 @@ impl RawImage {
             (width as usize) * (height as usize) * 4,
             "pixel buffer length mismatch"
         );
-        Self { width, height, pixels }
+        Self {
+            width,
+            height,
+            pixels,
+        }
     }
 
     /// Create a solid-colour image of the given dimensions.
     pub fn solid(width: u32, height: u32, rgba: [u8; 4]) -> Self {
-        let pixels = rgba.iter().copied().cycle().take((width as usize) * (height as usize) * 4).collect();
-        Self { width, height, pixels }
+        let pixels = rgba
+            .iter()
+            .copied()
+            .cycle()
+            .take((width as usize) * (height as usize) * 4)
+            .collect();
+        Self {
+            width,
+            height,
+            pixels,
+        }
     }
 
     /// Total pixel count.
@@ -126,7 +139,11 @@ pub fn pixel_diff(a: &RawImage, b: &RawImage, threshold: u8) -> Result<DiffStats
             differing_pixels += 1;
         }
     }
-    Ok(DiffStats { total_pixels, differing_pixels, threshold })
+    Ok(DiffStats {
+        total_pixels,
+        differing_pixels,
+        threshold,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -152,7 +169,10 @@ pub fn load_baseline(path: &Path) -> io::Result<RawImage> {
     let mut magic = [0u8; 8];
     file.read_exact(&mut magic)?;
     if &magic != MAGIC {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, "not a NOMRAW baseline file"));
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "not a NOMRAW baseline file",
+        ));
     }
     let mut w_buf = [0u8; 4];
     let mut h_buf = [0u8; 4];
@@ -163,7 +183,11 @@ pub fn load_baseline(path: &Path) -> io::Result<RawImage> {
     let pixel_len = (width as usize) * (height as usize) * 4;
     let mut pixels = vec![0u8; pixel_len];
     file.read_exact(&mut pixels)?;
-    Ok(RawImage { width, height, pixels })
+    Ok(RawImage {
+        width,
+        height,
+        pixels,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -277,19 +301,33 @@ mod tests {
         let a = RawImage::solid(1, 1, [100, 0, 0, 255]);
         let b = RawImage::solid(1, 1, [110, 0, 0, 255]); // diff == 10 == threshold
         let stats = pixel_diff(&a, &b, 10).unwrap();
-        assert_eq!(stats.differing_pixels, 0, "diff == threshold should not be counted");
+        assert_eq!(
+            stats.differing_pixels, 0,
+            "diff == threshold should not be counted"
+        );
 
         // Channel diff == threshold + 1: IS counted.
         let c = RawImage::solid(1, 1, [111, 0, 0, 255]); // diff == 11 > 10
         let stats2 = pixel_diff(&a, &c, 10).unwrap();
-        assert_eq!(stats2.differing_pixels, 1, "diff > threshold should be counted");
+        assert_eq!(
+            stats2.differing_pixels, 1,
+            "diff > threshold should be counted"
+        );
     }
 
     #[test]
     fn zero_size_image_has_zero_fraction() {
         // Edge case: 0x0 image (pixel_count == 0).
-        let a = RawImage { width: 0, height: 0, pixels: vec![] };
-        let stats = DiffStats { total_pixels: 0, differing_pixels: 0, threshold: 10 };
+        let a = RawImage {
+            width: 0,
+            height: 0,
+            pixels: vec![],
+        };
+        let stats = DiffStats {
+            total_pixels: 0,
+            differing_pixels: 0,
+            threshold: 10,
+        };
         assert_eq!(stats.diff_fraction(), 0.0);
         // pixel_diff of two 0x0 images should succeed with 0 differing.
         let result = pixel_diff(&a, &a, 10).unwrap();
@@ -372,8 +410,7 @@ mod tests {
         const THRESHOLD: u8 = 10;
 
         let dir = std::env::temp_dir();
-        let baseline_path: PathBuf =
-            dir.join("nom_gpui_window_first_paint_pixel_diff_test.nomraw");
+        let baseline_path: PathBuf = dir.join("nom_gpui_window_first_paint_pixel_diff_test.nomraw");
         let _ = std::fs::remove_file(&baseline_path);
 
         let width = 640u32;
@@ -456,7 +493,10 @@ mod tests {
         let a = RawImage::solid(1, 1, [128, 128, 128, 0]);
         let b = RawImage::solid(1, 1, [128, 128, 128, 255]); // alpha diff = 255 >> threshold
         let stats = pixel_diff(&a, &b, 10).unwrap();
-        assert_eq!(stats.differing_pixels, 1, "alpha-channel diff must be detected");
+        assert_eq!(
+            stats.differing_pixels, 1,
+            "alpha-channel diff must be detected"
+        );
     }
 
     #[test]
@@ -464,7 +504,10 @@ mod tests {
         let result = std::panic::catch_unwind(|| {
             RawImage::new(2, 2, vec![0u8; 5]); // wrong length — must panic
         });
-        assert!(result.is_err(), "RawImage::new with wrong pixel length must panic");
+        assert!(
+            result.is_err(),
+            "RawImage::new with wrong pixel length must panic"
+        );
     }
 
     #[test]
@@ -478,33 +521,53 @@ mod tests {
     fn raw_image_solid_fills_all_pixels() {
         let img = RawImage::solid(3, 3, [10, 20, 30, 40]);
         for chunk in img.pixels.chunks_exact(4) {
-            assert_eq!(chunk, &[10, 20, 30, 40], "every pixel must match the solid color");
+            assert_eq!(
+                chunk,
+                &[10, 20, 30, 40],
+                "every pixel must match the solid color"
+            );
         }
     }
 
     #[test]
     fn diff_stats_within_tolerance_at_exact_boundary() {
-        let stats = DiffStats { total_pixels: 100, differing_pixels: 5, threshold: 10 };
+        let stats = DiffStats {
+            total_pixels: 100,
+            differing_pixels: 5,
+            threshold: 10,
+        };
         // 5/100 = 5% — exactly at 5% tolerance boundary → within.
         assert!(stats.within_tolerance(0.05));
     }
 
     #[test]
     fn diff_stats_within_tolerance_one_over_fails() {
-        let stats = DiffStats { total_pixels: 100, differing_pixels: 6, threshold: 10 };
+        let stats = DiffStats {
+            total_pixels: 100,
+            differing_pixels: 6,
+            threshold: 10,
+        };
         // 6/100 = 6% > 5% tolerance → not within.
         assert!(!stats.within_tolerance(0.05));
     }
 
     #[test]
     fn diff_fraction_all_match_is_zero() {
-        let stats = DiffStats { total_pixels: 50, differing_pixels: 0, threshold: 10 };
+        let stats = DiffStats {
+            total_pixels: 50,
+            differing_pixels: 0,
+            threshold: 10,
+        };
         assert_eq!(stats.diff_fraction(), 0.0);
     }
 
     #[test]
     fn diff_fraction_half_differ() {
-        let stats = DiffStats { total_pixels: 100, differing_pixels: 50, threshold: 5 };
+        let stats = DiffStats {
+            total_pixels: 100,
+            differing_pixels: 50,
+            threshold: 5,
+        };
         assert!((stats.diff_fraction() - 0.5).abs() < 1e-10);
     }
 
@@ -514,7 +577,10 @@ mod tests {
         let a = RawImage::solid(2, 2, [10, 10, 10, 255]);
         let b = RawImage::solid(2, 2, [11, 10, 10, 255]); // diff=1 > 0
         let stats = pixel_diff(&a, &b, 0).unwrap();
-        assert_eq!(stats.differing_pixels, 4, "threshold=0 must catch any change");
+        assert_eq!(
+            stats.differing_pixels, 4,
+            "threshold=0 must catch any change"
+        );
     }
 
     #[test]
@@ -523,7 +589,10 @@ mod tests {
         let a = RawImage::solid(4, 4, [0, 0, 0, 0]);
         let b = RawImage::solid(4, 4, [255, 255, 255, 255]); // diff=255, not > 255
         let stats = pixel_diff(&a, &b, 255).unwrap();
-        assert_eq!(stats.differing_pixels, 0, "diff==255 with threshold=255 must not count");
+        assert_eq!(
+            stats.differing_pixels, 0,
+            "diff==255 with threshold=255 must not count"
+        );
     }
 
     #[test]
@@ -606,7 +675,10 @@ mod tests {
         let a = RawImage::solid(2, 2, [100, 150, 200, 255]);
         let b = a.clone();
         let stats = pixel_diff(&a, &b, 0).unwrap();
-        assert_eq!(stats.differing_pixels, 0, "identical images must have 0 changed pixels");
+        assert_eq!(
+            stats.differing_pixels, 0,
+            "identical images must have 0 changed pixels"
+        );
         assert_eq!(stats.total_pixels, 4);
     }
 
@@ -615,7 +687,10 @@ mod tests {
         let a = RawImage::solid(3, 3, [0, 0, 0, 255]);
         let b = RawImage::solid(3, 3, [255, 255, 255, 255]);
         let stats = pixel_diff(&a, &b, 0).unwrap();
-        assert_eq!(stats.differing_pixels, stats.total_pixels, "all pixels must differ");
+        assert_eq!(
+            stats.differing_pixels, stats.total_pixels,
+            "all pixels must differ"
+        );
         assert_eq!(stats.total_pixels, 9);
     }
 
@@ -626,7 +701,10 @@ mod tests {
         // Change exactly one pixel (pixel index 5, R channel).
         modified.pixels[5 * 4] = 0; // diff = 128 > threshold 10
         let stats = pixel_diff(&base, &modified, 10).unwrap();
-        assert_eq!(stats.differing_pixels, 1, "exactly one pixel must be detected as changed");
+        assert_eq!(
+            stats.differing_pixels, 1,
+            "exactly one pixel must be detected as changed"
+        );
     }
 
     #[test]
@@ -637,7 +715,11 @@ mod tests {
         let _ = std::fs::remove_file(&path);
 
         let result = diff_or_save(&path, &img, 10).unwrap();
-        assert_eq!(result, DiffResult::BaselineSaved, "must return BaselineSaved when no baseline");
+        assert_eq!(
+            result,
+            DiffResult::BaselineSaved,
+            "must return BaselineSaved when no baseline"
+        );
         assert!(path.exists(), "file must be created");
 
         let _ = std::fs::remove_file(&path);
@@ -657,7 +739,10 @@ mod tests {
         let result = diff_or_save(&path, &img, 10).unwrap();
         match result {
             DiffResult::Compared(stats) => {
-                assert_eq!(stats.differing_pixels, 0, "identical image vs baseline must have 0 diffs");
+                assert_eq!(
+                    stats.differing_pixels, 0,
+                    "identical image vs baseline must have 0 diffs"
+                );
             }
             DiffResult::BaselineSaved => panic!("expected Compared, got BaselineSaved"),
         }
@@ -684,7 +769,11 @@ mod tests {
 
         let bytes = std::fs::read(&path).expect("read");
         assert!(bytes.len() >= 8, "file must have at least 8 bytes");
-        assert_eq!(&bytes[..8], b"NOMRAW\0\0", "first 8 bytes must be NOMRAW magic");
+        assert_eq!(
+            &bytes[..8],
+            b"NOMRAW\0\0",
+            "first 8 bytes must be NOMRAW magic"
+        );
 
         let _ = std::fs::remove_file(&path);
     }
@@ -710,7 +799,10 @@ mod tests {
         std::fs::write(&path, b"NOMRAW\0\0").unwrap();
 
         let result = load_baseline(&path);
-        assert!(result.is_err(), "truncated file missing dimensions must return Err");
+        assert!(
+            result.is_err(),
+            "truncated file missing dimensions must return Err"
+        );
 
         let _ = std::fs::remove_file(&path);
     }
@@ -719,14 +811,29 @@ mod tests {
     fn raw_image_pixel_count_equals_width_times_height() {
         // pixel_count() must equal width * height for any size.
         for (w, h) in [(1, 1), (4, 4), (10, 7), (0, 0)] {
-            let img = RawImage { width: w, height: h, pixels: vec![0u8; (w as usize) * (h as usize) * 4] };
-            assert_eq!(img.pixel_count(), (w as usize) * (h as usize), "w={w} h={h}");
+            let img = RawImage {
+                width: w,
+                height: h,
+                pixels: vec![0u8; (w as usize) * (h as usize) * 4],
+            };
+            assert_eq!(
+                img.pixel_count(),
+                (w as usize) * (h as usize),
+                "w={w} h={h}"
+            );
         }
     }
 
     #[test]
     fn diff_stats_diff_fraction_100_percent() {
-        let stats = DiffStats { total_pixels: 50, differing_pixels: 50, threshold: 0 };
-        assert!((stats.diff_fraction() - 1.0).abs() < 1e-10, "all different = fraction 1.0");
+        let stats = DiffStats {
+            total_pixels: 50,
+            differing_pixels: 50,
+            threshold: 0,
+        };
+        assert!(
+            (stats.diff_fraction() - 1.0).abs() < 1e-10,
+            "all different = fraction 1.0"
+        );
     }
 }

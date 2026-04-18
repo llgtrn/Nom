@@ -43,7 +43,7 @@ pub use backends::{
 };
 pub use credential_store::{Credential, CredentialStore};
 pub use deep_think::{DeepThinkConfig, DeepThinkStep, DeepThinkStream};
-pub use dispatch::{Backend, BackendKind, BackendRegistry, NoopBackend};
+pub use dispatch::{Backend, BackendRegistry, ComposeContext, NoopBackend, UnifiedDispatcher};
 pub use plan::{CompositionPlan, PlanStep};
 pub use progress::{ComposeEvent, LogProgressSink, ProgressSink};
 pub use provider_router::{FallbackLevel, ProviderRouter, VendorEntry};
@@ -55,24 +55,24 @@ pub use vendor_trait::{CostEstimate, MediaVendor, StubVendor, VendorCapability};
 #[cfg(test)]
 mod integration_tests {
     use crate::backends::data_query::DataQuerySpec;
-    use crate::dispatch::{BackendKind, BackendRegistry, NoopBackend};
+    use crate::dispatch::{BackendRegistry, NoopBackend};
     use crate::provider_router::{FallbackLevel, ProviderRouter};
     use crate::semantic::{SemanticColumn, SemanticDataType, SemanticModel, SemanticRegistry};
     use crate::vendor_trait::StubMediaVendor;
 
     // -------------------------------------------------------------------------
     // Test 1: backend_registry_with_real_backends
-    // Register a NoopBackend for Video, dispatch Video input, verify Ok result.
+    // Register a NoopBackend for "video", dispatch "video" input, verify Ok result.
     // -------------------------------------------------------------------------
     #[test]
     fn backend_registry_with_real_backends() {
         let mut registry = BackendRegistry::new();
-        registry.register(Box::new(NoopBackend::new(BackendKind::Video)));
+        registry.register(Box::new(NoopBackend::new("video")));
 
-        let result = registry.dispatch(BackendKind::Video, "test-scene", &|_| {});
+        let result = registry.dispatch("video", "test-scene", &|_| {});
         assert!(
             result.is_ok(),
-            "dispatch to registered Video backend must succeed"
+            "dispatch to registered video backend must succeed"
         );
 
         let output = result.unwrap();
@@ -82,17 +82,15 @@ mod integration_tests {
         );
 
         // Dispatching an unregistered kind must return Err.
-        let err = registry.dispatch(BackendKind::Audio, "x", &|_| {});
+        let err = registry.dispatch("audio", "x", &|_| {});
         assert!(
             err.is_err(),
-            "dispatch to unregistered Audio backend must fail"
+            "dispatch to unregistered audio backend must fail"
         );
     }
 
     // -------------------------------------------------------------------------
     // Test 2: semantic_model_feeds_data_query
-    // Create SemanticModel with 2 columns, register in SemanticRegistry,
-    // create DataQuerySpec, call to_sql, verify SQL contains column names.
     // -------------------------------------------------------------------------
     #[test]
     fn semantic_model_feeds_data_query() {
@@ -137,7 +135,6 @@ mod integration_tests {
 
     // -------------------------------------------------------------------------
     // Test 3: provider_router_with_stub_vendor
-    // Register StubMediaVendor for Audio, compose_with_fallback, verify stub_output.
     // -------------------------------------------------------------------------
     #[test]
     fn provider_router_with_stub_vendor() {
@@ -145,13 +142,13 @@ mod integration_tests {
         router.register(
             StubMediaVendor {
                 name: "stub-audio",
-                kind: BackendKind::Audio,
+                kind: "audio".to_string(),
             },
             FallbackLevel::Primary,
         );
 
         let result =
-            router.compose_with_fallback(&BackendKind::Audio, "some-audio-input", &|_| {}, false);
+            router.compose_with_fallback("audio", "some-audio-input", &|_| {}, false);
 
         assert!(result.is_ok(), "StubMediaVendor must return Ok");
         assert_eq!(
@@ -163,78 +160,47 @@ mod integration_tests {
 
     // -------------------------------------------------------------------------
     // Test 4: backend_registry_all_16_kinds_discoverable
-    // Register a NoopBackend for all 16 BackendKinds, verify registered_kinds() == 16.
     // -------------------------------------------------------------------------
     #[test]
     fn backend_registry_all_16_kinds_discoverable() {
-        use crate::dispatch::BackendKind;
         let all_kinds = [
-            BackendKind::Video,
-            BackendKind::Audio,
-            BackendKind::Image,
-            BackendKind::Document,
-            BackendKind::Data,
-            BackendKind::App,
-            BackendKind::Workflow,
-            BackendKind::Scenario,
-            BackendKind::RagQuery,
-            BackendKind::Transform,
-            BackendKind::EmbedGen,
-            BackendKind::Render,
-            BackendKind::Export,
-            BackendKind::Pipeline,
-            BackendKind::CodeExec,
-            BackendKind::WebScreen,
+            "video", "audio", "image", "document", "data", "app", "workflow", "scenario",
+            "rag_query", "transform", "embed_gen", "render", "export", "pipeline", "code_exec",
+            "web_screen",
         ];
         let mut registry = BackendRegistry::new();
         for kind in &all_kinds {
-            registry.register(Box::new(NoopBackend::new(kind.clone())));
+            registry.register(Box::new(NoopBackend::new(kind)));
         }
         assert_eq!(
             registry.registered_kinds().len(),
             16,
-            "all 16 BackendKinds must be discoverable after registration"
+            "all 16 backend kinds must be discoverable after registration"
         );
-        // Dispatch to each must succeed.
         for kind in &all_kinds {
-            let result = registry.dispatch(kind.clone(), "probe", &|_| {});
-            assert!(result.is_ok(), "dispatch to {} must succeed", kind.name());
+            let result = registry.dispatch(kind, "probe", &|_| {});
+            assert!(result.is_ok(), "dispatch to {} must succeed", kind);
         }
     }
 
     // -------------------------------------------------------------------------
     // Test 5: large_compose_job_many_elements
-    // Register 16 backends, build a 20-step plan, dispatch each step via
-    // BackendRegistry, verify all 20 results are Ok.
     // -------------------------------------------------------------------------
     #[test]
     fn large_compose_job_many_elements() {
-        use crate::dispatch::BackendKind;
         use crate::plan::CompositionPlan;
 
         let mut registry = BackendRegistry::new();
-        for kind in [
-            BackendKind::Video,
-            BackendKind::Audio,
-            BackendKind::Image,
-            BackendKind::Export,
-            BackendKind::Transform,
-        ] {
+        for kind in ["video", "audio", "image", "export", "transform"] {
             registry.register(Box::new(NoopBackend::new(kind)));
         }
 
-        let kinds_cycle = [
-            BackendKind::Video,
-            BackendKind::Audio,
-            BackendKind::Image,
-            BackendKind::Export,
-            BackendKind::Transform,
-        ];
+        let kinds_cycle = ["video", "audio", "image", "export", "transform"];
 
         let mut plan = CompositionPlan::new();
         for i in 0..20usize {
             plan.add_step(
-                kinds_cycle[i % kinds_cycle.len()].clone(),
+                kinds_cycle[i % kinds_cycle.len()],
                 format!("input_{i}"),
                 format!("output_{i}"),
             );
@@ -249,7 +215,7 @@ mod integration_tests {
         let mut success_count = 0;
         for step_id in &order {
             let step = &plan.steps[*step_id];
-            let result = registry.dispatch(step.backend.clone(), &step.input_key, &|_| {});
+            let result = registry.dispatch(&step.backend, &step.input_key, &|_| {});
             if result.is_ok() {
                 success_count += 1;
             }
@@ -259,8 +225,6 @@ mod integration_tests {
 
     // -------------------------------------------------------------------------
     // Test 6: compose_result_serialization
-    // Write two artifacts to InMemoryStore, verify both hash→hex strings are
-    // distinct 64-char lowercase hex.
     // -------------------------------------------------------------------------
     #[test]
     fn compose_result_serialization() {
@@ -284,14 +248,12 @@ mod integration_tests {
             hex2.chars().all(|c: char| c.is_ascii_hexdigit()),
             "hex2 must be valid hex: {hex2}"
         );
-        // Re-hashing the same input must produce the same hex (determinism).
         let h3 = store.put_bytes(b"artifact_one");
         assert_eq!(h1.as_hex(), h3.as_hex(), "hash must be deterministic");
     }
 
     // -------------------------------------------------------------------------
     // Test 7: cancel_and_progress_together
-    // Emit progress events, set InterruptFlag, verify cancel state is visible.
     // -------------------------------------------------------------------------
     #[test]
     fn cancel_and_progress_together() {
@@ -310,7 +272,6 @@ mod integration_tests {
             stage: "pre-cancel".into(),
         });
 
-        // Simulate cancellation mid-job.
         flag.set();
         assert!(flag.is_set(), "flag must be set after set()");
 
@@ -324,7 +285,6 @@ mod integration_tests {
         assert!(matches!(events[1], ComposeEvent::Progress { .. }));
         assert!(matches!(events[2], ComposeEvent::Failed { .. }));
 
-        // Reset flag — subsequent operations start clean.
         flag.clear();
         assert!(!flag.is_set());
     }

@@ -248,7 +248,13 @@ mod tests {
 
     #[test]
     fn scenario_workflow_steps_total_matches_input() {
-        let steps = vec!["x1".into(), "x2".into(), "x3".into(), "x4".into(), "x5".into()];
+        let steps = vec![
+            "x1".into(),
+            "x2".into(),
+            "x3".into(),
+            "x4".into(),
+            "x5".into(),
+        ];
         let count = steps.len();
         let spec = ScenarioWorkflowSpec {
             name: "total_match".into(),

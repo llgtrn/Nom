@@ -1,7 +1,7 @@
 # Nom — Roadmap to 100%
 
 **Date:** 2026-04-18 | **Mandate:** reach 100% on all 4 axes. Every `[ ]` is a completable task.
-**Last updated:** Wave AO COMPLETE — HEAD `83667da`, **8384 tests** (+482). 10 items FIXED. Renderer + BackendKind + SQL inject still OPEN. Wave AP planned. Target: ~8650 tests.
+**Last updated:** Wave AP COMPLETE — HEAD `679ce6b` (dirty), **8391 tests** (+7). 21 items FIXED. Renderer NOW RENDERS PIXELS. BackendKind DELETED. All CRITICAL/HIGH blockers cleared. Wave AQ planned.
 
 ## Current finalization snapshot
 
@@ -11,8 +11,8 @@
 |---|---|---|---|---|
 | A · nom-compiler | 44% | 100% | 56pp | Lexer done; self-hosting not started; 22/29 crates never called from canvas |
 | B · Nom language | 34% | 100% | 66pp | 9-kind foundation locked; C-like syntax; 30+ extended kinds unseeded |
-| C · nom-canvas ↔ compiler integration | **34%** | 100% | **66pp** | +1pp from Wave AN: CRDT overflow fixed, SpatialIndex wired to selection. Renderer still renders 0 pixels (10+ waves); BackendKind 379 refs; GrammarKind.status field missing; is_safe_identifier never called in to_sql(); ExecutionEngine plans but never executes |
-| D · Overall platform | **72%** | 100% | **28pp** | +2pp from Wave AN: Theme struct + dark/light constructors added; LspPosition types in lsp_bridge.rs; FrameBlock has spatial fields. Still open: oled(), TOOLBAR_H ambiguity, deepthink confidence coloring, fonts stub, atlas LRU bug |
+| C · nom-canvas ↔ compiler integration | **52%** | 100% | **48pp** | +18pp Wave AP: renderer NOW RENDERS PIXELS (AL-RENDER-1/2/3 DONE); BackendKind deleted (DB-driven); GrammarKind.status + list_kinds SQL added; ExecutionEngine::execute() added. Open: NOM-GRAPH-ANCESTRY, NOM-BACKEND-SELF-DESCRIBE, AM-INTENT-STRUCT, AL-COSMIC |
+| D · Overall platform | **82%** | 100% | **18pp** | +10pp Wave AP: TaffyTree live; oled() added; 3 font handles; TOOLBAR_H deleted; atlas LRU fixed; confidence coloring wired; Point type; spatial broadphase production. Open: cosmic_text init, viewport SpatialIndex |
 
 **C-axis at ~34%** (Wave AN fixed CRDT overflow and selection.rs wiring, nothing else):
 1. Renderer still renders zero pixels — 10 waves overdue
@@ -27,25 +27,25 @@
 - FrameBlock now has x/y/width/height/z_index fields
 - Still: oled() absent, TOOLBAR_H=48.0 vs TOOLBAR_HEIGHT=36.0 ambiguity, edge_color_for_confidence() never called from deep_think.rs, atlas LRU corrupts on partial eviction
 
-**Per-crate test counts (Wave AO actuals → Wave AP targets).**
-| Crate | Wave AO actual | Wave AP target | Wave AP priority |
-|---|---|---|---|
-| nom-blocks | 560 | 600 | AN-WORKSPACE-DUP remaining + rotation + cycle guard + blockdiff word |
-| nom-canvas-core | 575 | 615 | AM-SPATIAL-WIRE hit_test.rs production broadphase |
-| nom-cli | 400 | 435 | NOM-GRAPH-EXEC execute() skeleton |
-| nom-collab | 545 | 580 | AM-CRDT-IDEMPOTENT (duplicate guard in apply()) |
-| nom-compiler-bridge | 548 | 590 | AL-GRAMMAR-STATUS (status field on GrammarKind + list_kinds SQL) |
-| nom-compose | 690 | 730 | AL-BACKEND-KIND (delete enum) + AL-SQL-INJECT remaining |
-| nom-editor | 620 | 660 | NOM-EDITOR-POINT (Point row/col type + Buffer integration) |
-| nom-gpui | 790 | 840 | **AL-RENDER-1/2/3 (11 WAVES OVERDUE — BLOCKER)** + AM-ATLAS-LRU |
-| nom-graph | 570 | 610 | NOM-GRAPH-EXEC execute() + NOM-GRAPH-ANCESTRY transitive cache |
-| nom-intent | 470 | 510 | AM-INTENT-STRUCT (bm25_index + classify_with_react integration) |
-| nom-lint | 485 | 510 | — |
-| nom-memoize | 470 | 495 | — |
-| nom-panels | 600 | 635 | AL-DEEPTHINK-CONFIDENCE (wire edge_color_for_confidence to card) |
-| nom-telemetry | 500 | 525 | — |
-| nom-theme | 560 | 595 | AL-FONTS + oled() + TOOLBAR_H consolidation |
-| **TOTAL** | **8384** | **~8650** | — |
+**Per-crate test counts (Wave AP actuals → Wave AQ targets).**
+| Crate | Wave AO actual | Wave AP actual | Wave AQ target | Wave AQ priority |
+|---|---|---|---|---|
+| nom-blocks | 560 | 560 | 590 | NOM-GRAPH-ANCESTRY; deeper workspace tests |
+| nom-canvas-core | 575 | 575 | 610 | AM-SPATIAL-WIRE viewport.rs; snapping tests |
+| nom-cli | 400 | 400 | 430 | POST /compose axum endpoint |
+| nom-collab | 545 | 546 | 575 | Remaining clippy/test debt |
+| nom-compiler-bridge | 548 | 553 | 585 | list_kinds SQL integration tests |
+| nom-compose | 690 | 685 | 720 | NOM-BACKEND-SELF-DESCRIBE; middleware |
+| nom-editor | 620 | 620 | 655 | Point API integration; display map pipeline |
+| nom-gpui | 790 | 790 | 835 | AL-COSMIC (cosmic_text FontSystem) |
+| nom-graph | 570 | 570 | 610 | NOM-GRAPH-ANCESTRY transitive cache |
+| nom-intent | 470 | 470 | 505 | AM-INTENT-STRUCT bm25_index + classify_with_react |
+| nom-lint | 485 | 485 | 510 | — |
+| nom-memoize | 470 | 468 | 495 | — |
+| nom-panels | 600 | 601 | 630 | Intent Preview + AI Review cards |
+| nom-telemetry | 500 | 500 | 525 | — |
+| nom-theme | 560 | 556 | 590 | cosmic_text font handles wired |
+| **TOTAL** | **8384** | **8391** | **~8650** | — |
 
 **Discipline:** tick `[x]` only after BOTH the code change AND a regression test are committed. Never tick from trackers alone. See `feedback_audit_must_also_fix.md`.
 

@@ -97,10 +97,7 @@ impl NomGraph {
     /// Returns the out-neighbors of `id` (nodes reachable via a single forward edge).
     /// Returns an empty vec if the node does not exist.
     pub fn neighbors(&self, id: &NomtuRef) -> Vec<NomtuRef> {
-        self.adj
-            .get(id)
-            .cloned()
-            .unwrap_or_default()
+        self.adj.get(id).cloned().unwrap_or_default()
     }
 
     /// In-degree of `id`: number of edges directed *into* the node.
@@ -126,8 +123,7 @@ impl NomGraph {
         let mut color: HashMap<&NomtuRef, u8> = HashMap::new();
 
         for start in self.adj.keys() {
-            if color.get(start).copied().unwrap_or(0) == 0
-                && self.dfs_has_cycle(start, &mut color)
+            if color.get(start).copied().unwrap_or(0) == 0 && self.dfs_has_cycle(start, &mut color)
             {
                 return true;
             }
@@ -151,7 +147,7 @@ impl NomGraph {
                 let next = &neighbors[*idx];
                 *idx += 1;
                 match color.get(next).copied().unwrap_or(0) {
-                    1 => return true,  // back edge → cycle
+                    1 => return true, // back edge → cycle
                     0 => {
                         color.insert(next, 1);
                         stack.push((next, 0));
@@ -559,8 +555,8 @@ mod tests {
     fn nom_graph_three_components() {
         let mut g = NomGraph::new();
         g.add_edge(r(1, "a"), r(2, "b")); // component 1
-        g.add_node(r(3, "c"));            // component 2
-        g.add_node(r(4, "d"));            // component 3
+        g.add_node(r(3, "c")); // component 2
+        g.add_node(r(4, "d")); // component 3
         assert_eq!(g.connected_components(), 3);
     }
 

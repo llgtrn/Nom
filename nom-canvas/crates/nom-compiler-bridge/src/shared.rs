@@ -53,6 +53,52 @@ pub struct PipelineOutput {
 pub struct GrammarKind {
     pub name: String,
     pub description: String,
+    pub status: KindStatus,
+}
+
+/// Query all grammar kinds from the DB, ordered by name.
+/// Requires `rusqlite` feature (i.e. `compiler` feature gate).
+#[cfg(feature = "compiler")]
+pub fn list_kinds(conn: &rusqlite::Connection) -> rusqlite::Result<Vec<GrammarKind>> {
+    let mut stmt = conn.prepare(
+        "SELECT name, description, status FROM grammar_kinds ORDER BY name",
+    )?;
+    let kinds = stmt
+        .query_map([], |row| {
+            let status_str: String = row.get(2)?;
+            let status = match status_str.as_str() {
+                "Partial" => KindStatus::Partial,
+                "Complete" => KindStatus::Complete,
+                _ => KindStatus::Transient,
+            };
+            Ok(GrammarKind {
+                name: row.get(0)?,
+                description: row.get(1)?,
+                status,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(kinds)
+}
+
+/// Promote (or demote) the status of a grammar kind in the DB.
+/// Requires `rusqlite` feature (i.e. `compiler` feature gate).
+#[cfg(feature = "compiler")]
+pub fn promote_kind(
+    conn: &rusqlite::Connection,
+    name: &str,
+    new_status: KindStatus,
+) -> rusqlite::Result<()> {
+    let status_str = match new_status {
+        KindStatus::Transient => "Transient",
+        KindStatus::Partial => "Partial",
+        KindStatus::Complete => "Complete",
+    };
+    conn.execute(
+        "UPDATE grammar_kinds SET status = ?1 WHERE name = ?2",
+        rusqlite::params![status_str, name],
+    )?;
+    Ok(())
 }
 
 /// A pooled reader slot: holds a pre-constructed Arc<SharedState> ready to wrap
@@ -118,7 +164,7 @@ impl SharedState {
 
     pub fn grammar_version(&self) -> u64 {
         self.grammar_version
-            .load(std::sync::atomic::Ordering::Relaxed)
+            .load(std::sync::atomic::Ordering::Acquire)
     }
 
     /// Read grammar kinds — uses RwLock::read() so multiple threads can read concurrently.
@@ -136,7 +182,7 @@ impl SharedState {
             *g = kinds;
         }
         self.grammar_version
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            .fetch_add(1, std::sync::atomic::Ordering::Release);
     }
 
     /// Borrow a reader slot from the pool, or create a new one if the pool is empty.
@@ -165,10 +211,7 @@ impl SharedState {
 
     /// Current number of slots sitting idle in the pool (for diagnostics/tests).
     pub fn pool_idle_count(&self) -> usize {
-        self.reader_pool
-            .lock()
-            .map(|p| p.len())
-            .unwrap_or(0)
+        self.reader_pool.lock().map(|p| p.len()).unwrap_or(0)
     }
 }
 
@@ -212,6 +255,7 @@ mod tests {
         state.update_grammar_kinds(vec![GrammarKind {
             name: "verb".into(),
             description: "action".into(),
+            status: KindStatus::Transient,
         }]);
         assert_eq!(state.grammar_version(), 1);
         let kinds = state.cached_grammar_kinds();
@@ -226,6 +270,7 @@ mod tests {
         state.update_grammar_kinds(vec![GrammarKind {
             name: "action".into(),
             description: "something done".into(),
+            status: KindStatus::Transient,
         }]);
         let kinds = state.cached_grammar_kinds();
         assert_eq!(kinds.len(), 1);
@@ -274,6 +319,7 @@ mod tests {
         state.update_grammar_kinds(vec![GrammarKind {
             name: "noun".into(),
             description: "thing".into(),
+            status: KindStatus::Transient,
         }]);
         let version = state.grammar_version();
         assert_eq!(version, 1);
@@ -363,14 +409,17 @@ mod tests {
         state.update_grammar_kinds(vec![GrammarKind {
             name: "a".into(),
             description: "".into(),
+            status: KindStatus::Transient,
         }]);
         state.update_grammar_kinds(vec![GrammarKind {
             name: "b".into(),
             description: "".into(),
+            status: KindStatus::Transient,
         }]);
         state.update_grammar_kinds(vec![GrammarKind {
             name: "c".into(),
             description: "".into(),
+            status: KindStatus::Transient,
         }]);
         assert_eq!(state.grammar_version(), 3);
         let kinds = state.cached_grammar_kinds();
@@ -390,11 +439,13 @@ mod tests {
         state.update_grammar_kinds(vec![GrammarKind {
             name: "noun".into(),
             description: "thing".into(),
+            status: KindStatus::Transient,
         }]);
         assert_eq!(state.grammar_version(), 1);
         state.update_grammar_kinds(vec![GrammarKind {
             name: "verb".into(),
             description: "action".into(),
+            status: KindStatus::Transient,
         }]);
         assert_eq!(state.grammar_version(), 2);
     }
@@ -479,6 +530,7 @@ mod tests {
                 writer_state.update_grammar_kinds(vec![GrammarKind {
                     name: format!("kind_{i}"),
                     description: format!("desc_{i}"),
+                    status: KindStatus::Transient,
                 }]);
             }
         });
@@ -573,16 +625,19 @@ mod tests {
             GrammarKind {
                 name: "a".into(),
                 description: "".into(),
+                status: KindStatus::Transient,
             },
             GrammarKind {
                 name: "b".into(),
                 description: "".into(),
+                status: KindStatus::Transient,
             },
         ]);
         assert_eq!(state.cached_grammar_kinds().len(), 2);
         state.update_grammar_kinds(vec![GrammarKind {
             name: "c".into(),
             description: "".into(),
+            status: KindStatus::Transient,
         }]);
         let kinds = state.cached_grammar_kinds();
         assert_eq!(kinds.len(), 1);
@@ -629,6 +684,7 @@ mod tests {
         let kind = GrammarKind {
             name: "verb".into(),
             description: "action".into(),
+            status: KindStatus::Transient,
         };
         let cloned = kind.clone();
         assert_eq!(cloned.name, kind.name);
@@ -639,9 +695,21 @@ mod tests {
     fn update_grammar_kinds_clears_previous() {
         let state = SharedState::new("d.db", "g.db");
         state.update_grammar_kinds(vec![
-            GrammarKind { name: "a".into(), description: "".into() },
-            GrammarKind { name: "b".into(), description: "".into() },
-            GrammarKind { name: "c".into(), description: "".into() },
+            GrammarKind {
+                name: "a".into(),
+                description: "".into(),
+                status: KindStatus::Transient,
+            },
+            GrammarKind {
+                name: "b".into(),
+                description: "".into(),
+                status: KindStatus::Transient,
+            },
+            GrammarKind {
+                name: "c".into(),
+                description: "".into(),
+                status: KindStatus::Transient,
+            },
         ]);
         assert_eq!(state.cached_grammar_kinds().len(), 3);
         state.update_grammar_kinds(vec![]);
@@ -656,11 +724,19 @@ mod tests {
         let key = SharedState::compile_cache_key("overwrite_src", 0);
         state.cache_compile_result(
             key,
-            PipelineOutput { source_hash: key, grammar_version: 0, output_json: "v1".into() },
+            PipelineOutput {
+                source_hash: key,
+                grammar_version: 0,
+                output_json: "v1".into(),
+            },
         );
         state.cache_compile_result(
             key,
-            PipelineOutput { source_hash: key, grammar_version: 0, output_json: "v2".into() },
+            PipelineOutput {
+                source_hash: key,
+                grammar_version: 0,
+                output_json: "v2".into(),
+            },
         );
         let retrieved = state.get_cached_compile(key).expect("should be present");
         assert_eq!(retrieved.output_json, "v2");
@@ -674,7 +750,11 @@ mod tests {
         let key = SharedState::compile_cache_key("shared_src", 0);
         state.cache_compile_result(
             key,
-            PipelineOutput { source_hash: key, grammar_version: 0, output_json: "{}".into() },
+            PipelineOutput {
+                source_hash: key,
+                grammar_version: 0,
+                output_json: "{}".into(),
+            },
         );
         assert!(clone.get_cached_compile(key).is_some());
     }
@@ -686,9 +766,17 @@ mod tests {
         let key = SharedState::compile_cache_key("src", 0);
         state.cache_compile_result(
             key,
-            PipelineOutput { source_hash: key, grammar_version: 0, output_json: "{}".into() },
+            PipelineOutput {
+                source_hash: key,
+                grammar_version: 0,
+                output_json: "{}".into(),
+            },
         );
-        assert_eq!(state.grammar_version(), v0, "cache insert must not bump grammar version");
+        assert_eq!(
+            state.grammar_version(),
+            v0,
+            "cache insert must not bump grammar version"
+        );
     }
 
     #[test]
@@ -705,6 +793,7 @@ mod tests {
             .map(|i| GrammarKind {
                 name: format!("kind_{i:03}"),
                 description: format!("description for kind {i}"),
+                status: KindStatus::Transient,
             })
             .collect();
         state.update_grammar_kinds(kinds);
@@ -756,8 +845,16 @@ mod tests {
 
         let state = Arc::new(SharedState::new("d.db", "g.db"));
         state.update_grammar_kinds(vec![
-            GrammarKind { name: "alpha".into(), description: "first".into() },
-            GrammarKind { name: "beta".into(), description: "second".into() },
+            GrammarKind {
+                name: "alpha".into(),
+                description: "first".into(),
+                status: KindStatus::Transient,
+            },
+            GrammarKind {
+                name: "beta".into(),
+                description: "second".into(),
+                status: KindStatus::Transient,
+            },
         ]);
 
         let handles: Vec<_> = (0..4)
@@ -812,9 +909,11 @@ mod tests {
         use std::sync::{Arc, RwLock};
         use std::thread;
 
-        let lock: Arc<RwLock<Vec<GrammarKind>>> = Arc::new(RwLock::new(vec![
-            GrammarKind { name: "noun".into(), description: "thing".into() },
-        ]));
+        let lock: Arc<RwLock<Vec<GrammarKind>>> = Arc::new(RwLock::new(vec![GrammarKind {
+            name: "noun".into(),
+            description: "thing".into(),
+            status: KindStatus::Transient,
+        }]));
 
         // Acquire 8 read guards in parallel — none should block the others.
         let handles: Vec<_> = (0..8)
@@ -846,7 +945,11 @@ mod tests {
         let wl = Arc::clone(&lock);
         let writer = thread::spawn(move || {
             let mut g = wl.write().expect("write lock poisoned");
-            g.push(GrammarKind { name: "verb".into(), description: "action".into() });
+            g.push(GrammarKind {
+                name: "verb".into(),
+                description: "action".into(),
+                status: KindStatus::Transient,
+            });
         });
         writer.join().expect("writer panicked");
 
@@ -864,8 +967,16 @@ mod tests {
 
         let state = Arc::new(SharedState::new("d.db", "g.db"));
         state.update_grammar_kinds(vec![
-            GrammarKind { name: "action".into(), description: "something done".into() },
-            GrammarKind { name: "entity".into(), description: "something that exists".into() },
+            GrammarKind {
+                name: "action".into(),
+                description: "something done".into(),
+                status: KindStatus::Transient,
+            },
+            GrammarKind {
+                name: "entity".into(),
+                description: "something that exists".into(),
+                status: KindStatus::Transient,
+            },
         ]);
 
         let s1 = Arc::clone(&state);
@@ -965,8 +1076,16 @@ mod tests {
 
         let state = Arc::new(SharedState::new("d.db", "g.db"));
         state.update_grammar_kinds(vec![
-            GrammarKind { name: "noun".into(), description: "thing".into() },
-            GrammarKind { name: "verb".into(), description: "action".into() },
+            GrammarKind {
+                name: "noun".into(),
+                description: "thing".into(),
+                status: KindStatus::Transient,
+            },
+            GrammarKind {
+                name: "verb".into(),
+                description: "action".into(),
+                status: KindStatus::Transient,
+            },
         ]);
 
         // 6 concurrent readers — all succeed without blocking each other
@@ -1019,7 +1138,11 @@ mod tests {
         for s in slots {
             state.return_reader(s);
         }
-        assert_eq!(state.pool_idle_count(), 4, "pool must hold exactly 4 slots after 4 returns");
+        assert_eq!(
+            state.pool_idle_count(),
+            4,
+            "pool must hold exactly 4 slots after 4 returns"
+        );
     }
 
     /// Write kinds, then read them back: round trip preserves content.
@@ -1027,8 +1150,16 @@ mod tests {
     fn grammar_kinds_read_write_round_trip() {
         let state = SharedState::new("d.db", "g.db");
         let expected = vec![
-            GrammarKind { name: "alpha".into(), description: "first".into() },
-            GrammarKind { name: "beta".into(), description: "second".into() },
+            GrammarKind {
+                name: "alpha".into(),
+                description: "first".into(),
+                status: KindStatus::Transient,
+            },
+            GrammarKind {
+                name: "beta".into(),
+                description: "second".into(),
+                status: KindStatus::Transient,
+            },
         ];
         state.update_grammar_kinds(expected.clone());
         let read_back = state.cached_grammar_kinds();
@@ -1041,7 +1172,10 @@ mod tests {
     #[test]
     fn shared_state_new_default_empty_kinds() {
         let state = SharedState::new("x.db", "y.db");
-        assert!(state.cached_grammar_kinds().is_empty(), "fresh state must have no grammar kinds");
+        assert!(
+            state.cached_grammar_kinds().is_empty(),
+            "fresh state must have no grammar kinds"
+        );
     }
 
     /// After borrowing all 4 pool slots, the 5th borrow creates a new slot (pool empty → fresh).
@@ -1057,7 +1191,11 @@ mod tests {
         assert_eq!(state.pool_idle_count(), 4);
         // Borrow all 4 — pool becomes empty
         let borrowed: Vec<_> = (0..4).map(|_| state.borrow_reader()).collect();
-        assert_eq!(state.pool_idle_count(), 0, "pool must be empty after borrowing all 4 slots");
+        assert_eq!(
+            state.pool_idle_count(),
+            0,
+            "pool must be empty after borrowing all 4 slots"
+        );
         // 5th borrow creates a fresh slot (no panic)
         let extra = state.borrow_reader();
         assert_eq!(extra.state.dict_path, "d.db");
@@ -1081,23 +1219,36 @@ mod tests {
         assert_eq!(state.pool_idle_count(), 4);
         // Returning a 5th slot — pool is full, extra must be dropped silently (no panic)
         let extra = state.borrow_reader(); // creates fresh (pool empty after 4 borrows above)
-        // Borrow one to make room check: pool still at 4 after returning above 4; extra is fresh
+                                           // Borrow one to make room check: pool still at 4 after returning above 4; extra is fresh
         state.return_reader(extra); // pool is already at 4, so this extra is dropped
-        // Count must not exceed 4
-        assert!(state.pool_idle_count() <= 4, "pool must not exceed MAX_POOL_SIZE");
+                                    // Count must not exceed 4
+        assert!(
+            state.pool_idle_count() <= 4,
+            "pool must not exceed MAX_POOL_SIZE"
+        );
     }
 
     /// update_grammar_kinds replaces the previous list (acts as setter).
     #[test]
     fn shared_state_update_grammar_kinds() {
         let state = SharedState::new("d.db", "g.db");
-        state.update_grammar_kinds(vec![
-            GrammarKind { name: "old".into(), description: "stale".into() },
-        ]);
+        state.update_grammar_kinds(vec![GrammarKind {
+            name: "old".into(),
+            description: "stale".into(),
+            status: KindStatus::Transient,
+        }]);
         assert_eq!(state.cached_grammar_kinds().len(), 1);
         state.update_grammar_kinds(vec![
-            GrammarKind { name: "new_a".into(), description: "fresh".into() },
-            GrammarKind { name: "new_b".into(), description: "also fresh".into() },
+            GrammarKind {
+                name: "new_a".into(),
+                description: "fresh".into(),
+                status: KindStatus::Transient,
+            },
+            GrammarKind {
+                name: "new_b".into(),
+                description: "also fresh".into(),
+                status: KindStatus::Transient,
+            },
         ]);
         let kinds = state.cached_grammar_kinds();
         assert_eq!(kinds.len(), 2);
@@ -1110,14 +1261,36 @@ mod tests {
     fn grammar_kinds_filter_by_category() {
         let state = SharedState::new("d.db", "g.db");
         state.update_grammar_kinds(vec![
-            GrammarKind { name: "verb_run".into(), description: "action".into() },
-            GrammarKind { name: "verb_jump".into(), description: "action".into() },
-            GrammarKind { name: "noun_item".into(), description: "thing".into() },
+            GrammarKind {
+                name: "verb_run".into(),
+                description: "action".into(),
+                status: KindStatus::Transient,
+            },
+            GrammarKind {
+                name: "verb_jump".into(),
+                description: "action".into(),
+                status: KindStatus::Transient,
+            },
+            GrammarKind {
+                name: "noun_item".into(),
+                description: "thing".into(),
+                status: KindStatus::Transient,
+            },
         ]);
         let kinds = state.cached_grammar_kinds();
-        let verbs: Vec<_> = kinds.iter().filter(|k| k.name.starts_with("verb")).collect();
-        assert_eq!(verbs.len(), 2, "filter by 'verb' prefix must yield 2 results");
-        let nouns: Vec<_> = kinds.iter().filter(|k| k.name.starts_with("noun")).collect();
+        let verbs: Vec<_> = kinds
+            .iter()
+            .filter(|k| k.name.starts_with("verb"))
+            .collect();
+        assert_eq!(
+            verbs.len(),
+            2,
+            "filter by 'verb' prefix must yield 2 results"
+        );
+        let nouns: Vec<_> = kinds
+            .iter()
+            .filter(|k| k.name.starts_with("noun"))
+            .collect();
         assert_eq!(nouns.len(), 1);
     }
 
@@ -1179,6 +1352,7 @@ mod tests {
                 s1.update_grammar_kinds(vec![GrammarKind {
                     name: format!("t1_kind_{i}"),
                     description: "thread1".into(),
+                    status: KindStatus::Transient,
                 }]);
             }
         });
@@ -1187,13 +1361,17 @@ mod tests {
                 s2.update_grammar_kinds(vec![GrammarKind {
                     name: format!("t2_kind_{i}"),
                     description: "thread2".into(),
+                    status: KindStatus::Transient,
                 }]);
             }
         });
         t1.join().expect("thread 1 panicked");
         t2.join().expect("thread 2 panicked");
         // Both threads did 5 updates = 10 total; version must be >= 10.
-        assert!(state.grammar_version() >= 10, "version must be >= 10 after both threads complete");
+        assert!(
+            state.grammar_version() >= 10,
+            "version must be >= 10 after both threads complete"
+        );
     }
 
     /// borrow_reader returns a connection slot with the correct dict_path.
@@ -1202,7 +1380,10 @@ mod tests {
         use std::sync::Arc;
         let state = Arc::new(SharedState::new("conn_test.db", "g.db"));
         let slot = state.borrow_reader();
-        assert_eq!(slot.state.dict_path, "conn_test.db", "pool slot must point to the correct dict path");
+        assert_eq!(
+            slot.state.dict_path, "conn_test.db",
+            "pool slot must point to the correct dict path"
+        );
         state.return_reader(slot);
     }
 
@@ -1216,7 +1397,11 @@ mod tests {
         for slot in slots {
             state.return_reader(slot);
         }
-        assert!(state.pool_idle_count() <= 4, "pool must not exceed MAX_POOL_SIZE=4, got {}", state.pool_idle_count());
+        assert!(
+            state.pool_idle_count() <= 4,
+            "pool must not exceed MAX_POOL_SIZE=4, got {}",
+            state.pool_idle_count()
+        );
     }
 
     /// Borrow and return a slot 10 times — pool remains stable (no growth, no panic).
@@ -1229,7 +1414,10 @@ mod tests {
             state.return_reader(slot);
         }
         // Pool must be stable: exactly 1 slot idle (first borrow creates, all returns go back).
-        assert!(state.pool_idle_count() <= 4, "pool must remain within bounds after 10 borrow/return cycles");
+        assert!(
+            state.pool_idle_count() <= 4,
+            "pool must remain within bounds after 10 borrow/return cycles"
+        );
     }
 
     /// Grammar kinds can be filtered by kind name substring.
@@ -1237,13 +1425,32 @@ mod tests {
     fn shared_state_grammar_filter_by_kind_name() {
         let state = SharedState::new("d.db", "g.db");
         state.update_grammar_kinds(vec![
-            GrammarKind { name: "verb_run".into(), description: "run action".into() },
-            GrammarKind { name: "verb_stop".into(), description: "stop action".into() },
-            GrammarKind { name: "noun_item".into(), description: "thing".into() },
+            GrammarKind {
+                name: "verb_run".into(),
+                description: "run action".into(),
+                status: KindStatus::Transient,
+            },
+            GrammarKind {
+                name: "verb_stop".into(),
+                description: "stop action".into(),
+                status: KindStatus::Transient,
+            },
+            GrammarKind {
+                name: "noun_item".into(),
+                description: "thing".into(),
+                status: KindStatus::Transient,
+            },
         ]);
         let kinds = state.cached_grammar_kinds();
-        let verbs: Vec<_> = kinds.iter().filter(|k| k.name.starts_with("verb")).collect();
-        assert_eq!(verbs.len(), 2, "filter by 'verb' prefix must yield 2 results");
+        let verbs: Vec<_> = kinds
+            .iter()
+            .filter(|k| k.name.starts_with("verb"))
+            .collect();
+        assert_eq!(
+            verbs.len(),
+            2,
+            "filter by 'verb' prefix must yield 2 results"
+        );
     }
 
     /// Grammar kinds can be found by id (position / name match).
@@ -1251,8 +1458,16 @@ mod tests {
     fn shared_state_grammar_find_by_id() {
         let state = SharedState::new("d.db", "g.db");
         state.update_grammar_kinds(vec![
-            GrammarKind { name: "target_kind".into(), description: "the one we seek".into() },
-            GrammarKind { name: "other_kind".into(), description: "not the target".into() },
+            GrammarKind {
+                name: "target_kind".into(),
+                description: "the one we seek".into(),
+                status: KindStatus::Transient,
+            },
+            GrammarKind {
+                name: "other_kind".into(),
+                description: "not the target".into(),
+                status: KindStatus::Transient,
+            },
         ]);
         let kinds = state.cached_grammar_kinds();
         let found = kinds.iter().find(|k| k.name == "target_kind");
@@ -1264,21 +1479,30 @@ mod tests {
     #[test]
     fn shared_state_dict_path_stored() {
         let state = SharedState::new("/custom/path/dict.db", "g.db");
-        assert_eq!(state.dict_path, "/custom/path/dict.db", "dict_path must be stored verbatim");
+        assert_eq!(
+            state.dict_path, "/custom/path/dict.db",
+            "dict_path must be stored verbatim"
+        );
     }
 
     /// grammar_path is stored exactly as provided.
     #[test]
     fn shared_state_grammar_path_stored() {
         let state = SharedState::new("d.db", "/custom/grammar.db");
-        assert_eq!(state.grammar_path, "/custom/grammar.db", "grammar_path must be stored verbatim");
+        assert_eq!(
+            state.grammar_path, "/custom/grammar.db",
+            "grammar_path must be stored verbatim"
+        );
     }
 
     /// Fresh SharedState has empty grammar kinds and version 0.
     #[test]
     fn shared_state_new_empty() {
         let state = SharedState::new("x.db", "y.db");
-        assert!(state.cached_grammar_kinds().is_empty(), "new state must have no kinds");
+        assert!(
+            state.cached_grammar_kinds().is_empty(),
+            "new state must have no kinds"
+        );
         assert_eq!(state.grammar_version(), 0, "new state must have version 0");
     }
 
@@ -1287,18 +1511,45 @@ mod tests {
     fn shared_state_update_replaces_all() {
         let state = SharedState::new("d.db", "g.db");
         state.update_grammar_kinds(vec![
-            GrammarKind { name: "first_a".into(), description: "".into() },
-            GrammarKind { name: "first_b".into(), description: "".into() },
+            GrammarKind {
+                name: "first_a".into(),
+                description: "".into(),
+                status: KindStatus::Transient,
+            },
+            GrammarKind {
+                name: "first_b".into(),
+                description: "".into(),
+                status: KindStatus::Transient,
+            },
         ]);
         assert_eq!(state.cached_grammar_kinds().len(), 2);
         state.update_grammar_kinds(vec![
-            GrammarKind { name: "second_a".into(), description: "".into() },
-            GrammarKind { name: "second_b".into(), description: "".into() },
-            GrammarKind { name: "second_c".into(), description: "".into() },
+            GrammarKind {
+                name: "second_a".into(),
+                description: "".into(),
+                status: KindStatus::Transient,
+            },
+            GrammarKind {
+                name: "second_b".into(),
+                description: "".into(),
+                status: KindStatus::Transient,
+            },
+            GrammarKind {
+                name: "second_c".into(),
+                description: "".into(),
+                status: KindStatus::Transient,
+            },
         ]);
         let kinds = state.cached_grammar_kinds();
-        assert_eq!(kinds.len(), 3, "second update must replace first; 3 items expected");
-        assert!(kinds.iter().all(|k| k.name.starts_with("second")), "all items must be from second update");
+        assert_eq!(
+            kinds.len(),
+            3,
+            "second update must replace first; 3 items expected"
+        );
+        assert!(
+            kinds.iter().all(|k| k.name.starts_with("second")),
+            "all items must be from second update"
+        );
     }
 
     // ── AO7: KindStatus tests ──────────────────────────────────────────────
@@ -1388,8 +1639,16 @@ mod tests {
 
     #[test]
     fn kind_status_as_str_never_empty() {
-        for status in &[KindStatus::Transient, KindStatus::Partial, KindStatus::Complete] {
-            assert!(!status.as_str().is_empty(), "as_str must be non-empty for {:?}", status);
+        for status in &[
+            KindStatus::Transient,
+            KindStatus::Partial,
+            KindStatus::Complete,
+        ] {
+            assert!(
+                !status.as_str().is_empty(),
+                "as_str must be non-empty for {:?}",
+                status
+            );
         }
     }
 
@@ -1406,6 +1665,60 @@ mod tests {
     #[test]
     fn kind_status_debug_contains_variant_name() {
         let s = format!("{:?}", KindStatus::Complete);
-        assert!(s.contains("Complete"), "Debug output must contain 'Complete', got: {s}");
+        assert!(
+            s.contains("Complete"),
+            "Debug output must contain 'Complete', got: {s}"
+        );
+    }
+
+    // ── AL-GRAMMAR-STATUS: GrammarKind.status field tests ─────────────────
+
+    #[test]
+    fn test_grammar_kind_has_status() {
+        let k = GrammarKind {
+            name: "video".to_string(),
+            description: "Video generation".to_string(),
+            status: KindStatus::Transient,
+        };
+        assert_eq!(k.status, KindStatus::Transient);
+    }
+
+    #[test]
+    fn test_kind_status_variants() {
+        let _ = KindStatus::Partial;
+        let _ = KindStatus::Complete;
+        let _ = KindStatus::Transient;
+    }
+
+    #[test]
+    fn grammar_kind_status_partial_stored() {
+        let k = GrammarKind {
+            name: "audio".to_string(),
+            description: "Audio synthesis".to_string(),
+            status: KindStatus::Partial,
+        };
+        assert_eq!(k.status, KindStatus::Partial);
+        assert!(!k.status.is_complete());
+    }
+
+    #[test]
+    fn grammar_kind_status_complete_stored() {
+        let k = GrammarKind {
+            name: "render".to_string(),
+            description: "Rendering primitive".to_string(),
+            status: KindStatus::Complete,
+        };
+        assert_eq!(k.status, KindStatus::Complete);
+        assert!(k.status.is_complete());
+    }
+
+    #[test]
+    fn grammar_kind_status_round_trips_via_kind_status_methods() {
+        let k = GrammarKind {
+            name: "concept".to_string(),
+            description: "abstract idea".to_string(),
+            status: KindStatus::Complete,
+        };
+        assert_eq!(KindStatus::from_str(k.status.as_str()), KindStatus::Complete);
     }
 }

@@ -62,11 +62,7 @@ enum GestureState {
     /// No gesture in progress.
     Idle,
     /// A single finger/pointer is down but has not moved far enough to start a pan.
-    Down {
-        x: f32,
-        y: f32,
-        press_time_ms: u64,
-    },
+    Down { x: f32, y: f32, press_time_ms: u64 },
     /// A pan is underway.
     Panning {
         start_x: f32,
@@ -343,7 +339,12 @@ mod tests {
         GestureRecognizer::new(GestureConfig::default())
     }
 
-    fn rec_with(double_tap_ms: u32, long_press_ms: u32, min_pan: f32, min_pinch: f32) -> GestureRecognizer {
+    fn rec_with(
+        double_tap_ms: u32,
+        long_press_ms: u32,
+        min_pan: f32,
+        min_pinch: f32,
+    ) -> GestureRecognizer {
         GestureRecognizer::new(GestureConfig {
             double_tap_ms,
             long_press_ms,
@@ -395,7 +396,7 @@ mod tests {
         // First tap
         r.on_press(5.0, 5.0, 0);
         r.on_release(30); // emits Tap, enters WaitingDoubleTap
-        // Second tap within 300 ms
+                          // Second tap within 300 ms
         let ev = r.on_press(5.0, 5.0, 200).unwrap();
         assert!(
             matches!(ev, GestureEvent::DoubleTap { .. }),
@@ -408,7 +409,7 @@ mod tests {
         let mut r = rec_with(300, 500, 8.0, 0.05);
         r.on_press(5.0, 5.0, 0);
         r.on_release(30); // first tap
-        // Second press arrives too late — 400 ms > 300 ms threshold
+                          // Second press arrives too late — 400 ms > 300 ms threshold
         let ev = r.on_press(5.0, 5.0, 430);
         assert!(
             ev.is_none(),
@@ -438,7 +439,13 @@ mod tests {
         r.on_press(3.0, 4.0, 0);
         let ev = r.on_release(600).unwrap(); // 600 ms > 500 ms threshold
         assert!(
-            matches!(ev, GestureEvent::LongPress { duration_ms: 600, .. }),
+            matches!(
+                ev,
+                GestureEvent::LongPress {
+                    duration_ms: 600,
+                    ..
+                }
+            ),
             "600ms hold must be LongPress, got {ev:?}"
         );
     }
@@ -475,7 +482,10 @@ mod tests {
         let mut r = rec_with(300, 500, 8.0, 0.05);
         r.on_press(0.0, 0.0, 0);
         // Move just under threshold — no event yet
-        assert!(r.on_move(5.0, 0.0).is_none(), "under-threshold move must not emit");
+        assert!(
+            r.on_move(5.0, 0.0).is_none(),
+            "under-threshold move must not emit"
+        );
         // Move past threshold
         let ev = r.on_move(10.0, 0.0).unwrap();
         assert!(
@@ -489,7 +499,7 @@ mod tests {
         let mut r = rec_with(300, 500, 8.0, 0.05);
         r.on_press(20.0, 30.0, 0);
         r.on_move(30.0, 30.0); // crosses threshold
-        // PanStart was already emitted; check it carried origin coords
+                               // PanStart was already emitted; check it carried origin coords
         let mut r2 = rec_with(300, 500, 8.0, 0.05);
         r2.on_press(20.0, 30.0, 0);
         let ev = r2.on_move(30.0, 30.0).unwrap();
@@ -593,7 +603,10 @@ mod tests {
         let mut r = default_rec();
         let ev = r.on_pinch(1.5, true).unwrap();
         if let GestureEvent::PinchStart { scale } = ev {
-            assert!(scale > 1.0, "outward pinch scale must be > 1.0, got {scale}");
+            assert!(
+                scale > 1.0,
+                "outward pinch scale must be > 1.0, got {scale}"
+            );
         }
     }
 

@@ -202,10 +202,19 @@ mod tests {
     #[test]
     fn edgeless_two_blocks_at_different_positions_are_distinct() {
         // Encode position into content so the blocks are structurally distinct
-        let b1 = EdgelessTextBlock::new(NomtuRef::new("pos-1", "pos_10_20", "concept"), "block at 10,20");
-        let b2 = EdgelessTextBlock::new(NomtuRef::new("pos-2", "pos_30_40", "concept"), "block at 30,40");
+        let b1 = EdgelessTextBlock::new(
+            NomtuRef::new("pos-1", "pos_10_20", "concept"),
+            "block at 10,20",
+        );
+        let b2 = EdgelessTextBlock::new(
+            NomtuRef::new("pos-2", "pos_30_40", "concept"),
+            "block at 30,40",
+        );
         assert_ne!(b1.entity.id, b2.entity.id, "distinct ids must differ");
-        assert_ne!(b1.content, b2.content, "content encoding positions must differ");
+        assert_ne!(
+            b1.content, b2.content,
+            "content encoding positions must differ"
+        );
     }
 
     /// EdgelessTextBlock at the zero position (0,0) reports empty-equivalent position state.
@@ -222,6 +231,9 @@ mod tests {
         // Use a precise floating-point value encoded as a string in content
         let precise = "x=123.456789 y=987.654321";
         let b = EdgelessTextBlock::new(NomtuRef::new("p1", "w", "concept"), precise);
-        assert_eq!(b.content, precise, "position string must be stored verbatim without rounding");
+        assert_eq!(
+            b.content, precise,
+            "position string must be stored verbatim without rounding"
+        );
     }
 }

@@ -361,12 +361,18 @@ mod tests {
         // A fresh Tracked has an empty snapshot — "not dirty".
         let t = Tracked::new("clean", 1);
         let snap = t.snapshot();
-        assert!(snap.method_call_pairs.is_empty(), "fresh tracked is not dirty");
+        assert!(
+            snap.method_call_pairs.is_empty(),
+            "fresh tracked is not dirty"
+        );
 
         // After recording, snapshot is non-empty — "dirty".
         t.record_call(99, Hash128::of_str("result"));
         let snap2 = t.snapshot();
-        assert!(!snap2.method_call_pairs.is_empty(), "tracked is dirty after record");
+        assert!(
+            !snap2.method_call_pairs.is_empty(),
+            "tracked is dirty after record"
+        );
     }
 
     #[test]
@@ -417,7 +423,11 @@ mod tests {
 
         // Now record again — count should increment from 0, never go negative.
         t.record_call(3, Hash128::of_str("c"));
-        assert_eq!(t.call_count(), 1, "count must increment after reset, never decrement");
+        assert_eq!(
+            t.call_count(),
+            1,
+            "count must increment after reset, never decrement"
+        );
 
         t.record_call(4, Hash128::of_str("d"));
         assert_eq!(t.call_count(), 2);
@@ -431,7 +441,10 @@ mod tests {
             let before = t.call_count();
             t.record_call(i, Hash128::of_u64(i as u64));
             let after = t.call_count();
-            assert!(after > before, "call_count must strictly increase after record_call");
+            assert!(
+                after > before,
+                "call_count must strictly increase after record_call"
+            );
         }
     }
 

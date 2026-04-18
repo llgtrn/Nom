@@ -15,6 +15,9 @@ pub struct FontRegistry {
     pub inter_bold: FontId,
     pub source_code_pro_regular: FontId,
     pub source_code_pro_semibold: FontId,
+    pub libre_baskerville_regular: FontId,
+    pub eb_garamond_regular: FontId,
+    pub berkeley_mono_regular: FontId,
 }
 
 impl FontRegistry {
@@ -28,6 +31,9 @@ impl FontRegistry {
             inter_bold: 3,
             source_code_pro_regular: 4,
             source_code_pro_semibold: 5,
+            libre_baskerville_regular: 6,
+            eb_garamond_regular: 7,
+            berkeley_mono_regular: 8,
         }
     }
 }
@@ -363,8 +369,8 @@ mod tests {
     // -----------------------------------------------------------------------
 
     #[test]
-    fn font_registry_has_six_entries() {
-        // The placeholder registry must expose exactly 6 font IDs.
+    fn font_registry_has_nine_entries() {
+        // The placeholder registry must expose exactly 9 font IDs.
         let reg = FontRegistry::placeholder();
         let ids = [
             reg.inter_regular,
@@ -373,8 +379,11 @@ mod tests {
             reg.inter_bold,
             reg.source_code_pro_regular,
             reg.source_code_pro_semibold,
+            reg.libre_baskerville_regular,
+            reg.eb_garamond_regular,
+            reg.berkeley_mono_regular,
         ];
-        assert_eq!(ids.len(), 6, "FontRegistry must have 6 font slots");
+        assert_eq!(ids.len(), 9, "FontRegistry must have 9 font slots");
     }
 
     #[test]
@@ -596,8 +605,8 @@ mod tests {
     }
 
     #[test]
-    fn font_stack_fallback_six_ids() {
-        // The placeholder registry must expose exactly 6 entries (2 font families × 3 weights).
+    fn font_stack_fallback_nine_ids() {
+        // The placeholder registry must expose exactly 9 entries.
         let reg = FontRegistry::placeholder();
         let ids = [
             reg.inter_regular,
@@ -606,6 +615,9 @@ mod tests {
             reg.inter_bold,
             reg.source_code_pro_regular,
             reg.source_code_pro_semibold,
+            reg.libre_baskerville_regular,
+            reg.eb_garamond_regular,
+            reg.berkeley_mono_regular,
         ];
         // All IDs must be unique (no aliasing between families).
         let mut sorted = ids;
@@ -613,6 +625,32 @@ mod tests {
         for w in sorted.windows(2) {
             assert_ne!(w[0], w[1], "font IDs must be unique across the registry");
         }
+    }
+
+    #[test]
+    fn font_registry_new_handles_accessible() {
+        let reg = FontRegistry::placeholder();
+        // The three new font handles must be present and have distinct IDs.
+        assert_ne!(
+            reg.libre_baskerville_regular, reg.inter_regular,
+            "libre_baskerville_regular must differ from inter_regular"
+        );
+        assert_ne!(
+            reg.eb_garamond_regular, reg.inter_regular,
+            "eb_garamond_regular must differ from inter_regular"
+        );
+        assert_ne!(
+            reg.berkeley_mono_regular, reg.source_code_pro_regular,
+            "berkeley_mono_regular must differ from source_code_pro_regular"
+        );
+        assert_ne!(
+            reg.libre_baskerville_regular, reg.eb_garamond_regular,
+            "libre_baskerville_regular and eb_garamond_regular must differ"
+        );
+        assert_ne!(
+            reg.eb_garamond_regular, reg.berkeley_mono_regular,
+            "eb_garamond_regular and berkeley_mono_regular must differ"
+        );
     }
 
     #[test]

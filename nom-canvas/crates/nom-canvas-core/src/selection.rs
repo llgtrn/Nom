@@ -807,7 +807,11 @@ mod tests {
         sel.add(1);
         sel.add(2);
         sel.remove(99); // id 99 was never added
-        assert_eq!(sel.len(), 2, "len must remain 2 after removing nonexistent id");
+        assert_eq!(
+            sel.len(),
+            2,
+            "len must remain 2 after removing nonexistent id"
+        );
         assert!(sel.contains(1));
         assert!(sel.contains(2));
     }
@@ -831,7 +835,10 @@ mod tests {
             && inner.min[1] >= min[1]
             && inner.max[0] <= max[0]
             && inner.max[1] <= max[1];
-        assert!(fully_contained, "element fully inside rubber-band must be contained");
+        assert!(
+            fully_contained,
+            "element fully inside rubber-band must be contained"
+        );
     }
 
     /// contains_mode: element partially outside is NOT fully contained.
@@ -851,9 +858,15 @@ mod tests {
             && partial.min[1] >= min[1]
             && partial.max[0] <= max[0]
             && partial.max[1] <= max[1];
-        assert!(!fully_contained, "partially-overlapping element is NOT fully contained");
+        assert!(
+            !fully_contained,
+            "partially-overlapping element is NOT fully contained"
+        );
         // But intersects mode should still pick it up.
-        assert!(rb.intersects(&partial), "intersects mode still finds partial overlap");
+        assert!(
+            rb.intersects(&partial),
+            "intersects mode still finds partial overlap"
+        );
     }
 
     /// contains mode vs intersects mode: same rubber-band, one selects more elements.
@@ -865,16 +878,38 @@ mod tests {
         };
         let elements = vec![
             // fully inside
-            ElementBounds { id: 1, min: [5.0, 5.0], max: [50.0, 50.0] },
+            ElementBounds {
+                id: 1,
+                min: [5.0, 5.0],
+                max: [50.0, 50.0],
+            },
             // partially outside
-            ElementBounds { id: 2, min: [40.0, 40.0], max: [90.0, 90.0] },
+            ElementBounds {
+                id: 2,
+                min: [40.0, 40.0],
+                max: [90.0, 90.0],
+            },
         ];
         let (rmin, rmax) = rb.aabb();
-        let intersecting: Vec<u64> = elements.iter().filter(|e| rb.intersects(e)).map(|e| e.id).collect();
-        let contained: Vec<u64> = elements.iter().filter(|e| {
-            e.min[0] >= rmin[0] && e.min[1] >= rmin[1] && e.max[0] <= rmax[0] && e.max[1] <= rmax[1]
-        }).map(|e| e.id).collect();
-        assert!(intersecting.len() >= contained.len(), "intersects selects >= elements vs contains");
+        let intersecting: Vec<u64> = elements
+            .iter()
+            .filter(|e| rb.intersects(e))
+            .map(|e| e.id)
+            .collect();
+        let contained: Vec<u64> = elements
+            .iter()
+            .filter(|e| {
+                e.min[0] >= rmin[0]
+                    && e.min[1] >= rmin[1]
+                    && e.max[0] <= rmax[0]
+                    && e.max[1] <= rmax[1]
+            })
+            .map(|e| e.id)
+            .collect();
+        assert!(
+            intersecting.len() >= contained.len(),
+            "intersects selects >= elements vs contains"
+        );
         assert!(intersecting.contains(&1));
         assert!(intersecting.contains(&2));
         assert!(contained.contains(&1));
@@ -887,17 +922,43 @@ mod tests {
     #[test]
     fn fit_to_selection_union_aabb() {
         let bounds = vec![
-            ElementBounds { id: 1, min: [10.0, 20.0], max: [50.0, 60.0] },
-            ElementBounds { id: 2, min: [30.0, 10.0], max: [80.0, 70.0] },
-            ElementBounds { id: 3, min: [-5.0, 5.0], max: [15.0, 35.0] },
+            ElementBounds {
+                id: 1,
+                min: [10.0, 20.0],
+                max: [50.0, 60.0],
+            },
+            ElementBounds {
+                id: 2,
+                min: [30.0, 10.0],
+                max: [80.0, 70.0],
+            },
+            ElementBounds {
+                id: 3,
+                min: [-5.0, 5.0],
+                max: [15.0, 35.0],
+            },
         ];
         let mut sel = Selection::empty();
-        for b in &bounds { sel.add(b.id); }
+        for b in &bounds {
+            sel.add(b.id);
+        }
         let selected: Vec<&ElementBounds> = bounds.iter().filter(|b| sel.contains(b.id)).collect();
-        let min_x = selected.iter().map(|b| b.min[0]).fold(f32::INFINITY, f32::min);
-        let min_y = selected.iter().map(|b| b.min[1]).fold(f32::INFINITY, f32::min);
-        let max_x = selected.iter().map(|b| b.max[0]).fold(f32::NEG_INFINITY, f32::max);
-        let max_y = selected.iter().map(|b| b.max[1]).fold(f32::NEG_INFINITY, f32::max);
+        let min_x = selected
+            .iter()
+            .map(|b| b.min[0])
+            .fold(f32::INFINITY, f32::min);
+        let min_y = selected
+            .iter()
+            .map(|b| b.min[1])
+            .fold(f32::INFINITY, f32::min);
+        let max_x = selected
+            .iter()
+            .map(|b| b.max[0])
+            .fold(f32::NEG_INFINITY, f32::max);
+        let max_y = selected
+            .iter()
+            .map(|b| b.max[1])
+            .fold(f32::NEG_INFINITY, f32::max);
         assert!((min_x - (-5.0)).abs() < 1e-6);
         assert!((min_y - 5.0).abs() < 1e-6);
         assert!((max_x - 80.0).abs() < 1e-6);
@@ -907,12 +968,22 @@ mod tests {
     /// Fit-to-selection with single element returns that element's bounds.
     #[test]
     fn fit_to_selection_single_element() {
-        let bounds = vec![ElementBounds { id: 42, min: [100.0, 200.0], max: [300.0, 400.0] }];
+        let bounds = vec![ElementBounds {
+            id: 42,
+            min: [100.0, 200.0],
+            max: [300.0, 400.0],
+        }];
         let mut sel = Selection::empty();
         sel.add(42);
         let selected: Vec<&ElementBounds> = bounds.iter().filter(|b| sel.contains(b.id)).collect();
-        let min_x = selected.iter().map(|b| b.min[0]).fold(f32::INFINITY, f32::min);
-        let max_y = selected.iter().map(|b| b.max[1]).fold(f32::NEG_INFINITY, f32::max);
+        let min_x = selected
+            .iter()
+            .map(|b| b.min[0])
+            .fold(f32::INFINITY, f32::min);
+        let max_y = selected
+            .iter()
+            .map(|b| b.max[1])
+            .fold(f32::NEG_INFINITY, f32::max);
         assert!((min_x - 100.0).abs() < 1e-6);
         assert!((max_y - 400.0).abs() < 1e-6);
     }
@@ -957,23 +1028,32 @@ mod tests {
     fn nearest_k_elements() {
         // Simulate nearest-k by sorting elements by distance to a query point.
         let elements = vec![
-            (1u64, [5.0_f32, 5.0_f32]),    // dist ≈ 7.07 from (0,0)
+            (1u64, [5.0_f32, 5.0_f32]),     // dist ≈ 7.07 from (0,0)
             (2u64, [20.0_f32, 20.0_f32]),   // dist ≈ 28.28
             (3u64, [3.0_f32, 4.0_f32]),     // dist = 5.0
             (4u64, [100.0_f32, 100.0_f32]), // dist ≈ 141.4
         ];
         let query = [0.0_f32, 0.0_f32];
         let k = 2;
-        let mut by_dist: Vec<(u64, f32)> = elements.iter().map(|(id, pos)| {
-            let dx = pos[0] - query[0];
-            let dy = pos[1] - query[1];
-            (*id, (dx * dx + dy * dy).sqrt())
-        }).collect();
+        let mut by_dist: Vec<(u64, f32)> = elements
+            .iter()
+            .map(|(id, pos)| {
+                let dx = pos[0] - query[0];
+                let dy = pos[1] - query[1];
+                (*id, (dx * dx + dy * dy).sqrt())
+            })
+            .collect();
         by_dist.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
         let k_nearest: Vec<u64> = by_dist.iter().take(k).map(|(id, _)| *id).collect();
         assert_eq!(k_nearest.len(), k);
-        assert!(k_nearest.contains(&3), "element 3 (dist=5) must be in k=2 nearest");
-        assert!(k_nearest.contains(&1), "element 1 (dist≈7) must be in k=2 nearest");
+        assert!(
+            k_nearest.contains(&3),
+            "element 3 (dist=5) must be in k=2 nearest"
+        );
+        assert!(
+            k_nearest.contains(&1),
+            "element 1 (dist≈7) must be in k=2 nearest"
+        );
         assert!(!k_nearest.contains(&2), "element 2 is not among nearest-2");
     }
 
@@ -983,14 +1063,21 @@ mod tests {
         let elements: Vec<(u64, [f32; 2])> = vec![(1, [1.0, 1.0]), (2, [2.0, 2.0])];
         let k = 10;
         let query = [0.0_f32, 0.0_f32];
-        let mut by_dist: Vec<(u64, f32)> = elements.iter().map(|(id, pos)| {
-            let dx = pos[0] - query[0];
-            let dy = pos[1] - query[1];
-            (*id, (dx * dx + dy * dy).sqrt())
-        }).collect();
+        let mut by_dist: Vec<(u64, f32)> = elements
+            .iter()
+            .map(|(id, pos)| {
+                let dx = pos[0] - query[0];
+                let dy = pos[1] - query[1];
+                (*id, (dx * dx + dy * dy).sqrt())
+            })
+            .collect();
         by_dist.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
         let k_nearest: Vec<u64> = by_dist.iter().take(k).map(|(id, _)| *id).collect();
-        assert_eq!(k_nearest.len(), elements.len(), "k >= len returns all elements");
+        assert_eq!(
+            k_nearest.len(),
+            elements.len(),
+            "k >= len returns all elements"
+        );
     }
 
     /// nearest-k with empty set returns empty.
@@ -999,11 +1086,14 @@ mod tests {
         let elements: Vec<(u64, [f32; 2])> = vec![];
         let k = 3;
         let query = [0.0_f32, 0.0_f32];
-        let mut by_dist: Vec<(u64, f32)> = elements.iter().map(|(id, pos)| {
-            let dx = pos[0] - query[0];
-            let dy = pos[1] - query[1];
-            (*id, (dx * dx + dy * dy).sqrt())
-        }).collect();
+        let mut by_dist: Vec<(u64, f32)> = elements
+            .iter()
+            .map(|(id, pos)| {
+                let dx = pos[0] - query[0];
+                let dy = pos[1] - query[1];
+                (*id, (dx * dx + dy * dy).sqrt())
+            })
+            .collect();
         by_dist.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
         let k_nearest: Vec<u64> = by_dist.iter().take(k).map(|(id, _)| *id).collect();
         assert!(k_nearest.is_empty());
@@ -1034,14 +1124,24 @@ mod tests {
     /// RubberBand: start == end means zero-area; no element is fully contained.
     #[test]
     fn rubber_band_zero_area_contains_nothing() {
-        let rb = RubberBand { start: [50.0, 50.0], end: [50.0, 50.0] };
+        let rb = RubberBand {
+            start: [50.0, 50.0],
+            end: [50.0, 50.0],
+        };
         let (min, max) = rb.aabb();
-        let elem = ElementBounds { id: 1, min: [10.0, 10.0], max: [90.0, 90.0] };
+        let elem = ElementBounds {
+            id: 1,
+            min: [10.0, 10.0],
+            max: [90.0, 90.0],
+        };
         let fully_contained = elem.min[0] >= min[0]
             && elem.min[1] >= min[1]
             && elem.max[0] <= max[0]
             && elem.max[1] <= max[1];
-        assert!(!fully_contained, "large element cannot be contained by zero-area rubber-band");
+        assert!(
+            !fully_contained,
+            "large element cannot be contained by zero-area rubber-band"
+        );
     }
 
     /// Z-order: bring-to-back moves element to minimum z_index.
@@ -1053,7 +1153,10 @@ mod tests {
             entry.1 = min_z - 1;
         }
         let bottom = stack.iter().min_by_key(|(_, z)| *z).unwrap();
-        assert_eq!(bottom.0, 3, "element 3 should be at bottom after bring-to-back");
+        assert_eq!(
+            bottom.0, 3,
+            "element 3 should be at bottom after bring-to-back"
+        );
     }
 
     /// Selection: ids are ordered (BTreeSet) — iteration is deterministic.
@@ -1070,11 +1173,21 @@ mod tests {
     /// rubber_band intersects with element touching only one corner.
     #[test]
     fn rubber_band_corner_touch_intersects() {
-        let rb = RubberBand { start: [0.0, 0.0], end: [50.0, 50.0] };
+        let rb = RubberBand {
+            start: [0.0, 0.0],
+            end: [50.0, 50.0],
+        };
         // Element touching only the bottom-right corner of the rubber-band.
-        let elem = ElementBounds { id: 99, min: [50.0, 50.0], max: [100.0, 100.0] };
+        let elem = ElementBounds {
+            id: 99,
+            min: [50.0, 50.0],
+            max: [100.0, 100.0],
+        };
         // separation-axis: rb max[0]=50 == elem min[0]=50 → not separated → intersects.
-        assert!(rb.intersects(&elem), "corner-touching element must intersect rubber-band");
+        assert!(
+            rb.intersects(&elem),
+            "corner-touching element must intersect rubber-band"
+        );
     }
 
     // ── additional selection tests ────────────────────────────────────────────
@@ -1093,7 +1206,10 @@ mod tests {
             "select_all must contain every element"
         );
         for &id in &all_ids {
-            assert!(sel.contains(id), "id {id} must be selected after select_all");
+            assert!(
+                sel.contains(id),
+                "id {id} must be selected after select_all"
+            );
         }
     }
 
@@ -1109,7 +1225,10 @@ mod tests {
         assert!(sel.is_empty(), "deselect_all must leave selection empty");
         assert_eq!(sel.len(), 0, "len must be 0 after deselect_all");
         for id in [10u64, 20, 30] {
-            assert!(!sel.contains(id), "id {id} must not be present after deselect_all");
+            assert!(
+                !sel.contains(id),
+                "id {id} must not be present after deselect_all"
+            );
         }
     }
 
@@ -1138,8 +1257,15 @@ mod tests {
     #[test]
     fn rubber_band_zero_area_no_intersect_outside() {
         // Zero-area band at (50, 50); element entirely to the right.
-        let rb = RubberBand { start: [50.0, 50.0], end: [50.0, 50.0] };
-        let elem = ElementBounds { id: 1, min: [100.0, 100.0], max: [200.0, 200.0] };
+        let rb = RubberBand {
+            start: [50.0, 50.0],
+            end: [50.0, 50.0],
+        };
+        let elem = ElementBounds {
+            id: 1,
+            min: [100.0, 100.0],
+            max: [200.0, 200.0],
+        };
         assert!(
             !rb.intersects(&elem),
             "zero-area rubber-band must not intersect distant element"
@@ -1150,8 +1276,15 @@ mod tests {
     #[test]
     fn rubber_band_zero_area_inside_element_intersects() {
         // Zero-area band at (50, 50); element wraps around that point.
-        let rb = RubberBand { start: [50.0, 50.0], end: [50.0, 50.0] };
-        let elem = ElementBounds { id: 2, min: [0.0, 0.0], max: [100.0, 100.0] };
+        let rb = RubberBand {
+            start: [50.0, 50.0],
+            end: [50.0, 50.0],
+        };
+        let elem = ElementBounds {
+            id: 2,
+            min: [0.0, 0.0],
+            max: [100.0, 100.0],
+        };
         // Separation axis: rb [50,50] vs elem [0,100] — no separation on either axis.
         assert!(
             rb.intersects(&elem),
@@ -1195,36 +1328,79 @@ mod tests {
     /// fully inside the rubber-band rect.
     #[test]
     fn rubber_band_contains_mode_fully_inside_captures() {
-        let rb = RubberBand { start: [0.0, 0.0], end: [100.0, 100.0] };
+        let rb = RubberBand {
+            start: [0.0, 0.0],
+            end: [100.0, 100.0],
+        };
         let elements = vec![
-            ElementBounds { id: 1, min: [10.0, 10.0], max: [80.0, 80.0] }, // fully inside
-            ElementBounds { id: 2, min: [60.0, 60.0], max: [120.0, 120.0] }, // partially outside
-            ElementBounds { id: 3, min: [200.0, 200.0], max: [300.0, 300.0] }, // fully outside
+            ElementBounds {
+                id: 1,
+                min: [10.0, 10.0],
+                max: [80.0, 80.0],
+            }, // fully inside
+            ElementBounds {
+                id: 2,
+                min: [60.0, 60.0],
+                max: [120.0, 120.0],
+            }, // partially outside
+            ElementBounds {
+                id: 3,
+                min: [200.0, 200.0],
+                max: [300.0, 300.0],
+            }, // fully outside
         ];
         let (rmin, rmax) = rb.aabb();
-        let captured: Vec<u64> = elements.iter()
-            .filter(|e| e.min[0] >= rmin[0] && e.min[1] >= rmin[1] && e.max[0] <= rmax[0] && e.max[1] <= rmax[1])
+        let captured: Vec<u64> = elements
+            .iter()
+            .filter(|e| {
+                e.min[0] >= rmin[0]
+                    && e.min[1] >= rmin[1]
+                    && e.max[0] <= rmax[0]
+                    && e.max[1] <= rmax[1]
+            })
             .map(|e| e.id)
             .collect();
-        assert!(captured.contains(&1), "element fully inside must be captured in exclusive mode");
-        assert!(!captured.contains(&2), "element partially outside must NOT be captured in exclusive mode");
-        assert!(!captured.contains(&3), "element fully outside must not be captured");
+        assert!(
+            captured.contains(&1),
+            "element fully inside must be captured in exclusive mode"
+        );
+        assert!(
+            !captured.contains(&2),
+            "element partially outside must NOT be captured in exclusive mode"
+        );
+        assert!(
+            !captured.contains(&3),
+            "element fully outside must not be captured"
+        );
     }
 
     /// Rubber-band in exclusive mode misses elements only partially overlapping.
     #[test]
     fn rubber_band_exclusive_mode_misses_partial_overlap() {
-        let rb = RubberBand { start: [0.0, 0.0], end: [60.0, 60.0] };
+        let rb = RubberBand {
+            start: [0.0, 0.0],
+            end: [60.0, 60.0],
+        };
         // Element that overlaps by one side only.
-        let partial = ElementBounds { id: 99, min: [50.0, 50.0], max: [100.0, 100.0] };
+        let partial = ElementBounds {
+            id: 99,
+            min: [50.0, 50.0],
+            max: [100.0, 100.0],
+        };
         let (rmin, rmax) = rb.aabb();
         let fully_contained = partial.min[0] >= rmin[0]
             && partial.min[1] >= rmin[1]
             && partial.max[0] <= rmax[0]
             && partial.max[1] <= rmax[1];
-        assert!(!fully_contained, "partially-overlapping element must be excluded in exclusive mode");
+        assert!(
+            !fully_contained,
+            "partially-overlapping element must be excluded in exclusive mode"
+        );
         // But intersects mode includes it.
-        assert!(rb.intersects(&partial), "intersects mode must still find partial element");
+        assert!(
+            rb.intersects(&partial),
+            "intersects mode must still find partial element"
+        );
     }
 
     /// Select all N elements, deselect one — count becomes N-1.
@@ -1237,7 +1413,11 @@ mod tests {
         }
         assert_eq!(sel.len(), 5);
         sel.remove(3);
-        assert_eq!(sel.len(), 4, "count must be N-1 after deselecting one element");
+        assert_eq!(
+            sel.len(),
+            4,
+            "count must be N-1 after deselecting one element"
+        );
         assert!(!sel.contains(3), "deselected id must not be present");
         // Remaining ids must still be present.
         for &id in &[1u64, 2, 4, 5] {
@@ -1258,8 +1438,15 @@ mod tests {
         } else {
             sel.add(7);
         }
-        assert!(!sel.contains(7), "toggling an already-selected element must deselect it");
-        assert_eq!(sel.len(), 1, "only one element must remain after toggle-off");
+        assert!(
+            !sel.contains(7),
+            "toggling an already-selected element must deselect it"
+        );
+        assert_eq!(
+            sel.len(),
+            1,
+            "only one element must remain after toggle-off"
+        );
     }
 
     /// Selection.contains returns true for selected IDs and false for unselected IDs.
@@ -1282,22 +1469,59 @@ mod tests {
     /// Rubber-band captures multiple elements fully inside its rect.
     #[test]
     fn rubber_band_captures_multiple_fully_inside() {
-        let rb = RubberBand { start: [0.0, 0.0], end: [200.0, 200.0] };
+        let rb = RubberBand {
+            start: [0.0, 0.0],
+            end: [200.0, 200.0],
+        };
         let elements = vec![
-            ElementBounds { id: 1, min: [10.0, 10.0], max: [50.0, 50.0] },
-            ElementBounds { id: 2, min: [60.0, 60.0], max: [120.0, 120.0] },
-            ElementBounds { id: 3, min: [150.0, 150.0], max: [190.0, 190.0] },
-            ElementBounds { id: 4, min: [180.0, 180.0], max: [250.0, 250.0] }, // partially outside
+            ElementBounds {
+                id: 1,
+                min: [10.0, 10.0],
+                max: [50.0, 50.0],
+            },
+            ElementBounds {
+                id: 2,
+                min: [60.0, 60.0],
+                max: [120.0, 120.0],
+            },
+            ElementBounds {
+                id: 3,
+                min: [150.0, 150.0],
+                max: [190.0, 190.0],
+            },
+            ElementBounds {
+                id: 4,
+                min: [180.0, 180.0],
+                max: [250.0, 250.0],
+            }, // partially outside
         ];
         let (rmin, rmax) = rb.aabb();
-        let captured: Vec<u64> = elements.iter()
-            .filter(|e| e.min[0] >= rmin[0] && e.min[1] >= rmin[1] && e.max[0] <= rmax[0] && e.max[1] <= rmax[1])
+        let captured: Vec<u64> = elements
+            .iter()
+            .filter(|e| {
+                e.min[0] >= rmin[0]
+                    && e.min[1] >= rmin[1]
+                    && e.max[0] <= rmax[0]
+                    && e.max[1] <= rmax[1]
+            })
             .map(|e| e.id)
             .collect();
-        assert!(captured.contains(&1), "element 1 fully inside must be captured");
-        assert!(captured.contains(&2), "element 2 fully inside must be captured");
-        assert!(captured.contains(&3), "element 3 fully inside must be captured");
-        assert!(!captured.contains(&4), "element 4 partially outside must not be captured");
+        assert!(
+            captured.contains(&1),
+            "element 1 fully inside must be captured"
+        );
+        assert!(
+            captured.contains(&2),
+            "element 2 fully inside must be captured"
+        );
+        assert!(
+            captured.contains(&3),
+            "element 3 fully inside must be captured"
+        );
+        assert!(
+            !captured.contains(&4),
+            "element 4 partially outside must not be captured"
+        );
     }
 
     /// Toggle selection on an unselected element adds it.
@@ -1310,7 +1534,10 @@ mod tests {
         } else {
             sel.add(42);
         }
-        assert!(sel.contains(42), "toggling an unselected element must select it");
+        assert!(
+            sel.contains(42),
+            "toggling an unselected element must select it"
+        );
         assert_eq!(sel.len(), 1);
     }
 
@@ -1332,15 +1559,25 @@ mod tests {
     /// the band has zero extent and elements have positive size.
     #[test]
     fn rubber_band_zero_area_captures_no_full_element() {
-        let rb = RubberBand { start: [50.0, 50.0], end: [50.0, 50.0] };
+        let rb = RubberBand {
+            start: [50.0, 50.0],
+            end: [50.0, 50.0],
+        };
         let (rmin, rmax) = rb.aabb();
-        let elem = ElementBounds { id: 1, min: [40.0, 40.0], max: [60.0, 60.0] };
+        let elem = ElementBounds {
+            id: 1,
+            min: [40.0, 40.0],
+            max: [60.0, 60.0],
+        };
         // An element with positive size cannot be fully contained in a zero-area band.
         let fully_contained = elem.min[0] >= rmin[0]
             && elem.min[1] >= rmin[1]
             && elem.max[0] <= rmax[0]
             && elem.max[1] <= rmax[1];
-        assert!(!fully_contained, "positive-size element cannot be fully inside a zero-area band");
+        assert!(
+            !fully_contained,
+            "positive-size element cannot be fully inside a zero-area band"
+        );
     }
 
     // ── additional selection tests (wave AG) ─────────────────────────────────
@@ -1403,12 +1640,22 @@ mod tests {
 
     #[test]
     fn selection_bounding_box_single_element() {
-        let bounds = vec![ElementBounds { id: 1, min: [10.0, 20.0], max: [50.0, 60.0] }];
+        let bounds = vec![ElementBounds {
+            id: 1,
+            min: [10.0, 20.0],
+            max: [50.0, 60.0],
+        }];
         let mut sel = Selection::empty();
         sel.add(1);
         let selected: Vec<&ElementBounds> = bounds.iter().filter(|b| sel.contains(b.id)).collect();
-        let min_x = selected.iter().map(|b| b.min[0]).fold(f32::INFINITY, f32::min);
-        let max_y = selected.iter().map(|b| b.max[1]).fold(f32::NEG_INFINITY, f32::max);
+        let min_x = selected
+            .iter()
+            .map(|b| b.min[0])
+            .fold(f32::INFINITY, f32::min);
+        let max_y = selected
+            .iter()
+            .map(|b| b.max[1])
+            .fold(f32::NEG_INFINITY, f32::max);
         assert!((min_x - 10.0).abs() < 1e-5);
         assert!((max_y - 60.0).abs() < 1e-5);
     }
@@ -1416,17 +1663,37 @@ mod tests {
     #[test]
     fn selection_bounding_box_multiple_elements() {
         let bounds = vec![
-            ElementBounds { id: 1, min: [0.0, 0.0], max: [10.0, 10.0] },
-            ElementBounds { id: 2, min: [20.0, 30.0], max: [50.0, 70.0] },
+            ElementBounds {
+                id: 1,
+                min: [0.0, 0.0],
+                max: [10.0, 10.0],
+            },
+            ElementBounds {
+                id: 2,
+                min: [20.0, 30.0],
+                max: [50.0, 70.0],
+            },
         ];
         let mut sel = Selection::empty();
         sel.add(1);
         sel.add(2);
         let selected: Vec<&ElementBounds> = bounds.iter().filter(|b| sel.contains(b.id)).collect();
-        let min_x = selected.iter().map(|b| b.min[0]).fold(f32::INFINITY, f32::min);
-        let max_x = selected.iter().map(|b| b.max[0]).fold(f32::NEG_INFINITY, f32::max);
-        let min_y = selected.iter().map(|b| b.min[1]).fold(f32::INFINITY, f32::min);
-        let max_y = selected.iter().map(|b| b.max[1]).fold(f32::NEG_INFINITY, f32::max);
+        let min_x = selected
+            .iter()
+            .map(|b| b.min[0])
+            .fold(f32::INFINITY, f32::min);
+        let max_x = selected
+            .iter()
+            .map(|b| b.max[0])
+            .fold(f32::NEG_INFINITY, f32::max);
+        let min_y = selected
+            .iter()
+            .map(|b| b.min[1])
+            .fold(f32::INFINITY, f32::min);
+        let max_y = selected
+            .iter()
+            .map(|b| b.max[1])
+            .fold(f32::NEG_INFINITY, f32::max);
         assert!((min_x).abs() < 1e-5);
         assert!((max_x - 50.0).abs() < 1e-5);
         assert!((min_y).abs() < 1e-5);
@@ -1442,7 +1709,10 @@ mod tests {
         sel.clear();
         assert!(sel.is_empty());
         for id in [10u64, 20, 30, 40] {
-            assert!(!sel.contains(id), "id {id} must not remain after deselect_all");
+            assert!(
+                !sel.contains(id),
+                "id {id} must not remain after deselect_all"
+            );
         }
     }
 
@@ -1455,7 +1725,10 @@ mod tests {
         }
         assert_eq!(sel.len(), all_ids.len());
         for &id in &all_ids {
-            assert!(sel.contains(id), "id {id} must be in selection after select_all");
+            assert!(
+                sel.contains(id),
+                "id {id} must be in selection after select_all"
+            );
         }
     }
 
@@ -1492,8 +1765,8 @@ mod tests {
 
     // ── Wave AO: NomtuRef + spatial-index selection tests ────────────────────
 
-    use super::super::spatial_index::SpatialIndex;
     use super::super::elements::ElementBounds as EB;
+    use super::super::spatial_index::SpatialIndex;
     use super::select_in_region;
     use super::NomtuRef;
 
@@ -1505,7 +1778,11 @@ mod tests {
     #[test]
     fn selected_count_empty_is_zero() {
         let sel = Selection::empty();
-        assert_eq!(sel.selected_count(), 0, "selected_count must be 0 for empty selection");
+        assert_eq!(
+            sel.selected_count(),
+            0,
+            "selected_count must be 0 for empty selection"
+        );
     }
 
     /// selected_count matches len() at all times.
@@ -1515,7 +1792,11 @@ mod tests {
         for id in [1u64, 2, 3, 4, 5] {
             sel.add(id);
         }
-        assert_eq!(sel.selected_count(), sel.len(), "selected_count must equal len()");
+        assert_eq!(
+            sel.selected_count(),
+            sel.len(),
+            "selected_count must equal len()"
+        );
     }
 
     /// selected_count decreases after remove.
@@ -1526,7 +1807,11 @@ mod tests {
         sel.add(20);
         assert_eq!(sel.selected_count(), 2);
         sel.remove(10);
-        assert_eq!(sel.selected_count(), 1, "selected_count must decrease after remove");
+        assert_eq!(
+            sel.selected_count(),
+            1,
+            "selected_count must decrease after remove"
+        );
     }
 
     /// clear_selection empties the selection.
@@ -1537,8 +1822,15 @@ mod tests {
             sel.add(id);
         }
         sel.clear_selection();
-        assert!(sel.is_empty(), "selection must be empty after clear_selection");
-        assert_eq!(sel.selected_count(), 0, "selected_count must be 0 after clear_selection");
+        assert!(
+            sel.is_empty(),
+            "selection must be empty after clear_selection"
+        );
+        assert_eq!(
+            sel.selected_count(),
+            0,
+            "selected_count must be 0 after clear_selection"
+        );
     }
 
     /// clear_selection resets transform_origin.
@@ -1546,17 +1838,29 @@ mod tests {
     fn clear_selection_resets_transform_origin() {
         let mut sel = Selection::single(7, [5.0, 5.0]);
         sel.clear_selection();
-        assert!((sel.transform_origin[0]).abs() < 1e-6, "origin.x must be 0 after clear_selection");
-        assert!((sel.transform_origin[1]).abs() < 1e-6, "origin.y must be 0 after clear_selection");
+        assert!(
+            (sel.transform_origin[0]).abs() < 1e-6,
+            "origin.x must be 0 after clear_selection"
+        );
+        assert!(
+            (sel.transform_origin[1]).abs() < 1e-6,
+            "origin.y must be 0 after clear_selection"
+        );
     }
 
     /// toggle_selection adds an unselected element.
     #[test]
     fn toggle_selection_adds_unselected() {
         let mut sel = Selection::empty();
-        let id = NomtuRef { hash: 42, word: "test".to_string() };
+        let id = NomtuRef {
+            hash: 42,
+            word: "test".to_string(),
+        };
         sel.toggle_selection(&id);
-        assert!(sel.contains(42), "toggle on unselected must add the element");
+        assert!(
+            sel.contains(42),
+            "toggle on unselected must add the element"
+        );
         assert_eq!(sel.selected_count(), 1);
     }
 
@@ -1564,11 +1868,17 @@ mod tests {
     #[test]
     fn toggle_selection_removes_selected() {
         let mut sel = Selection::empty();
-        let id = NomtuRef { hash: 99, word: "block".to_string() };
+        let id = NomtuRef {
+            hash: 99,
+            word: "block".to_string(),
+        };
         sel.add(99);
         assert!(sel.contains(99), "element must be selected before toggle");
         sel.toggle_selection(&id);
-        assert!(!sel.contains(99), "toggle on selected must remove the element");
+        assert!(
+            !sel.contains(99),
+            "toggle on selected must remove the element"
+        );
         assert_eq!(sel.selected_count(), 0);
     }
 
@@ -1576,20 +1886,33 @@ mod tests {
     #[test]
     fn toggle_selection_twice_is_idempotent() {
         let mut sel = Selection::empty();
-        let id = NomtuRef { hash: 7, word: "node".to_string() };
+        let id = NomtuRef {
+            hash: 7,
+            word: "node".to_string(),
+        };
         sel.toggle_selection(&id);
         assert!(sel.contains(7), "first toggle must add");
         sel.toggle_selection(&id);
         assert!(!sel.contains(7), "second toggle must remove");
-        assert_eq!(sel.selected_count(), 0, "count must be 0 after double-toggle");
+        assert_eq!(
+            sel.selected_count(),
+            0,
+            "count must be 0 after double-toggle"
+        );
     }
 
     /// toggle_selection on multiple refs works independently.
     #[test]
     fn toggle_selection_multiple_refs_independent() {
         let mut sel = Selection::empty();
-        let a = NomtuRef { hash: 1, word: "a".to_string() };
-        let b = NomtuRef { hash: 2, word: "b".to_string() };
+        let a = NomtuRef {
+            hash: 1,
+            word: "a".to_string(),
+        };
+        let b = NomtuRef {
+            hash: 2,
+            word: "b".to_string(),
+        };
         sel.toggle_selection(&a);
         sel.toggle_selection(&b);
         assert!(sel.contains(1), "a must be selected");
@@ -1627,7 +1950,10 @@ mod tests {
         let mut idx = SpatialIndex::new();
         idx.insert(make_eb(1, [500.0, 500.0], [600.0, 600.0]));
         let ids = select_in_region(&idx, [0.0, 0.0], [10.0, 10.0]);
-        assert!(ids.is_empty(), "no elements in small region far from all elements");
+        assert!(
+            ids.is_empty(),
+            "no elements in small region far from all elements"
+        );
     }
 
     /// select_in_region: result can be fed directly to Selection::add.
@@ -1643,7 +1969,10 @@ mod tests {
         }
         assert!(sel.contains(10), "element 10 must be selected");
         assert!(sel.contains(20), "element 20 must be selected");
-        assert!(!sel.contains(30), "element 30 must not be selected (outside region)");
+        assert!(
+            !sel.contains(30),
+            "element 30 must not be selected (outside region)"
+        );
         assert_eq!(sel.selected_count(), 2);
     }
 
@@ -1671,13 +2000,22 @@ mod tests {
     #[test]
     fn toggle_selection_hash_is_key_not_word() {
         let mut sel = Selection::empty();
-        let a = NomtuRef { hash: 100, word: "alpha".to_string() };
-        let b = NomtuRef { hash: 100, word: "beta".to_string() }; // same hash, different word
+        let a = NomtuRef {
+            hash: 100,
+            word: "alpha".to_string(),
+        };
+        let b = NomtuRef {
+            hash: 100,
+            word: "beta".to_string(),
+        }; // same hash, different word
         sel.toggle_selection(&a);
         assert!(sel.contains(100), "toggle must add hash 100");
         // b has the same hash: toggling it removes the selection.
         sel.toggle_selection(&b);
-        assert!(!sel.contains(100), "toggle with same hash must remove the selection");
+        assert!(
+            !sel.contains(100),
+            "toggle with same hash must remove the selection"
+        );
     }
 
     /// selected_count after adding and removing many elements is correct.
@@ -1703,23 +2041,39 @@ mod tests {
         // Element at [50,50]→[100,100]; query rect right edge touches element's left edge.
         idx.insert(make_eb(1, [50.0, 50.0], [100.0, 100.0]));
         let ids = select_in_region(&idx, [0.0, 0.0], [50.0, 50.0]);
-        assert!(ids.contains(&1), "touching-boundary element must be included");
+        assert!(
+            ids.contains(&1),
+            "touching-boundary element must be included"
+        );
     }
 
     /// toggle_selection count increments and decrements correctly for many refs.
     #[test]
     fn toggle_selection_count_tracks_correctly() {
         let mut sel = Selection::empty();
-        let refs: Vec<NomtuRef> = (1_u64..=5).map(|h| NomtuRef { hash: h, word: format!("w{h}") }).collect();
+        let refs: Vec<NomtuRef> = (1_u64..=5)
+            .map(|h| NomtuRef {
+                hash: h,
+                word: format!("w{h}"),
+            })
+            .collect();
         for r in &refs {
             sel.toggle_selection(r);
         }
-        assert_eq!(sel.selected_count(), 5, "all 5 must be selected after toggle-on");
+        assert_eq!(
+            sel.selected_count(),
+            5,
+            "all 5 must be selected after toggle-on"
+        );
         // Toggle off all of them.
         for r in &refs {
             sel.toggle_selection(r);
         }
-        assert_eq!(sel.selected_count(), 0, "all 5 must be deselected after toggle-off");
+        assert_eq!(
+            sel.selected_count(),
+            0,
+            "all 5 must be deselected after toggle-off"
+        );
     }
 
     /// select_in_region with a single-element index returns that element when in range.
@@ -1728,7 +2082,11 @@ mod tests {
         let mut idx = SpatialIndex::new();
         idx.insert(make_eb(77, [10.0, 10.0], [30.0, 30.0]));
         let ids = select_in_region(&idx, [5.0, 5.0], [35.0, 35.0]);
-        assert_eq!(ids, vec![77], "single element must be returned when in range");
+        assert_eq!(
+            ids,
+            vec![77],
+            "single element must be returned when in range"
+        );
     }
 
     /// select_in_region: point query at the element centre returns the element.
@@ -1737,6 +2095,9 @@ mod tests {
         let mut idx = SpatialIndex::new();
         idx.insert(make_eb(55, [0.0, 0.0], [100.0, 100.0]));
         let ids = select_in_region(&idx, [50.0, 50.0], [50.0, 50.0]);
-        assert!(ids.contains(&55), "point query at element centre must return the element");
+        assert!(
+            ids.contains(&55),
+            "point query at element centre must return the element"
+        );
     }
 }

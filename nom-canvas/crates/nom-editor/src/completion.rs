@@ -199,10 +199,7 @@ mod tests {
     /// Accept on Tab — selected item's insert_text is returned.
     #[test]
     fn editor_completion_accept_on_tab() {
-        let mut menu = CompletionMenu::new(
-            vec![make_item("define"), make_item("describe")],
-            3,
-        );
+        let mut menu = CompletionMenu::new(vec![make_item("define"), make_item("describe")], 3);
         menu.select_next();
         let accepted = menu.selected_item().unwrap().insert_text.clone();
         assert_eq!(accepted, "describe");
@@ -234,7 +231,10 @@ mod tests {
             ("c.nom", "use result from foo"),
         ];
         let query = "foo";
-        let matches: Vec<_> = files.iter().filter(|(_, text)| text.contains(query)).collect();
+        let matches: Vec<_> = files
+            .iter()
+            .filter(|(_, text)| text.contains(query))
+            .collect();
         assert_eq!(matches.len(), 3, "query 'foo' should match all 3 files");
     }
 
@@ -246,7 +246,8 @@ mod tests {
             ("b.nom", "define bar that is foo"),
         ];
         let query = "foo";
-        let matches: Vec<_> = files.iter()
+        let matches: Vec<_> = files
+            .iter()
             .filter(|(_, text)| text.to_lowercase().contains(&query.to_lowercase()))
             .collect();
         assert_eq!(matches.len(), 2);
@@ -270,7 +271,7 @@ mod tests {
     /// Go to definition for a known symbol returns a non-empty path.
     #[test]
     fn editor_go_to_definition_known_symbol() {
-        use crate::lsp_bridge::{CompletionKind, CompletionItem, Location};
+        use crate::lsp_bridge::{CompletionItem, CompletionKind, Location};
         // Simulate: definition lookup returns Some(Location)
         let loc = Some(Location {
             path: std::path::PathBuf::from("src/lib.nom"),
@@ -285,8 +286,8 @@ mod tests {
     /// Go to definition for an unknown symbol returns None.
     #[test]
     fn editor_go_to_definition_unknown_returns_none() {
-        use crate::lsp_bridge::StubLspProvider;
         use crate::lsp_bridge::LspProvider;
+        use crate::lsp_bridge::StubLspProvider;
         let provider = StubLspProvider;
         let loc = provider.goto_definition(std::path::Path::new("unknown.nom"), 0);
         assert!(loc.is_none());
@@ -306,7 +307,12 @@ mod tests {
     #[test]
     fn complete_prefix_filters_to_subset() {
         let mut menu = CompletionMenu::new(
-            vec![make_item("define"), make_item("describe"), make_item("map"), make_item("filter")],
+            vec![
+                make_item("define"),
+                make_item("describe"),
+                make_item("map"),
+                make_item("filter"),
+            ],
             0,
         );
         menu.filter_items("de");
@@ -318,7 +324,9 @@ mod tests {
     /// 100 grammar kinds all returned by visible_items when no filter set.
     #[test]
     fn complete_with_100_grammar_kinds_returns_all() {
-        let items: Vec<_> = (0..100).map(|i| make_item(&format!("kind_{i:03}"))).collect();
+        let items: Vec<_> = (0..100)
+            .map(|i| make_item(&format!("kind_{i:03}")))
+            .collect();
         let menu = CompletionMenu::new(items, 0);
         assert_eq!(menu.visible_items().len(), 100);
     }
@@ -329,7 +337,12 @@ mod tests {
     #[test]
     fn completion_empty_prefix_returns_all() {
         let menu = CompletionMenu::new(
-            vec![make_item("alpha"), make_item("beta"), make_item("gamma"), make_item("delta")],
+            vec![
+                make_item("alpha"),
+                make_item("beta"),
+                make_item("gamma"),
+                make_item("delta"),
+            ],
             0,
         );
         // No filter set — all 4 items visible
@@ -340,7 +353,11 @@ mod tests {
     #[test]
     fn completion_filter_case_insensitive() {
         let mut menu = CompletionMenu::new(
-            vec![make_item("Define"), make_item("DEFINE"), make_item("describe")],
+            vec![
+                make_item("Define"),
+                make_item("DEFINE"),
+                make_item("describe"),
+            ],
             0,
         );
         menu.filter_items("define");
@@ -361,7 +378,10 @@ mod tests {
             sort_text: None,
         };
         assert!(item.detail.is_some());
-        assert_eq!(item.detail.as_deref(), Some("fn summarize(text: str) -> str"));
+        assert_eq!(
+            item.detail.as_deref(),
+            Some("fn summarize(text: str) -> str")
+        );
     }
 
     /// CompletionKind::Keyword round-trips through construction.
@@ -423,7 +443,9 @@ mod tests {
     /// Max completions limit: only first N items are shown when sliced.
     #[test]
     fn completion_max_limit_respected() {
-        let items: Vec<_> = (0..20).map(|i| make_item(&format!("item_{i:02}"))).collect();
+        let items: Vec<_> = (0..20)
+            .map(|i| make_item(&format!("item_{i:02}")))
+            .collect();
         let menu = CompletionMenu::new(items, 0);
         let max = 5usize;
         let limited: Vec<_> = menu.visible_items().into_iter().take(max).collect();
@@ -460,7 +482,12 @@ mod tests {
     #[test]
     fn completion_visible_items_only_matching_after_filter() {
         let mut menu = CompletionMenu::new(
-            vec![make_item("map"), make_item("filter"), make_item("fold"), make_item("flat_map")],
+            vec![
+                make_item("map"),
+                make_item("filter"),
+                make_item("fold"),
+                make_item("flat_map"),
+            ],
             0,
         );
         menu.filter_items("f");

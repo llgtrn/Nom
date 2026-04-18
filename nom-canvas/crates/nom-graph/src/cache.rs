@@ -757,7 +757,10 @@ mod tests {
         cache.put("x".to_string(), CachedValue::String("val".into()));
         assert!(cache.get(&"x".to_string()).is_some());
         cache.evict(&"x".to_string());
-        assert!(cache.get(&"x".to_string()).is_none(), "evicted key must be gone");
+        assert!(
+            cache.get(&"x".to_string()).is_none(),
+            "evicted key must be gone"
+        );
         assert_eq!(cache.len(), 0);
     }
 
@@ -790,7 +793,10 @@ mod tests {
     #[test]
     fn changed_flags_unknown_node_is_changed() {
         let flags = ChangedFlags::new();
-        assert!(flags.is_changed(&"never_seen".to_string()), "unknown node must default to changed");
+        assert!(
+            flags.is_changed(&"never_seen".to_string()),
+            "unknown node must default to changed"
+        );
     }
 
     // ------------------------------------------------------------------
@@ -822,8 +828,14 @@ mod tests {
         assert!(cache.l1.get(77).is_some());
         assert!(cache.l2.get(77).is_some());
         cache.invalidate(77);
-        assert!(cache.l1.get(77).is_none(), "L1 must not hold key after invalidate");
-        assert!(cache.l2.get(77).is_none(), "L2 must not hold key after invalidate");
+        assert!(
+            cache.l1.get(77).is_none(),
+            "L1 must not hold key after invalidate"
+        );
+        assert!(
+            cache.l2.get(77).is_none(),
+            "L2 must not hold key after invalidate"
+        );
     }
 
     // ------------------------------------------------------------------
@@ -895,10 +907,7 @@ mod tests {
             cache.l1.get(55).is_none(),
             "key 55 should have been evicted from L1"
         );
-        assert!(
-            cache.l2.get(55).is_some(),
-            "key 55 should still live in L2"
-        );
+        assert!(cache.l2.get(55).is_some(), "key 55 should still live in L2");
         // get_promoting fetches from L2 and re-inserts into L1.
         let result = cache.get_promoting(55);
         assert!(result.is_some(), "get_promoting must find key 55 via L2");
@@ -1024,8 +1033,14 @@ mod tests {
         assert!(cache.get(1).is_some());
         // Insert key 3 — must evict key 2 (LRU), not key 1.
         cache.put(3, CachedValue::String("C".into()));
-        assert!(cache.get(1).is_some(), "A (key 1) must survive after being touched");
-        assert!(cache.get(2).is_none(), "B (key 2) must be evicted (LRU after get(1))");
+        assert!(
+            cache.get(1).is_some(),
+            "A (key 1) must survive after being touched"
+        );
+        assert!(
+            cache.get(2).is_none(),
+            "B (key 2) must be evicted (LRU after get(1))"
+        );
         assert!(cache.get(3).is_some(), "C (key 3) must be present");
     }
 
@@ -1041,7 +1056,9 @@ mod tests {
         // get() must return the L1 value (first checked).
         let result = cache.get(42).expect("key must be found");
         match result {
-            CachedValue::String(s) => assert_eq!(s, "l1-value", "L1 value must be returned, not L2"),
+            CachedValue::String(s) => {
+                assert_eq!(s, "l1-value", "L1 value must be returned, not L2")
+            }
             _ => panic!("wrong variant"),
         }
     }
@@ -1095,7 +1112,10 @@ mod tests {
     #[test]
     fn cache_get_nonexistent_returns_none() {
         let cache = BasicCache::new();
-        assert!(cache.get(9999).is_none(), "nonexistent key must return None");
+        assert!(
+            cache.get(9999).is_none(),
+            "nonexistent key must return None"
+        );
     }
 
     // ------------------------------------------------------------------
@@ -1239,8 +1259,14 @@ mod tests {
         cache.put(2, CachedValue::String("B".into()));
         // Alternate accesses: A, B, A, B
         for _ in 0..4 {
-            assert!(cache.get(1).is_some(), "A must remain after alternating access");
-            assert!(cache.get(2).is_some(), "B must remain after alternating access");
+            assert!(
+                cache.get(1).is_some(),
+                "A must remain after alternating access"
+            );
+            assert!(
+                cache.get(2).is_some(),
+                "B must remain after alternating access"
+            );
         }
         assert_eq!(cache.len(), 2, "both entries must still be present");
     }
@@ -1255,7 +1281,10 @@ mod tests {
         assert!(cache.get(99).is_none(), "cold miss: key not yet inserted");
         // Insert the key — now warm.
         cache.put(99, CachedValue::String("warm".into()));
-        assert!(cache.get(99).is_some(), "warm hit: key must be found after put");
+        assert!(
+            cache.get(99).is_some(),
+            "warm hit: key must be found after put"
+        );
         match cache.get(99).unwrap() {
             CachedValue::String(s) => assert_eq!(s, "warm"),
             _ => panic!("wrong variant"),
@@ -1273,7 +1302,10 @@ mod tests {
         if cache.get(key).is_none() {
             cache.put(key, CachedValue::String("default".into()));
         }
-        assert!(cache.get(key).is_some(), "get_or_insert must leave key present");
+        assert!(
+            cache.get(key).is_some(),
+            "get_or_insert must leave key present"
+        );
         match cache.get(key).unwrap() {
             CachedValue::String(s) => assert_eq!(s, "default"),
             _ => panic!("wrong variant"),
@@ -1283,7 +1315,9 @@ mod tests {
             cache.put(key, CachedValue::String("should_not_appear".into()));
         }
         match cache.get(key).unwrap() {
-            CachedValue::String(s) => assert_eq!(s, "default", "existing value must not be overwritten"),
+            CachedValue::String(s) => {
+                assert_eq!(s, "default", "existing value must not be overwritten")
+            }
             _ => panic!("wrong variant"),
         }
     }
@@ -1332,7 +1366,10 @@ mod tests {
         // get_promoting must re-insert into L1.
         let result = cache.get_promoting(5);
         assert!(result.is_some(), "get_promoting must find key 5");
-        assert!(cache.l1.get(5).is_some(), "key 5 must be promoted back to L1");
+        assert!(
+            cache.l1.get(5).is_some(),
+            "key 5 must be promoted back to L1"
+        );
     }
 
     // ------------------------------------------------------------------
@@ -1347,7 +1384,10 @@ mod tests {
         cache.l1.put(30, CachedValue::String("thirty".into()));
         cache.l1.put(40, CachedValue::String("forty".into()));
         // Key 10 may now be evicted from L1; it must still be in L2.
-        assert!(cache.l2.get(10).is_some(), "L2 must retain key 10 even after L1 eviction");
+        assert!(
+            cache.l2.get(10).is_some(),
+            "L2 must retain key 10 even after L1 eviction"
+        );
     }
 
     // ------------------------------------------------------------------
@@ -1367,7 +1407,10 @@ mod tests {
         }
         // Cache should have at most 10 entries and contain key 12.
         assert!(cache.len() <= 10, "len must not exceed capacity");
-        assert!(cache.get(12).is_some(), "most recently inserted key must be present");
+        assert!(
+            cache.get(12).is_some(),
+            "most recently inserted key must be present"
+        );
     }
 
     // ------------------------------------------------------------------

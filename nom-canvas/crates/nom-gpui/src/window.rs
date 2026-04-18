@@ -1,5 +1,6 @@
 use crate::event::*;
 use crate::types::*;
+use std::sync::Arc;
 
 /// Window configuration
 pub struct WindowOptions {
@@ -93,7 +94,12 @@ pub struct GpuWindowConfig {
 impl GpuWindowConfig {
     /// Create a new GPU window config with explicit dimensions and MSAA.
     pub fn new(width: u32, height: u32, sample_count: u32, vsync: bool) -> Self {
-        Self { width, height, sample_count, vsync }
+        Self {
+            width,
+            height,
+            sample_count,
+            vsync,
+        }
     }
 }
 
@@ -115,11 +121,9 @@ pub struct Window {
     pub content_size: Vec2,
     pub is_focused: bool,
     pub cursor_position: Vec2,
-    // In real impl: winit::window::Window + wgpu swap chain
     frame_pending: bool,
     close_requested: bool,
     /// Whether the GPU surface has been successfully initialised.
-    // TODO: wire to real wgpu::Surface when wgpu dep is added
     pub gpu_ready: bool,
     /// GPU surface width in physical pixels (mirrors wgpu surface config).
     pub surface_width: u32,
@@ -129,6 +133,14 @@ pub struct Window {
     pub sample_count: u32,
     /// Whether vertical sync is enabled on the GPU surface.
     pub vsync: bool,
+    /// Real wgpu surface — present only after GPU init in native context.
+    pub wgpu_surface: Option<wgpu::Surface<'static>>,
+    /// Real wgpu device — present only after GPU init.
+    pub wgpu_device: Option<Arc<wgpu::Device>>,
+    /// Real wgpu queue — present only after GPU init.
+    pub wgpu_queue: Option<Arc<wgpu::Queue>>,
+    /// Negotiated surface format.
+    pub surface_format: Option<wgpu::TextureFormat>,
 }
 
 impl Window {
@@ -147,6 +159,10 @@ impl Window {
             surface_height: size.y as u32,
             sample_count: 1,
             vsync: true,
+            wgpu_surface: None,
+            wgpu_device: None,
+            wgpu_queue: None,
+            surface_format: None,
         }
     }
 
@@ -228,11 +244,56 @@ fn run_native_application<H: ApplicationHandler + 'static>(options: WindowOption
             builder.with_min_inner_size(LogicalSize::new(min_size.x as f64, min_size.y as f64));
     }
 
-    let os_window = builder.build(&event_loop).expect("create native window");
+    let os_window = Arc::new(builder.build(&event_loop).expect("create native window"));
     let mut window = Window::new(options);
     window.scale_factor = os_window.scale_factor() as f32;
     let size = os_window.inner_size();
-    window.content_size = Vec2::new(size.width as f32, size.height as f32);
+    let width = size.width.max(1);
+    let height = size.height.max(1);
+    window.content_size = Vec2::new(width as f32, height as f32);
+    window.surface_width = width;
+    window.surface_height = height;
+
+    // Real wgpu init chain. os_window is Arc so the surface lifetime is tied to it safely.
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::default());
+    let surface = instance
+        .create_surface(Arc::clone(&os_window))
+        .expect("create wgpu surface");
+    let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+        power_preference: wgpu::PowerPreference::HighPerformance,
+        compatible_surface: Some(&surface),
+        force_fallback_adapter: false,
+    }))
+    .expect("request wgpu adapter");
+    let (device, queue) = pollster::block_on(adapter.request_device(
+        &wgpu::DeviceDescriptor {
+            label: None,
+            required_features: wgpu::Features::empty(),
+            required_limits: wgpu::Limits::default(),
+        },
+        None,
+    ))
+    .expect("request wgpu device");
+    let surface_caps = surface.get_capabilities(&adapter);
+    let surface_format = surface_caps.formats[0];
+    let config = wgpu::SurfaceConfiguration {
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+        format: surface_format,
+        width,
+        height,
+        present_mode: wgpu::PresentMode::AutoVsync,
+        alpha_mode: surface_caps.alpha_modes[0],
+        view_formats: vec![],
+        desired_maximum_frame_latency: 2,
+    };
+    surface.configure(&device, &config);
+
+    window.wgpu_surface = Some(surface);
+    window.wgpu_device = Some(Arc::new(device));
+    window.wgpu_queue = Some(Arc::new(queue));
+    window.surface_format = Some(surface_format);
+    window.gpu_ready = true;
+
     handler.resumed(&mut window);
 
     let _ = event_loop.run(move |event, elwt| {
@@ -416,7 +477,10 @@ mod tests {
         let w = Window::new(WindowOptions::default());
         // We can't take_frame_pending on an immutable ref; create mutable copy.
         let mut w = w;
-        assert!(!w.take_frame_pending(), "new window must start with no pending frame");
+        assert!(
+            !w.take_frame_pending(),
+            "new window must start with no pending frame"
+        );
     }
 
     #[test]
@@ -425,9 +489,15 @@ mod tests {
         let mut w = Window::new(WindowOptions::default());
         w.take_frame_pending(); // clear initial state
         w.request_redraw();
-        assert!(w.take_frame_pending(), "request_redraw must activate frame-pending");
+        assert!(
+            w.take_frame_pending(),
+            "request_redraw must activate frame-pending"
+        );
         // After take, it returns to idle.
-        assert!(!w.take_frame_pending(), "after take, window returns to idle");
+        assert!(
+            !w.take_frame_pending(),
+            "after take, window returns to idle"
+        );
     }
 
     #[test]
@@ -435,7 +505,12 @@ mod tests {
         use crate::event::{Key, KeyEvent, Modifiers};
         let ev = KeyEvent::Pressed {
             key: Key::Char('S'),
-            modifiers: Modifiers { shift: true, ctrl: false, alt: false, meta: false },
+            modifiers: Modifiers {
+                shift: true,
+                ctrl: false,
+                alt: false,
+                meta: false,
+            },
         };
         if let KeyEvent::Pressed { key, modifiers } = ev {
             assert_eq!(key, Key::Char('S'));
@@ -452,7 +527,12 @@ mod tests {
         use crate::event::{Key, KeyEvent, Modifiers};
         let ev = KeyEvent::Pressed {
             key: Key::F5,
-            modifiers: Modifiers { shift: true, ctrl: true, alt: false, meta: false },
+            modifiers: Modifiers {
+                shift: true,
+                ctrl: true,
+                alt: false,
+                meta: false,
+            },
         };
         if let KeyEvent::Pressed { key, modifiers } = ev {
             assert_eq!(key, Key::F5);
@@ -466,8 +546,16 @@ mod tests {
     #[test]
     fn keyboard_event_all_modifiers_active() {
         use crate::event::{Key, KeyEvent, Modifiers};
-        let modifiers = Modifiers { shift: true, ctrl: true, alt: true, meta: true };
-        let ev = KeyEvent::Pressed { key: Key::Return, modifiers };
+        let modifiers = Modifiers {
+            shift: true,
+            ctrl: true,
+            alt: true,
+            meta: true,
+        };
+        let ev = KeyEvent::Pressed {
+            key: Key::Return,
+            modifiers,
+        };
         if let KeyEvent::Pressed { modifiers: m, .. } = ev {
             assert!(m.shift && m.ctrl && m.alt && m.meta);
             assert!(m.is_shortcut());
@@ -481,7 +569,12 @@ mod tests {
         use crate::event::{Key, KeyEvent, Modifiers};
         let ev = KeyEvent::Pressed {
             key: Key::Tab,
-            modifiers: Modifiers { shift: false, ctrl: false, alt: true, meta: false },
+            modifiers: Modifiers {
+                shift: false,
+                ctrl: false,
+                alt: true,
+                meta: false,
+            },
         };
         if let KeyEvent::Pressed { modifiers, .. } = ev {
             assert!(!modifiers.is_shortcut(), "alt-only must not be is_shortcut");
@@ -498,7 +591,10 @@ mod tests {
         let new_size = Vec2::new(2560.0, 1440.0);
         // Simulate what run_native_application does on resize.
         w.content_size = new_size;
-        assert_eq!(w.content_size, new_size, "content_size must update after resize");
+        assert_eq!(
+            w.content_size, new_size,
+            "content_size must update after resize"
+        );
     }
 
     #[test]
@@ -524,7 +620,10 @@ mod tests {
         w.take_frame_pending();
         w.set_scale_factor(3.0);
         assert_eq!(w.scale_factor, 3.0);
-        assert!(w.take_frame_pending(), "scale factor change must trigger redraw");
+        assert!(
+            w.take_frame_pending(),
+            "scale factor change must trigger redraw"
+        );
     }
 
     #[test]
@@ -532,7 +631,10 @@ mod tests {
         let mut w = Window::new(WindowOptions::default());
         assert!(!w.close_requested());
         w.request_close();
-        assert!(w.close_requested(), "after request_close the flag must be set");
+        assert!(
+            w.close_requested(),
+            "after request_close the flag must be set"
+        );
     }
 
     #[test]
@@ -551,7 +653,10 @@ mod tests {
 
     #[test]
     fn window_builder_custom_dimensions() {
-        let w = WindowBuilder::new("custom").width(2560.0).height(1440.0).build();
+        let w = WindowBuilder::new("custom")
+            .width(2560.0)
+            .height(1440.0)
+            .build();
         assert_eq!(w.content_size, Vec2::new(2560.0, 1440.0));
     }
 
@@ -572,7 +677,9 @@ mod tests {
     #[test]
     fn keyboard_input_text_event() {
         use crate::event::KeyEvent;
-        let ev = KeyEvent::Input { text: "nom".to_string() };
+        let ev = KeyEvent::Input {
+            text: "nom".to_string(),
+        };
         if let KeyEvent::Input { text } = ev {
             assert_eq!(text, "nom");
         } else {
@@ -638,7 +745,10 @@ mod tests {
     #[test]
     fn window_close_not_requested_initially() {
         let w = Window::new(WindowOptions::default());
-        assert!(!w.close_requested(), "close_requested must be false on creation");
+        assert!(
+            !w.close_requested(),
+            "close_requested must be false on creation"
+        );
     }
 
     #[test]
@@ -662,7 +772,10 @@ mod tests {
         w.take_frame_pending();
         w.set_scale_factor(1.5);
         assert!((w.scale_factor - 1.5).abs() < f32::EPSILON);
-        assert!(w.take_frame_pending(), "fractional scale must also trigger redraw");
+        assert!(
+            w.take_frame_pending(),
+            "fractional scale must also trigger redraw"
+        );
     }
 
     #[test]
@@ -793,7 +906,10 @@ mod tests {
     #[test]
     fn window_new_gpu_ready_is_false() {
         let w = Window::new(WindowOptions::default());
-        assert!(!w.gpu_ready, "GPU surface is not ready until explicitly initialised");
+        assert!(
+            !w.gpu_ready,
+            "GPU surface is not ready until explicitly initialised"
+        );
     }
 
     #[test]

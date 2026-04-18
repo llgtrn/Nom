@@ -730,7 +730,10 @@ mod tests {
         let layout = layout_dag(&dag);
         let (x_src, _) = layout["src"];
         let (x_dst, _) = layout["dst"];
-        assert_ne!(x_src, x_dst, "two nodes in linear chain must have different x positions");
+        assert_ne!(
+            x_src, x_dst,
+            "two nodes in linear chain must have different x positions"
+        );
     }
 
     // ------------------------------------------------------------------
@@ -754,7 +757,10 @@ mod tests {
         layout.insert("n".to_string(), (11.0, 0.0));
         // Distance = 11, radius = 10 → miss.
         let result = GraphModeState::node_at_point(&layout, 0.0, 0.0, 10.0);
-        assert!(result.is_none(), "node just outside radius must not be found");
+        assert!(
+            result.is_none(),
+            "node just outside radius must not be found"
+        );
     }
 
     // ------------------------------------------------------------------
@@ -834,8 +840,14 @@ mod tests {
         let zoom = 2.0f32;
         let screen_x = (node_x - pan_x) * zoom;
         let screen_y = (node_y - pan_y) * zoom;
-        assert!((screen_x - 240.0).abs() < 1e-5, "zoomed x must be 240, got {screen_x}");
-        assert!((screen_y - 160.0).abs() < 1e-5, "zoomed y must be 160, got {screen_y}");
+        assert!(
+            (screen_x - 240.0).abs() < 1e-5,
+            "zoomed x must be 240, got {screen_x}"
+        );
+        assert!(
+            (screen_y - 160.0).abs() < 1e-5,
+            "zoomed y must be 160, got {screen_y}"
+        );
     }
 
     // ------------------------------------------------------------------
@@ -851,8 +863,14 @@ mod tests {
         let screen_x = (node_x - pan_x) * zoom;
         let screen_y = (node_y - pan_y) * zoom;
         // (200-50)*1.5 = 225, (100-20)*1.5 = 120
-        assert!((screen_x - 225.0).abs() < 1e-4, "pan+zoom x must be 225, got {screen_x}");
-        assert!((screen_y - 120.0).abs() < 1e-4, "pan+zoom y must be 120, got {screen_y}");
+        assert!(
+            (screen_x - 225.0).abs() < 1e-4,
+            "pan+zoom x must be 225, got {screen_x}"
+        );
+        assert!(
+            (screen_y - 120.0).abs() < 1e-4,
+            "pan+zoom y must be 120, got {screen_y}"
+        );
     }
 
     // ------------------------------------------------------------------
@@ -889,8 +907,14 @@ mod tests {
         let zoom = 1.0f32;
         let screen_x = (node_x - pan_x) * zoom;
         let screen_y = (node_y - pan_y) * zoom;
-        assert!((screen_x - node_x).abs() < 1e-5, "identity zoom must not change x");
-        assert!((screen_y - node_y).abs() < 1e-5, "identity zoom must not change y");
+        assert!(
+            (screen_x - node_x).abs() < 1e-5,
+            "identity zoom must not change x"
+        );
+        assert!(
+            (screen_y - node_y).abs() < 1e-5,
+            "identity zoom must not change y"
+        );
     }
 
     // ------------------------------------------------------------------
@@ -966,7 +990,10 @@ mod tests {
     fn graph_mode_insert_node_returns_id() {
         let mut dag = Dag::new();
         dag.add_node(ExecNode::new("new_node", "verb"));
-        assert!(dag.nodes.contains_key("new_node"), "inserted node must be retrievable by id");
+        assert!(
+            dag.nodes.contains_key("new_node"),
+            "inserted node must be retrievable by id"
+        );
         assert_eq!(dag.node_count(), 1);
     }
 
@@ -993,8 +1020,14 @@ mod tests {
         assert_eq!(dag.node_count(), 2);
         dag.nodes.remove("to_remove");
         assert_eq!(dag.node_count(), 1);
-        assert!(!dag.nodes.contains_key("to_remove"), "removed node must not be present");
-        assert!(dag.nodes.contains_key("keeper"), "unremoved node must still be present");
+        assert!(
+            !dag.nodes.contains_key("to_remove"),
+            "removed node must not be present"
+        );
+        assert!(
+            dag.nodes.contains_key("keeper"),
+            "unremoved node must still be present"
+        );
     }
 
     // ------------------------------------------------------------------
@@ -1024,7 +1057,8 @@ mod tests {
         dag.add_edge("a", "out", "b", "in");
         dag.add_edge("b", "out", "c", "in");
         assert_eq!(dag.edge_count(), 2);
-        dag.edges.retain(|e| !(e.src_node == "a" && e.dst_node == "b"));
+        dag.edges
+            .retain(|e| !(e.src_node == "a" && e.dst_node == "b"));
         assert_eq!(dag.edge_count(), 1);
     }
 
@@ -1034,7 +1068,11 @@ mod tests {
     #[test]
     fn graph_mode_node_count_correct() {
         let dag = three_node_dag();
-        assert_eq!(dag.node_count(), 3, "three_node_dag must report node_count == 3");
+        assert_eq!(
+            dag.node_count(),
+            3,
+            "three_node_dag must report node_count == 3"
+        );
     }
 
     // ------------------------------------------------------------------
@@ -1043,7 +1081,11 @@ mod tests {
     #[test]
     fn graph_mode_edge_count_correct() {
         let dag = three_node_dag();
-        assert_eq!(dag.edge_count(), 2, "three_node_dag must report edge_count == 2");
+        assert_eq!(
+            dag.edge_count(),
+            2,
+            "three_node_dag must report edge_count == 2"
+        );
     }
 
     // ------------------------------------------------------------------
@@ -1053,14 +1095,18 @@ mod tests {
     fn graph_mode_neighbors_of_node() {
         let dag = three_node_dag();
         // "a" has one outgoing neighbor: "b"
-        let neighbors_of_a: Vec<&str> = dag.edges.iter()
+        let neighbors_of_a: Vec<&str> = dag
+            .edges
+            .iter()
             .filter(|e| e.src_node == "a")
             .map(|e| e.dst_node.as_str())
             .collect();
         assert_eq!(neighbors_of_a, vec!["b"], "a's neighbor must be b");
 
         // "b" has one outgoing neighbor: "c"
-        let neighbors_of_b: Vec<&str> = dag.edges.iter()
+        let neighbors_of_b: Vec<&str> = dag
+            .edges
+            .iter()
             .filter(|e| e.src_node == "b")
             .map(|e| e.dst_node.as_str())
             .collect();
@@ -1108,8 +1154,15 @@ mod tests {
 
         let mut reconstructed_ids: Vec<String> = reconstructed.nodes.keys().cloned().collect();
         reconstructed_ids.sort();
-        assert_eq!(reconstructed_ids, original_ids, "roundtrip must preserve node ids");
-        assert_eq!(reconstructed.edge_count(), original_edge_count, "roundtrip must preserve edge count");
+        assert_eq!(
+            reconstructed_ids, original_ids,
+            "roundtrip must preserve node ids"
+        );
+        assert_eq!(
+            reconstructed.edge_count(),
+            original_edge_count,
+            "roundtrip must preserve edge count"
+        );
     }
 
     // ------------------------------------------------------------------
@@ -1145,7 +1198,10 @@ mod tests {
         assert_eq!(dag.nodes["upd_node"].kind, "verb");
         // Replace the node with a new kind value.
         dag.add_node(ExecNode::new("upd_node", "noun"));
-        assert_eq!(dag.nodes["upd_node"].kind, "noun", "re-adding node must update its data");
+        assert_eq!(
+            dag.nodes["upd_node"].kind, "noun",
+            "re-adding node must update its data"
+        );
         assert_eq!(dag.node_count(), 1, "node count must not change on update");
     }
 
@@ -1188,7 +1244,9 @@ mod tests {
     #[test]
     fn graph_mode_topological_sort_correct() {
         let dag = three_node_dag(); // a → b → c
-        let order = dag.topological_sort().expect("linear chain must sort without error");
+        let order = dag
+            .topological_sort()
+            .expect("linear chain must sort without error");
         assert_eq!(order.len(), 3, "topo sort must include all 3 nodes");
         // In a → b → c, a must appear before b, b before c.
         let pos_a = order.iter().position(|id| id == "a").unwrap();
@@ -1204,7 +1262,7 @@ mod tests {
     #[test]
     fn graph_mode_in_degree_correct() {
         let dag = three_node_dag(); // a → b → c
-        // In-degree: a=0, b=1, c=1
+                                    // In-degree: a=0, b=1, c=1
         let in_deg = |id: &str| dag.edges.iter().filter(|e| e.dst_node == id).count();
         assert_eq!(in_deg("a"), 0, "a has no incoming edges");
         assert_eq!(in_deg("b"), 1, "b has one incoming edge from a");
@@ -1229,17 +1287,23 @@ mod tests {
     #[test]
     fn graph_mode_has_path_between_connected() {
         let dag = three_node_dag(); // a → b → c
-        // Check reachability via simple BFS from a.
+                                    // Check reachability via simple BFS from a.
         fn has_path(dag: &Dag, from: &str, to: &str) -> bool {
             let mut visited = std::collections::HashSet::new();
             let mut queue = std::collections::VecDeque::new();
             queue.push_back(from.to_string());
             while let Some(cur) = queue.pop_front() {
-                if cur == to { return true; }
-                if visited.contains(&cur) { continue; }
+                if cur == to {
+                    return true;
+                }
+                if visited.contains(&cur) {
+                    continue;
+                }
                 visited.insert(cur.clone());
                 for e in &dag.edges {
-                    if e.src_node == cur { queue.push_back(e.dst_node.clone()); }
+                    if e.src_node == cur {
+                        queue.push_back(e.dst_node.clone());
+                    }
                 }
             }
             false
@@ -1260,20 +1324,35 @@ mod tests {
             let mut queue = std::collections::VecDeque::new();
             queue.push_back(from.to_string());
             while let Some(cur) = queue.pop_front() {
-                if cur == to { return true; }
-                if visited.contains(&cur) { continue; }
+                if cur == to {
+                    return true;
+                }
+                if visited.contains(&cur) {
+                    continue;
+                }
                 visited.insert(cur.clone());
                 for e in &dag.edges {
-                    if e.src_node == cur { queue.push_back(e.dst_node.clone()); }
+                    if e.src_node == cur {
+                        queue.push_back(e.dst_node.clone());
+                    }
                 }
             }
             false
         }
         // Directed: c has no outgoing edges, so no path c→a or c→b.
-        assert!(!has_path(&dag, "c", "a"), "no path from c to a in directed DAG");
-        assert!(!has_path(&dag, "c", "b"), "no path from c to b in directed DAG");
+        assert!(
+            !has_path(&dag, "c", "a"),
+            "no path from c to a in directed DAG"
+        );
+        assert!(
+            !has_path(&dag, "c", "b"),
+            "no path from c to b in directed DAG"
+        );
         // Also: b cannot reach a.
-        assert!(!has_path(&dag, "b", "a"), "no path from b to a in directed DAG");
+        assert!(
+            !has_path(&dag, "b", "a"),
+            "no path from b to a in directed DAG"
+        );
     }
 
     // ------------------------------------------------------------------
@@ -1287,11 +1366,17 @@ mod tests {
             let mut queue = std::collections::VecDeque::new();
             queue.push_back((from.to_string(), 0usize));
             while let Some((cur, dist)) = queue.pop_front() {
-                if cur == to { return Some(dist); }
-                if visited.contains(&cur) { continue; }
+                if cur == to {
+                    return Some(dist);
+                }
+                if visited.contains(&cur) {
+                    continue;
+                }
                 visited.insert(cur.clone());
                 for e in &dag.edges {
-                    if e.src_node == cur { queue.push_back((e.dst_node.clone(), dist + 1)); }
+                    if e.src_node == cur {
+                        queue.push_back((e.dst_node.clone(), dist + 1));
+                    }
                 }
             }
             None
@@ -1299,7 +1384,11 @@ mod tests {
         assert_eq!(bfs_dist(&dag, "a", "b"), Some(1), "a→b is 1 hop");
         assert_eq!(bfs_dist(&dag, "a", "c"), Some(2), "a→c is 2 hops via b");
         assert_eq!(bfs_dist(&dag, "b", "c"), Some(1), "b→c is 1 hop");
-        assert_eq!(bfs_dist(&dag, "c", "a"), None, "c→a is unreachable in directed DAG");
+        assert_eq!(
+            bfs_dist(&dag, "c", "a"),
+            None,
+            "c→a is unreachable in directed DAG"
+        );
     }
 
     // ------------------------------------------------------------------
@@ -1312,19 +1401,27 @@ mod tests {
         fn is_bipartite(dag: &Dag) -> bool {
             let mut color: std::collections::HashMap<String, u8> = std::collections::HashMap::new();
             for start_id in dag.nodes.keys() {
-                if color.contains_key(start_id.as_str()) { continue; }
+                if color.contains_key(start_id.as_str()) {
+                    continue;
+                }
                 let mut queue = std::collections::VecDeque::new();
                 color.insert(start_id.clone(), 0);
                 queue.push_back(start_id.clone());
                 while let Some(node) = queue.pop_front() {
                     let c = color[&node];
                     for e in &dag.edges {
-                        let nbr = if e.src_node == node { Some(e.dst_node.clone()) }
-                                  else if e.dst_node == node { Some(e.src_node.clone()) }
-                                  else { None };
+                        let nbr = if e.src_node == node {
+                            Some(e.dst_node.clone())
+                        } else if e.dst_node == node {
+                            Some(e.src_node.clone())
+                        } else {
+                            None
+                        };
                         if let Some(n) = nbr {
                             if let Some(&nc) = color.get(&n) {
-                                if nc == c { return false; }
+                                if nc == c {
+                                    return false;
+                                }
                             } else {
                                 color.insert(n.clone(), 1 - c);
                                 queue.push_back(n);
@@ -1354,7 +1451,10 @@ mod tests {
         dag2.add_edge("ta", "out", "tb", "in");
         dag2.add_edge("tb", "out", "tc", "in");
         dag2.add_edge("tc", "out", "ta", "in");
-        assert!(!is_bipartite(&dag2), "triangle (odd cycle) must not be bipartite");
+        assert!(
+            !is_bipartite(&dag2),
+            "triangle (odd cycle) must not be bipartite"
+        );
     }
 
     // ------------------------------------------------------------------
@@ -1365,15 +1465,21 @@ mod tests {
         // In a DAG (no back-edges), every SCC is a single node.
         // We implement Kosaraju-like check: each node must be its own SCC.
         let dag = three_node_dag(); // a → b → c
-        // For a directed DAG: node X is in the same SCC as Y iff X can reach Y AND Y can reach X.
+                                    // For a directed DAG: node X is in the same SCC as Y iff X can reach Y AND Y can reach X.
         fn can_reach(dag: &Dag, from: &str, to: &str) -> bool {
             let mut visited = std::collections::HashSet::new();
             let mut stack = vec![from.to_string()];
             while let Some(cur) = stack.pop() {
-                if cur == to { return true; }
-                if !visited.insert(cur.clone()) { continue; }
+                if cur == to {
+                    return true;
+                }
+                if !visited.insert(cur.clone()) {
+                    continue;
+                }
                 for e in &dag.edges {
-                    if e.src_node == cur { stack.push(e.dst_node.clone()); }
+                    if e.src_node == cur {
+                        stack.push(e.dst_node.clone());
+                    }
                 }
             }
             false
@@ -1382,13 +1488,16 @@ mod tests {
         let nodes: Vec<_> = dag.nodes.keys().cloned().collect();
         for i in 0..nodes.len() {
             for j in 0..nodes.len() {
-                if i == j { continue; }
+                if i == j {
+                    continue;
+                }
                 let fwd = can_reach(&dag, &nodes[i], &nodes[j]);
                 let bwd = can_reach(&dag, &nodes[j], &nodes[i]);
                 assert!(
                     !(fwd && bwd),
                     "in a DAG, {} and {} must not be mutually reachable (would form a cycle)",
-                    nodes[i], nodes[j]
+                    nodes[i],
+                    nodes[j]
                 );
             }
         }

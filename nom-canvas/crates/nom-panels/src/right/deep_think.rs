@@ -5,6 +5,7 @@ use nom_gpui::scene::{Quad, Scene};
 use nom_gpui::types::{Bounds, ContentMask, Corners, Edges, Pixels, Point, Size};
 use nom_intent::classify_with_react;
 use nom_theme::tokens;
+use nom_theme::tokens::edge_color_for_confidence;
 
 /// Lightweight view-model card produced by consuming a `DeepThinkStep` stream.
 #[derive(Debug, Clone, PartialEq)]
@@ -156,7 +157,7 @@ impl DeepThinkPanel {
         // One Quad per ThinkCard — stacked vertically with EDGE_MED border.
         let card_h = 40.0;
         let card_margin = 4.0;
-        for (i, _card) in self.cards.iter().enumerate() {
+        for (i, card) in self.cards.iter().enumerate() {
             let y = i as f32 * (card_h + card_margin) + 4.0;
             scene.push_quad(Quad {
                 bounds: Bounds {
@@ -170,7 +171,7 @@ impl DeepThinkPanel {
                     },
                 },
                 background: Some(rgba_to_hsla(tokens::BG)),
-                border_color: Some(rgba_to_hsla(tokens::EDGE_MED)),
+                border_color: Some(edge_color_for_confidence(card.confidence)),
                 border_widths: Edges {
                     left: Pixels(1.0),
                     right: Pixels(1.0),
@@ -551,7 +552,10 @@ mod tests {
     #[test]
     fn deep_think_card_numbering_stable_across_batches() {
         let mut panel = DeepThinkPanel::new();
-        panel.ingest_events(vec![make_step("a", 0.5, vec![]), make_step("b", 0.5, vec![])]);
+        panel.ingest_events(vec![
+            make_step("a", 0.5, vec![]),
+            make_step("b", 0.5, vec![]),
+        ]);
         panel.ingest_events(vec![make_step("c", 0.5, vec![])]);
         assert_eq!(panel.cards[0].step_num, 0);
         assert_eq!(panel.cards[1].step_num, 1);
@@ -595,7 +599,11 @@ mod tests {
         // Simulate a debounce queue: only the last query in a rapid sequence matters.
         let queries = vec!["n", "no", "nom", "nom_c", "nom_ca"];
         let debounced = queries.last().copied();
-        assert_eq!(debounced, Some("nom_ca"), "debounce must yield the last query");
+        assert_eq!(
+            debounced,
+            Some("nom_ca"),
+            "debounce must yield the last query"
+        );
     }
 
     /// Debounce with empty burst yields None.
@@ -623,7 +631,10 @@ mod tests {
         let max_size = 600.0_f32;
         let requested = 50.0_f32;
         let actual = requested.clamp(min_size, max_size);
-        assert!((actual - min_size).abs() < 1e-6, "must clamp to min={min_size}");
+        assert!(
+            (actual - min_size).abs() < 1e-6,
+            "must clamp to min={min_size}"
+        );
     }
 
     /// Panel resize clamps to maximum width.
@@ -633,7 +644,10 @@ mod tests {
         let max_size = 600.0_f32;
         let requested = 800.0_f32;
         let actual = requested.clamp(min_size, max_size);
-        assert!((actual - max_size).abs() < 1e-6, "must clamp to max={max_size}");
+        assert!(
+            (actual - max_size).abs() < 1e-6,
+            "must clamp to max={max_size}"
+        );
     }
 
     /// Panel resize within bounds is unchanged.
@@ -643,7 +657,10 @@ mod tests {
         let max_size = 600.0_f32;
         let requested = 320.0_f32;
         let actual = requested.clamp(min_size, max_size);
-        assert!((actual - requested).abs() < 1e-6, "must be unchanged within bounds");
+        assert!(
+            (actual - requested).abs() < 1e-6,
+            "must be unchanged within bounds"
+        );
     }
 
     /// DeepThinkPanel default_size is within a reasonable range.
@@ -760,7 +777,10 @@ mod tests {
             .map(|i| make_step(&format!("h{i}"), i as f32 * 0.09, vec![]))
             .collect();
         let cards = consume_stream(events);
-        let max_conf = cards.iter().map(|c| c.confidence).fold(f32::NEG_INFINITY, f32::max);
+        let max_conf = cards
+            .iter()
+            .map(|c| c.confidence)
+            .fold(f32::NEG_INFINITY, f32::max);
         let last_conf = cards.last().unwrap().confidence;
         assert!((last_conf - max_conf).abs() < f32::EPSILON);
     }
@@ -768,6 +788,37 @@ mod tests {
     // ── node_palette 50-entry paint / scroll / keyboard ───────────────────────
 
     // ── properties multi-field / NomtuRef render / validation ────────────────
+
+    #[test]
+    fn deep_think_card_border_color_varies_by_confidence() {
+        use nom_theme::tokens::edge_color_for_confidence;
+        let mut panel = DeepThinkPanel::new();
+        panel.ingest_events(vec![
+            make_step("low_conf", 0.2, vec![]),
+            make_step("med_conf", 0.6, vec![]),
+            make_step("high_conf", 0.9, vec![]),
+        ]);
+        let mut scene = Scene::new();
+        panel.paint_scene(320.0, 600.0, &mut scene);
+        // bg + 0 steps + 3 card quads + 1 progress = 5 quads total
+        assert_eq!(scene.quads.len(), 5);
+        let low_color = edge_color_for_confidence(0.2);
+        let med_color = edge_color_for_confidence(0.6);
+        let high_color = edge_color_for_confidence(0.9);
+        // The three confidence colors must all differ from each other.
+        assert!(
+            (low_color.h - med_color.h).abs() > f32::EPSILON,
+            "low and med confidence must have different border hues"
+        );
+        assert!(
+            (med_color.h - high_color.h).abs() > f32::EPSILON,
+            "med and high confidence must have different border hues"
+        );
+        assert!(
+            (low_color.h - high_color.h).abs() > f32::EPSILON,
+            "low and high confidence must have different border hues"
+        );
+    }
 
     /// NomtuRef field stored via load_entity_ref is retrievable.
     #[test]

@@ -327,8 +327,16 @@ mod tests {
     #[test]
     fn block_model_new_assigns_unique_ids() {
         let dict = StubDictReader::new();
-        let b1 = BlockModel::insert(NomtuRef::new("e1", "fetch", "verb"), "affine:paragraph", &dict);
-        let b2 = BlockModel::insert(NomtuRef::new("e2", "store", "verb"), "affine:paragraph", &dict);
+        let b1 = BlockModel::insert(
+            NomtuRef::new("e1", "fetch", "verb"),
+            "affine:paragraph",
+            &dict,
+        );
+        let b2 = BlockModel::insert(
+            NomtuRef::new("e2", "store", "verb"),
+            "affine:paragraph",
+            &dict,
+        );
         assert_ne!(b1.id, b2.id, "each insert() must produce a unique id");
     }
 
@@ -528,7 +536,11 @@ mod tests {
     /// BlockModel with no slots produces empty JSON slots array on round-trip.
     #[test]
     fn block_model_no_slots_round_trip() {
-        let block = BlockModel::new("no-slots", NomtuRef::new("e1", "w", "verb"), "affine:paragraph");
+        let block = BlockModel::new(
+            "no-slots",
+            NomtuRef::new("e1", "w", "verb"),
+            "affine:paragraph",
+        );
         let json = serde_json::to_string(&block).expect("serialize");
         let restored: BlockModel = serde_json::from_str(&json).expect("deserialize");
         assert!(restored.slots.is_empty());
@@ -537,7 +549,11 @@ mod tests {
     /// BlockModel parent None is preserved through serde_json round-trip.
     #[test]
     fn block_model_parent_none_round_trip() {
-        let block = BlockModel::new("b-no-parent", NomtuRef::new("e1", "w", "verb"), "affine:note");
+        let block = BlockModel::new(
+            "b-no-parent",
+            NomtuRef::new("e1", "w", "verb"),
+            "affine:note",
+        );
         let json = serde_json::to_string(&block).expect("serialize");
         let restored: BlockModel = serde_json::from_str(&json).expect("deserialize");
         assert!(restored.parent.is_none());
@@ -564,7 +580,11 @@ mod tests {
     /// BlockModel id field is the same string after serde_json round-trip.
     #[test]
     fn block_model_id_round_trip() {
-        let block = BlockModel::new("exact-id-42", NomtuRef::new("e1", "w", "verb"), "affine:paragraph");
+        let block = BlockModel::new(
+            "exact-id-42",
+            NomtuRef::new("e1", "w", "verb"),
+            "affine:paragraph",
+        );
         let json = serde_json::to_string(&block).expect("serialize");
         let restored: BlockModel = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(restored.id, "exact-id-42");

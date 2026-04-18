@@ -6,7 +6,7 @@
 > **Architecture:** Custom GPUI (wgpu + winit + taffy + cosmic-text) — Zed's approach. One binary. Fully Rust.
 > **Sibling docs:** `implementation_plan.md` · `nom_state_machine_report.md` · `task.md` · `INIT.md`
 > **NON-NEGOTIABLE:** Agents MUST read source repos end-to-end before writing ANY code. Always use ui-ux-pro-max skill.
-> **Implementation audit note (2026-04-18, HEAD `7a79e88`):** this spec remains the north star, but current code is not yet fully DB-driven. `Connector::new()` / `new_stub()` bypass grammar-backed validation, `NodePalette` / `LibraryPanel` still load slices/static rows rather than a live `grammar.kinds` SELECT, and `cargo test --workspace --all-features` fails 14 `nom-compiler-bridge` tests. Treat these as open implementation gaps, not spec changes.
+> **Implementation audit note (2026-04-18, HEAD `8e36ec0`, Iteration 60):** 7902 tests. Wave AN audited — 6 items FIXED (CRDT overflow, SpatialIndex in selection, FrameBlock spatial fields, BlockDiff invert, Theme struct+constructors, LspPosition types). STILL OPEN: GPU renderer renders 0 pixels (10 waves — BLOCKER), `BackendKind` closed enum with 379 refs + `UnifiedDispatcher`/`ComposeContext` dead code, `GrammarKind` has no `status` field despite `KindStatus` enum existing, `is_safe_identifier()` never called in `to_sql()` (4 SQL injection points), `apply()` has no duplicate guard, `evict_lru()` calls `allocator.clear()` on partial eviction, `execute()` never called in ExecutionEngine, no `Point{row,col}` type in editor. NEW: `NOM-GRAPH-EXEC` (ExecutionEngine plans but never runs), `NOM-EDITOR-POINT` (no Point type), `NOM-GRAPH-ANCESTRY` (shallow cache keys). C-axis 34%, D-axis 72%. Wave AO target: ~8535 tests.
 
 ---
 
@@ -801,8 +801,14 @@ Remaining: Wave F (graph RAG overlay + deep_think streaming)
 ### Iteration 51 state (2026-04-18, HEAD c3d2323, 2841 tests)
 Wave AE hard audit: DB-driven architecture CONFIRMED (AC1-AC5/AC7-AC11/AD1-AD2 all PASS).
 2 CRITICAL open: renderer is a stub (AE1), highlight zero-width spans (AE2).
-6 HIGH open: lsp_provider.rs duplicate (AE3), scenario_workflow no-op (AE4), data_query discards SQL (AE5), Backend trait disconnected (AE6), Credential Debug leaks (AE7), eval_expr no depth guard (AE8).
-9 MEDIUM open: FrostedRect blur ignored, score bypasses nom_score, SharedState Mutex/no-pool, BM25 unwired, NoSideEffects stub, int overflow, nom-theme unused in blocks, Hsla convention mismatch, background_tier plan_flow/verify/deep_think stubs.
 Automation via DB: CONFIRMED CORRECT — grammar.kinds = node library, .nomx = workflow, dispatch.rs = executor.
 UI state: window opens (winit real), panels push Quads, tokens correct, spring math correct. Screen blank because renderer.rs submits zero GPU commands.
-Remaining: Wave AE fixes (AE1-AE17), Wave AB test targets (nom-cli/lint/memoize/telemetry 102 tests short).
+
+### Iteration 59 state (2026-04-18, HEAD 8e36ec0, 7902 tests)
+Wave AN complete (+250 tests). **ZERO CRITICAL/HIGH items fixed across Waves AM+AN.**
+4 CRITICAL still open: AL-RENDER-ALL (0 pixels, 9 waves overdue), AL-BACKEND-KIND (379 BackendKind refs), AL-GRAMMAR-STATUS (no KindStatus), AL-COMPOSE-BRIDGE (UnifiedDispatcher dead code).
+6 HIGH open: AM-ATLAS-LRU, AM-SPATIAL-WIRE, AL-ATOMIC-ORDERING, AM-UITIER-DIVERGE, AM-INTENT-STRUCT, AL-LAYOUT-TAFFY.
+2 SECURITY open: AL-SQL-INJECT (is_safe_identifier never called), AM-CONNECTOR-DESER (Deserialize bypass).
+5 NEW open: AN-FRAME-SPATIAL, AN-WORKSPACE-DUP, AN-BLOCKDIFF-CONTENT, AN-LSP-POSITIONS, AL-THEME-SYSTEM.
+Test inflation confirmed: ~6.8× — ~1,165 real behavioral tests out of 7,902.
+**Wave AO MANDATE: Executor MUST fix AL-RENDER-1/2/3 before any new test coverage waves.**

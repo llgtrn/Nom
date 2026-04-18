@@ -84,74 +84,13 @@ impl UiTier {
         if query.is_empty() {
             return Vec::new();
         }
-        #[cfg(feature = "compiler")]
-        {
-            use nom_search::BM25Index;
-            let kinds = self.state.cached_grammar_kinds();
-            if kinds.is_empty() {
-                return Vec::new();
-            }
-            let mut index = BM25Index::new();
-            for k in &kinds {
-                // Index word + description so both fields participate in scoring.
-                let text = format!("{} {}", k.name, k.description);
-                index.add_document(&k.name, &text);
-            }
-            let limit = 50;
-            index
-                .search(query, limit)
-                .into_iter()
-                .map(|r| SearchHit {
-                    word: r.doc_id,
-                    score: r.score as f32,
-                })
-                .collect()
-        }
-        #[cfg(not(feature = "compiler"))]
-        {
-            let q = query.to_lowercase();
-            let kinds = self.state.cached_grammar_kinds();
-            kinds
-                .into_iter()
-                .filter(|k| k.name.to_lowercase().contains(&q))
-                .map(|k| SearchHit {
-                    word: k.name,
-                    score: 1.0,
-                })
-                .collect()
-        }
+        search_cached_kinds(query, &self.state.cached_grammar_kinds())
     }
 }
 
 // With compiler feature: real implementations using nom-score
 #[cfg(feature = "compiler")]
 impl UiTier {
-    /// score_atom — wraps nom-score::score_atom, pure stateless, no DB
-    pub fn score_atom(&self, word: &str, kind: &str) -> f32 {
-        let kinds = self.state.cached_grammar_kinds();
-        if !kinds.is_empty() {
-            return if kinds.iter().any(|k| k.name == word || k.name == kind) {
-                0.9
-            } else {
-                0.3
-            };
-        }
-
-        use nom_types::{Atom, AtomKind};
-        let atom = Atom {
-            id: word.to_string(),
-            kind: AtomKind::Function,
-            name: word.to_string(),
-            source_path: String::new(),
-            language: "nom".to_string(),
-            labels: vec![],
-            concept: Some(kind.to_string()),
-            signature: None,
-            body: None,
-        };
-        nom_score::score_atom(&atom).overall()
-    }
-
     /// can_wire — grammar-typed wire validation (pure, no DB, uses preloaded grammar)
     pub fn can_wire(
         &self,
@@ -210,12 +149,70 @@ impl UiTier {
     }
 }
 
+/// Shared scoring kernel used by both `UiTier::score_atom` and `UiTierOps::score_atom`.
+/// Returns a score in `[0.0, 1.0]`.
+///
+/// When the `compiler` feature is active and `kinds` is non-empty, the result is
+/// determined by whether `word` or `kind` appears in the cached grammar kinds.
+/// When `kinds` is empty the full `nom_score::score_atom` path is taken.
+/// Without the `compiler` feature the function always returns `0.5`.
+#[allow(unused_variables)]
+fn score_atom_impl(word: &str, kind: &str, kinds: &[crate::shared::GrammarKind]) -> f32 {
+    #[cfg(feature = "compiler")]
+    {
+        if !kinds.is_empty() {
+            return if kinds.iter().any(|k| k.name == word || k.name == kind) {
+                0.9
+            } else {
+                0.3
+            };
+        }
+        use nom_types::{Atom, AtomKind};
+        let atom = Atom {
+            id: word.to_string(),
+            kind: AtomKind::Function,
+            name: word.to_string(),
+            source_path: String::new(),
+            language: "nom".to_string(),
+            labels: vec![],
+            concept: Some(kind.to_string()),
+            signature: None,
+            body: None,
+        };
+        nom_score::score_atom(&atom).overall()
+    }
+    #[cfg(not(feature = "compiler"))]
+    {
+        0.5
+    }
+}
+
+fn search_cached_kinds(query: &str, kinds: &[crate::shared::GrammarKind]) -> Vec<SearchHit> {
+    let q = query.to_lowercase();
+    kinds
+        .iter()
+        .filter(|k| {
+            let name = k.name.to_lowercase();
+            let desc = k.description.to_lowercase();
+            name.contains(&q)
+                || desc.contains(&q)
+                || q.split_whitespace()
+                    .any(|part| name.contains(part) || desc.contains(part))
+        })
+        .map(|k| SearchHit {
+            word: k.name.clone(),
+            score: if k.name.eq_ignore_ascii_case(query) {
+                1.0
+            } else {
+                0.75
+            },
+        })
+        .collect()
+}
+
 // Without compiler feature: stubs
 #[cfg(not(feature = "compiler"))]
 impl UiTier {
-    pub fn score_atom(&self, _word: &str, _kind: &str) -> f32 {
-        0.5
-    }
     pub fn can_wire(&self, _sk: &str, _ss: &str, _dk: &str, _ds: &str) -> WireCheckResult {
         WireCheckResult {
             is_valid: true,
@@ -225,6 +222,14 @@ impl UiTier {
     }
     pub fn compile_status(&self, _word: &str, _kind: &str) -> CompileStatus {
         CompileStatus::NotChecked
+    }
+}
+
+impl UiTier {
+    /// score_atom — delegates to shared kernel; works with or without the `compiler` feature
+    pub fn score_atom(&self, word: &str, kind: &str) -> f32 {
+        let kinds = self.state.cached_grammar_kinds();
+        score_atom_impl(word, kind, &kinds)
     }
 }
 
@@ -286,27 +291,8 @@ impl<'a> UiTierOps<'a> {
 
     /// Score an atom — uses shared ref directly, zero allocation per call
     pub fn score_atom(&self, word: &str, kind: &str) -> f32 {
-        #[cfg(feature = "compiler")]
-        {
-            use nom_types::{Atom, AtomKind};
-            let atom = Atom {
-                id: word.to_string(),
-                kind: AtomKind::Function,
-                name: word.to_string(),
-                source_path: String::new(),
-                language: "nom".to_string(),
-                labels: vec![],
-                concept: Some(kind.to_string()),
-                signature: None,
-                body: None,
-            };
-            return nom_score::score_atom(&atom).overall();
-        }
-        #[cfg(not(feature = "compiler"))]
-        {
-            let _ = (word, kind);
-            0.5
-        }
+        let kinds = self.shared.cached_grammar_kinds();
+        score_atom_impl(word, kind, &kinds)
     }
 }
 
@@ -331,6 +317,7 @@ mod tests {
         state.update_grammar_kinds(vec![crate::shared::GrammarKind {
             name: "verb".into(),
             description: "action".into(),
+            status: crate::shared::KindStatus::Transient,
         }]);
         let keywords = tier.grammar_keywords();
         assert_eq!(keywords, vec!["verb"]);
@@ -342,6 +329,7 @@ mod tests {
         state.update_grammar_kinds(vec![crate::shared::GrammarKind {
             name: "verb".into(),
             description: "action".into(),
+            status: crate::shared::KindStatus::Transient,
         }]);
         let ops = UiTierOps::new(&state);
         assert!(ops.is_known_kind("verb"));
@@ -354,6 +342,7 @@ mod tests {
         state.update_grammar_kinds(vec![crate::shared::GrammarKind {
             name: "concept".into(),
             description: "abstract idea".into(),
+            status: crate::shared::KindStatus::Transient,
         }]);
         let ops = UiTierOps::new(&state);
         assert_eq!(ops.resolve_synonym("concept"), Some("concept".to_string()));
@@ -386,10 +375,12 @@ mod tests {
             crate::shared::GrammarKind {
                 name: "define".into(),
                 description: "declaration keyword".into(),
+                status: crate::shared::KindStatus::Transient,
             },
             crate::shared::GrammarKind {
                 name: "that".into(),
                 description: "connector".into(),
+                status: crate::shared::KindStatus::Transient,
             },
         ]);
         let tier = UiTier::new(state);
@@ -405,6 +396,7 @@ mod tests {
         state.update_grammar_kinds(vec![crate::shared::GrammarKind {
             name: "verb".into(),
             description: "action".into(),
+            status: crate::shared::KindStatus::Transient,
         }]);
         let tier = UiTier::new(state);
         // is_known_kind mirrors a lookup returning Some/None semantics
@@ -430,10 +422,12 @@ mod tests {
             crate::shared::GrammarKind {
                 name: "render".into(),
                 description: "output".into(),
+                status: crate::shared::KindStatus::Transient,
             },
             crate::shared::GrammarKind {
                 name: "resolve".into(),
                 description: "lookup".into(),
+                status: crate::shared::KindStatus::Transient,
             },
         ]);
         let ops = UiTierOps::new(&state);
@@ -503,6 +497,7 @@ mod tests {
         state.update_grammar_kinds(vec![crate::shared::GrammarKind {
             name: "verb".into(),
             description: "action".into(),
+            status: crate::shared::KindStatus::Transient,
         }]);
         let ops = UiTierOps::new(&state);
         // Empty string should not match any kind
@@ -515,6 +510,7 @@ mod tests {
         state.update_grammar_kinds(vec![crate::shared::GrammarKind {
             name: "verb".into(),
             description: "action".into(),
+            status: crate::shared::KindStatus::Transient,
         }]);
         let ops = UiTierOps::new(&state);
         assert_eq!(ops.resolve_synonym(""), None);
@@ -526,6 +522,7 @@ mod tests {
         state.update_grammar_kinds(vec![crate::shared::GrammarKind {
             name: "émission".into(),
             description: "output".into(),
+            status: crate::shared::KindStatus::Transient,
         }]);
         let ops = UiTierOps::new(&state);
         assert_eq!(
@@ -551,6 +548,7 @@ mod tests {
             .map(|i| crate::shared::GrammarKind {
                 name: format!("kind_{i:02}"),
                 description: format!("desc_{i}"),
+                status: crate::shared::KindStatus::Transient,
             })
             .collect();
         state.update_grammar_kinds(kinds);
@@ -577,12 +575,11 @@ mod tests {
     #[test]
     fn search_bm25_empty_query_returns_empty() {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
-        state.update_grammar_kinds(vec![
-            crate::shared::GrammarKind {
-                name: "render".into(),
-                description: "output".into(),
-            },
-        ]);
+        state.update_grammar_kinds(vec![crate::shared::GrammarKind {
+            name: "render".into(),
+            description: "output".into(),
+            status: crate::shared::KindStatus::Transient,
+        }]);
         let tier = UiTier::new(state);
         let hits = tier.search_bm25("");
         assert!(hits.is_empty(), "empty query must return no hits");
@@ -596,15 +593,20 @@ mod tests {
             crate::shared::GrammarKind {
                 name: "render".into(),
                 description: "output primitive for display".into(),
+                status: crate::shared::KindStatus::Transient,
             },
             crate::shared::GrammarKind {
                 name: "resolve".into(),
                 description: "lookup and return a value".into(),
+                status: crate::shared::KindStatus::Transient,
             },
         ]);
         let tier = UiTier::new(state);
         let hits = tier.search_bm25("render");
-        assert!(!hits.is_empty(), "search for 'render' must return at least one hit");
+        assert!(
+            !hits.is_empty(),
+            "search for 'render' must return at least one hit"
+        );
         let found = hits.iter().any(|h| h.word == "render");
         assert!(found, "the 'render' word must appear in hits");
     }
@@ -618,14 +620,17 @@ mod tests {
             crate::shared::GrammarKind {
                 name: "compute".into(),
                 description: "computation and calculation primitive".into(),
+                status: crate::shared::KindStatus::Transient,
             },
             crate::shared::GrammarKind {
                 name: "calculate".into(),
                 description: "calculate numeric result".into(),
+                status: crate::shared::KindStatus::Transient,
             },
             crate::shared::GrammarKind {
                 name: "render".into(),
                 description: "render display output".into(),
+                status: crate::shared::KindStatus::Transient,
             },
         ]);
         let tier = UiTier::new(state);
@@ -650,10 +655,12 @@ mod tests {
             crate::shared::GrammarKind {
                 name: "render".into(),
                 description: "output primitive for display".into(),
+                status: crate::shared::KindStatus::Transient,
             },
             crate::shared::GrammarKind {
                 name: "resolve".into(),
                 description: "lookup and return a value".into(),
+                status: crate::shared::KindStatus::Transient,
             },
         ]);
         let tier = UiTier::new(state);
@@ -684,12 +691,25 @@ mod tests {
     #[test]
     fn search_hit_ordering_by_score_descending() {
         let mut hits = vec![
-            SearchHit { word: "low".into(), score: 0.2 },
-            SearchHit { word: "high".into(), score: 0.9 },
-            SearchHit { word: "mid".into(), score: 0.5 },
+            SearchHit {
+                word: "low".into(),
+                score: 0.2,
+            },
+            SearchHit {
+                word: "high".into(),
+                score: 0.9,
+            },
+            SearchHit {
+                word: "mid".into(),
+                score: 0.5,
+            },
         ];
         // Sort descending by score
-        hits.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        hits.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         assert_eq!(hits[0].word, "high");
         assert_eq!(hits[1].word, "mid");
         assert_eq!(hits[2].word, "low");
@@ -698,7 +718,10 @@ mod tests {
     /// SearchHit has word and score fields accessible.
     #[test]
     fn search_hit_fields_accessible() {
-        let hit = SearchHit { word: "emit".into(), score: 0.75 };
+        let hit = SearchHit {
+            word: "emit".into(),
+            score: 0.75,
+        };
         assert_eq!(hit.word, "emit");
         assert!((hit.score - 0.75).abs() < f32::EPSILON);
     }
@@ -710,6 +733,7 @@ mod tests {
         state.update_grammar_kinds(vec![crate::shared::GrammarKind {
             name: "render".into(),
             description: "display output".into(),
+            status: crate::shared::KindStatus::Transient,
         }]);
         let tier = UiTier::new(state);
         let hits = tier.search_bm25("zzzzz_no_match");
@@ -726,12 +750,16 @@ mod tests {
         state.update_grammar_kinds(vec![crate::shared::GrammarKind {
             name: "emit".into(),
             description: "output a value".into(),
+            status: crate::shared::KindStatus::Transient,
         }]);
         let tier = UiTier::new(state);
         let hits = tier.search_bm25("emit");
         assert!(!hits.is_empty(), "exact match must return at least one hit");
         // In stub mode score is 1.0 for a prefix/contains match
-        let hit = hits.iter().find(|h| h.word == "emit").expect("emit not in results");
+        let hit = hits
+            .iter()
+            .find(|h| h.word == "emit")
+            .expect("emit not in results");
         assert!((hit.score - 1.0).abs() < f32::EPSILON);
     }
 
@@ -750,6 +778,7 @@ mod tests {
         state.update_grammar_kinds(vec![crate::shared::GrammarKind {
             name: "action".into(),
             description: "something done".into(),
+            status: crate::shared::KindStatus::Transient,
         }]);
         let tier = UiTier::new(state);
         assert!(tier.is_known_kind("action"));
@@ -767,6 +796,7 @@ mod tests {
         state.update_grammar_kinds(vec![crate::shared::GrammarKind {
             name: "tokenize".into(),
             description: "split source into tokens".into(),
+            status: crate::shared::KindStatus::Transient,
         }]);
         let tier = UiTier::new(state);
         // "token" is contained in "tokenize" → stub mode (contains scan) returns a hit
@@ -782,6 +812,7 @@ mod tests {
         state.update_grammar_kinds(vec![crate::shared::GrammarKind {
             name: "compute".into(),
             description: "calculation".into(),
+            status: crate::shared::KindStatus::Transient,
         }]);
         let tier = UiTier::new(state);
         let hits = tier.search_bm25("compute result");
@@ -797,6 +828,7 @@ mod tests {
         state.update_grammar_kinds(vec![crate::shared::GrammarKind {
             name: "action".into(),
             description: "something done".into(),
+            status: crate::shared::KindStatus::Transient,
         }]);
         let tier = UiTier::new(state);
         // is_known_kind("") must be false — empty string is not a valid kind name
@@ -810,6 +842,7 @@ mod tests {
         state.update_grammar_kinds(vec![crate::shared::GrammarKind {
             name: "valid_kind".into(),
             description: "a kind".into(),
+            status: crate::shared::KindStatus::Transient,
         }]);
         let ops = UiTierOps::new(&state);
         // A kind name with whitespace can never match the stored single-word names
@@ -822,8 +855,16 @@ mod tests {
     fn search_bm25_result_words_non_empty() {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
         state.update_grammar_kinds(vec![
-            crate::shared::GrammarKind { name: "emit".into(), description: "output value".into() },
-            crate::shared::GrammarKind { name: "pipe".into(), description: "channel data".into() },
+            crate::shared::GrammarKind {
+                name: "emit".into(),
+                description: "output value".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            crate::shared::GrammarKind {
+                name: "pipe".into(),
+                description: "channel data".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
         ]);
         let tier = UiTier::new(state);
         let hits = tier.search_bm25("e");
@@ -837,9 +878,21 @@ mod tests {
     fn grammar_keywords_preserves_insertion_order() {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
         state.update_grammar_kinds(vec![
-            crate::shared::GrammarKind { name: "first".into(), description: "a".into() },
-            crate::shared::GrammarKind { name: "second".into(), description: "b".into() },
-            crate::shared::GrammarKind { name: "third".into(), description: "c".into() },
+            crate::shared::GrammarKind {
+                name: "first".into(),
+                description: "a".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            crate::shared::GrammarKind {
+                name: "second".into(),
+                description: "b".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            crate::shared::GrammarKind {
+                name: "third".into(),
+                description: "c".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
         ]);
         let tier = UiTier::new(state);
         let kw = tier.grammar_keywords();
@@ -851,10 +904,21 @@ mod tests {
     fn score_atom_finite_range_various_inputs() {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
         let tier = UiTier::new(state);
-        for (word, kind) in &[("run", "verb"), ("", ""), ("data", "concept"), ("123", "metric")] {
+        for (word, kind) in &[
+            ("run", "verb"),
+            ("", ""),
+            ("data", "concept"),
+            ("123", "metric"),
+        ] {
             let score = tier.score_atom(word, kind);
-            assert!(score.is_finite(), "score must be finite for ({word}, {kind})");
-            assert!(score >= 0.0 && score <= 1.0, "score must be in [0,1] for ({word}, {kind})");
+            assert!(
+                score.is_finite(),
+                "score must be finite for ({word}, {kind})"
+            );
+            assert!(
+                score >= 0.0 && score <= 1.0,
+                "score must be in [0,1] for ({word}, {kind})"
+            );
         }
     }
 
@@ -865,6 +929,7 @@ mod tests {
         state.update_grammar_kinds(vec![crate::shared::GrammarKind {
             name: "Render".into(),
             description: "display output".into(),
+            status: crate::shared::KindStatus::Transient,
         }]);
         let tier = UiTier::new(state);
         // Stub mode lowercases the query and the kind name for contains check
@@ -880,10 +945,14 @@ mod tests {
         state.update_grammar_kinds(vec![crate::shared::GrammarKind {
             name: "Render".into(),
             description: "output".into(),
+            status: crate::shared::KindStatus::Transient,
         }]);
         let tier = UiTier::new(state);
         assert!(tier.is_known_kind("Render"));
-        assert!(!tier.is_known_kind("render"), "is_known_kind must be case-sensitive");
+        assert!(
+            !tier.is_known_kind("render"),
+            "is_known_kind must be case-sensitive"
+        );
     }
 
     /// compile_status label returns a non-empty string for all variants.
@@ -895,7 +964,11 @@ mod tests {
             CompileStatus::Unknown,
             CompileStatus::NotChecked,
         ] {
-            assert!(!status.label().is_empty(), "label must be non-empty for {:?}", status);
+            assert!(
+                !status.label().is_empty(),
+                "label must be non-empty for {:?}",
+                status
+            );
         }
     }
 
@@ -906,6 +979,7 @@ mod tests {
         state.update_grammar_kinds(vec![crate::shared::GrammarKind {
             name: "only_one".into(),
             description: "".into(),
+            status: crate::shared::KindStatus::Transient,
         }]);
         let tier = UiTier::new(state);
         let kw = tier.grammar_keywords();
@@ -942,12 +1016,23 @@ mod tests {
     fn ab_get_kinds_nonempty_when_dict_populated() {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
         state.update_grammar_kinds(vec![
-            crate::shared::GrammarKind { name: "noun".into(), description: "thing".into() },
-            crate::shared::GrammarKind { name: "verb".into(), description: "action".into() },
+            crate::shared::GrammarKind {
+                name: "noun".into(),
+                description: "thing".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            crate::shared::GrammarKind {
+                name: "verb".into(),
+                description: "action".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
         ]);
         let tier = UiTier::new(state);
         let kw = tier.grammar_keywords();
-        assert!(!kw.is_empty(), "grammar_keywords must return non-empty list when dict is populated");
+        assert!(
+            !kw.is_empty(),
+            "grammar_keywords must return non-empty list when dict is populated"
+        );
     }
 
     /// search_by_prefix (is_known_kind / grammar_keywords) with empty prefix returns all kinds.
@@ -955,14 +1040,30 @@ mod tests {
     fn ab_search_by_prefix_empty_returns_all() {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
         state.update_grammar_kinds(vec![
-            crate::shared::GrammarKind { name: "alpha".into(), description: "".into() },
-            crate::shared::GrammarKind { name: "beta".into(), description: "".into() },
-            crate::shared::GrammarKind { name: "gamma".into(), description: "".into() },
+            crate::shared::GrammarKind {
+                name: "alpha".into(),
+                description: "".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            crate::shared::GrammarKind {
+                name: "beta".into(),
+                description: "".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            crate::shared::GrammarKind {
+                name: "gamma".into(),
+                description: "".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
         ]);
         let tier = UiTier::new(state);
         // grammar_keywords() with no filter = "all kinds"
         let kw = tier.grammar_keywords();
-        assert_eq!(kw.len(), 3, "empty prefix / no filter must return all 3 kinds");
+        assert_eq!(
+            kw.len(),
+            3,
+            "empty prefix / no filter must return all 3 kinds"
+        );
     }
 
     /// search_by_prefix with a known prefix returns matching subset via search_bm25.
@@ -970,31 +1071,58 @@ mod tests {
     fn ab_search_by_prefix_known_prefix_returns_matching_subset() {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
         state.update_grammar_kinds(vec![
-            crate::shared::GrammarKind { name: "resolve".into(), description: "lookup value".into() },
-            crate::shared::GrammarKind { name: "render".into(), description: "output display".into() },
-            crate::shared::GrammarKind { name: "compute".into(), description: "calculate".into() },
+            crate::shared::GrammarKind {
+                name: "resolve".into(),
+                description: "lookup value".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            crate::shared::GrammarKind {
+                name: "render".into(),
+                description: "output display".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            crate::shared::GrammarKind {
+                name: "compute".into(),
+                description: "calculate".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
         ]);
         let tier = UiTier::new(state);
         // In stub mode search_bm25 uses contains scan — "re" matches "resolve" and "render"
         let hits = tier.search_bm25("re");
         let words: Vec<&str> = hits.iter().map(|h| h.word.as_str()).collect();
-        assert!(words.contains(&"resolve"), "prefix 're' must match 'resolve'");
+        assert!(
+            words.contains(&"resolve"),
+            "prefix 're' must match 'resolve'"
+        );
         assert!(words.contains(&"render"), "prefix 're' must match 'render'");
-        assert!(!words.contains(&"compute"), "prefix 're' must not match 'compute'");
+        assert!(
+            !words.contains(&"compute"),
+            "prefix 're' must not match 'compute'"
+        );
     }
 
     /// search_bm25 with a query returns scored results (score > 0).
     #[test]
     fn ab_search_bm25_query_returns_scored_results() {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
-        state.update_grammar_kinds(vec![
-            crate::shared::GrammarKind { name: "pipeline".into(), description: "data pipeline".into() },
-        ]);
+        state.update_grammar_kinds(vec![crate::shared::GrammarKind {
+            name: "pipeline".into(),
+            description: "data pipeline".into(),
+            status: crate::shared::KindStatus::Transient,
+        }]);
         let tier = UiTier::new(state);
         let hits = tier.search_bm25("pipeline");
-        assert!(!hits.is_empty(), "search_bm25 must return results for a matching query");
+        assert!(
+            !hits.is_empty(),
+            "search_bm25 must return results for a matching query"
+        );
         for h in &hits {
-            assert!(h.score > 0.0, "each result must have a positive score, got {}", h.score);
+            assert!(
+                h.score > 0.0,
+                "each result must have a positive score, got {}",
+                h.score
+            );
         }
     }
 
@@ -1006,10 +1134,16 @@ mod tests {
         let tier = UiTier::new(state);
         // Must not panic; empty cache → empty keywords
         let kw = tier.grammar_keywords();
-        assert!(kw.is_empty(), "UI tier must handle missing dict gracefully (empty list)");
+        assert!(
+            kw.is_empty(),
+            "UI tier must handle missing dict gracefully (empty list)"
+        );
         // search_bm25 must also not panic
         let hits = tier.search_bm25("anything");
-        assert!(hits.is_empty(), "search_bm25 on empty cache must return empty");
+        assert!(
+            hits.is_empty(),
+            "search_bm25 on empty cache must return empty"
+        );
     }
 
     /// grammar_keywords returns exactly the names that were loaded.
@@ -1018,16 +1152,24 @@ mod tests {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
         let names = vec!["flow", "stream", "channel", "buffer"];
         state.update_grammar_kinds(
-            names.iter().map(|n| crate::shared::GrammarKind {
-                name: n.to_string(),
-                description: "".into(),
-            }).collect(),
+            names
+                .iter()
+                .map(|n| crate::shared::GrammarKind {
+                    name: n.to_string(),
+                    description: "".into(),
+                    status: crate::shared::KindStatus::Transient,
+                })
+                .collect(),
         );
         let tier = UiTier::new(state);
         let kw = tier.grammar_keywords();
         assert_eq!(kw.len(), 4);
         for name in &names {
-            assert!(kw.contains(&name.to_string()), "keyword '{}' must be in the list", name);
+            assert!(
+                kw.contains(&name.to_string()),
+                "keyword '{}' must be in the list",
+                name
+            );
         }
     }
 
@@ -1038,6 +1180,7 @@ mod tests {
         state.update_grammar_kinds(vec![crate::shared::GrammarKind {
             name: "process".into(),
             description: "handle data".into(),
+            status: crate::shared::KindStatus::Transient,
         }]);
         let tier = UiTier::new(state);
         let hits = tier.search_bm25("zzzzz_no_match_xy");
@@ -1053,14 +1196,22 @@ mod tests {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
         let names = vec!["alpha", "beta", "gamma"];
         state.update_grammar_kinds(
-            names.iter().map(|n| crate::shared::GrammarKind {
-                name: n.to_string(),
-                description: "".into(),
-            }).collect(),
+            names
+                .iter()
+                .map(|n| crate::shared::GrammarKind {
+                    name: n.to_string(),
+                    description: "".into(),
+                    status: crate::shared::KindStatus::Transient,
+                })
+                .collect(),
         );
         let tier = UiTier::new(state);
         for name in &names {
-            assert!(tier.is_known_kind(name), "is_known_kind must return true for '{}'", name);
+            assert!(
+                tier.is_known_kind(name),
+                "is_known_kind must return true for '{}'",
+                name
+            );
         }
     }
 
@@ -1069,8 +1220,16 @@ mod tests {
     fn ab_search_bm25_result_words_nonempty() {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
         state.update_grammar_kinds(vec![
-            crate::shared::GrammarKind { name: "output".into(), description: "result".into() },
-            crate::shared::GrammarKind { name: "observe".into(), description: "watch".into() },
+            crate::shared::GrammarKind {
+                name: "output".into(),
+                description: "result".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            crate::shared::GrammarKind {
+                name: "observe".into(),
+                description: "watch".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
         ]);
         let tier = UiTier::new(state);
         let hits = tier.search_bm25("o");
@@ -1084,8 +1243,10 @@ mod tests {
     fn ab_ui_tier_ops_is_known_kind_empty_cache() {
         let state = SharedState::new("a.db", "b.db");
         let ops = UiTierOps::new(&state);
-        assert!(!ops.is_known_kind("anything"),
-            "is_known_kind with empty cache must always return false");
+        assert!(
+            !ops.is_known_kind("anything"),
+            "is_known_kind with empty cache must always return false"
+        );
     }
 
     /// UiTierOps resolve_synonym returns None for all inputs when cache is empty.
@@ -1093,8 +1254,11 @@ mod tests {
     fn ab_ui_tier_ops_resolve_synonym_empty_cache_none() {
         let state = SharedState::new("a.db", "b.db");
         let ops = UiTierOps::new(&state);
-        assert_eq!(ops.resolve_synonym("verb"), None,
-            "resolve_synonym with empty cache must return None");
+        assert_eq!(
+            ops.resolve_synonym("verb"),
+            None,
+            "resolve_synonym with empty cache must return None"
+        );
     }
 
     // ── AG6 additions ──────────────────────────────────────────────────────
@@ -1106,23 +1270,33 @@ mod tests {
         state.update_grammar_kinds(vec![crate::shared::GrammarKind {
             name: "compute".into(),
             description: "compute a value".into(),
+            status: crate::shared::KindStatus::Transient,
         }]);
         let tier = UiTier::new(state);
         let hits = tier.search_bm25("compute");
-        assert!(!hits.is_empty(), "non-empty query matching a kind must return results");
+        assert!(
+            !hits.is_empty(),
+            "non-empty query matching a kind must return results"
+        );
     }
 
     /// All scores returned by search_bm25 must be positive (> 0.0) in stub mode.
     #[test]
     fn search_bm25_results_have_positive_scores() {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
-        state.update_grammar_kinds(vec![
-            crate::shared::GrammarKind { name: "action".into(), description: "do something".into() },
-        ]);
+        state.update_grammar_kinds(vec![crate::shared::GrammarKind {
+            name: "action".into(),
+            description: "do something".into(),
+            status: crate::shared::KindStatus::Transient,
+        }]);
         let tier = UiTier::new(state);
         let hits = tier.search_bm25("action");
         for h in &hits {
-            assert!(h.score > 0.0, "each hit score must be positive, got {}", h.score);
+            assert!(
+                h.score > 0.0,
+                "each hit score must be positive, got {}",
+                h.score
+            );
         }
     }
 
@@ -1131,12 +1305,24 @@ mod tests {
     fn search_bm25_results_are_sorted_desc_by_score() {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
         state.update_grammar_kinds(vec![
-            crate::shared::GrammarKind { name: "alpha".into(), description: "first".into() },
-            crate::shared::GrammarKind { name: "alphabetical".into(), description: "ordered".into() },
+            crate::shared::GrammarKind {
+                name: "alpha".into(),
+                description: "first".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            crate::shared::GrammarKind {
+                name: "alphabetical".into(),
+                description: "ordered".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
         ]);
         let tier = UiTier::new(state);
         let mut hits = tier.search_bm25("alpha");
-        hits.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        hits.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         // After sorting descending, each score must be >= the next
         for window in hits.windows(2) {
             assert!(window[0].score >= window[1].score);
@@ -1151,6 +1337,7 @@ mod tests {
             .map(|i| crate::shared::GrammarKind {
                 name: format!("kind_{i:02}"),
                 description: format!("desc {i}"),
+                status: crate::shared::KindStatus::Transient,
             })
             .collect();
         state.update_grammar_kinds(kinds);
@@ -1169,7 +1356,10 @@ mod tests {
         // empty cache
         let tier = UiTier::new(state);
         let hits = tier.search_bm25("x");
-        assert!(hits.is_empty(), "empty cache with any query must return empty");
+        assert!(
+            hits.is_empty(),
+            "empty cache with any query must return empty"
+        );
     }
 
     /// search_bm25 with a single-word query returns exactly one token (hit) for a single-kind cache.
@@ -1179,10 +1369,15 @@ mod tests {
         state.update_grammar_kinds(vec![crate::shared::GrammarKind {
             name: "word".into(),
             description: "a single token".into(),
+            status: crate::shared::KindStatus::Transient,
         }]);
         let tier = UiTier::new(state);
         let hits = tier.search_bm25("word");
-        assert_eq!(hits.len(), 1, "single-word cache with matching query must return one hit");
+        assert_eq!(
+            hits.len(),
+            1,
+            "single-word cache with matching query must return one hit"
+        );
     }
 
     /// search_bm25 hit must preserve the word field from the grammar kind name.
@@ -1192,11 +1387,15 @@ mod tests {
         state.update_grammar_kinds(vec![crate::shared::GrammarKind {
             name: "preserved".into(),
             description: "check word preservation".into(),
+            status: crate::shared::KindStatus::Transient,
         }]);
         let tier = UiTier::new(state);
         let hits = tier.search_bm25("preserved");
         assert!(!hits.is_empty());
-        assert_eq!(hits[0].word, "preserved", "word field must match the grammar kind name");
+        assert_eq!(
+            hits[0].word, "preserved",
+            "word field must match the grammar kind name"
+        );
     }
 
     /// search_bm25 with whitespace-separated words in the grammar cache returns correct hits.
@@ -1204,22 +1403,40 @@ mod tests {
     fn tokenize_whitespace_separated_words() {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
         state.update_grammar_kinds(vec![
-            crate::shared::GrammarKind { name: "first".into(), description: "1st".into() },
-            crate::shared::GrammarKind { name: "second".into(), description: "2nd".into() },
-            crate::shared::GrammarKind { name: "third".into(), description: "3rd".into() },
+            crate::shared::GrammarKind {
+                name: "first".into(),
+                description: "1st".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            crate::shared::GrammarKind {
+                name: "second".into(),
+                description: "2nd".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            crate::shared::GrammarKind {
+                name: "third".into(),
+                description: "3rd".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
         ]);
         let tier = UiTier::new(state);
         // Each kind is a separate "word"; querying "second" should return that word
         let hits = tier.search_bm25("second");
-        assert!(hits.iter().any(|h| h.word == "second"), "second must appear in hits");
+        assert!(
+            hits.iter().any(|h| h.word == "second"),
+            "second must appear in hits"
+        );
     }
 
     /// SearchHit has accessible word and score fields.
     #[test]
     fn search_hit_has_word_and_score_fields() {
-        let hit = SearchHit { word: "example".into(), score: 0.5 };
-        let _ = hit.word.len();   // word field accessible
-        let _ = hit.score;        // score field accessible
+        let hit = SearchHit {
+            word: "example".into(),
+            score: 0.5,
+        };
+        let _ = hit.word.len(); // word field accessible
+        let _ = hit.score; // score field accessible
         assert_eq!(hit.word, "example");
         assert!((hit.score - 0.5).abs() < f32::EPSILON);
     }
@@ -1229,13 +1446,27 @@ mod tests {
     fn search_bm25_word_in_query_gets_high_score() {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
         state.update_grammar_kinds(vec![
-            crate::shared::GrammarKind { name: "target".into(), description: "the target kind".into() },
-            crate::shared::GrammarKind { name: "other".into(), description: "another kind".into() },
+            crate::shared::GrammarKind {
+                name: "target".into(),
+                description: "the target kind".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            crate::shared::GrammarKind {
+                name: "other".into(),
+                description: "another kind".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
         ]);
         let tier = UiTier::new(state);
         let hits = tier.search_bm25("target");
-        assert!(!hits.is_empty(), "query matching 'target' must return at least one hit");
-        assert!(hits.iter().any(|h| h.word == "target"), "'target' must appear in results");
+        assert!(
+            !hits.is_empty(),
+            "query matching 'target' must return at least one hit"
+        );
+        assert!(
+            hits.iter().any(|h| h.word == "target"),
+            "'target' must appear in results"
+        );
     }
 
     /// search_bm25 with a non-empty source (multiple kinds) returns a non-empty Vec.
@@ -1243,14 +1474,25 @@ mod tests {
     fn ui_tier_tokenize_nonempty_source() {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
         state.update_grammar_kinds(vec![
-            crate::shared::GrammarKind { name: "emit".into(), description: "output".into() },
-            crate::shared::GrammarKind { name: "receive".into(), description: "input".into() },
+            crate::shared::GrammarKind {
+                name: "emit".into(),
+                description: "output".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            crate::shared::GrammarKind {
+                name: "receive".into(),
+                description: "input".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
         ]);
         let tier = UiTier::new(state);
         // Querying a prefix that matches both: both should be returned
         let hits = tier.search_bm25("e");
         // "emit" contains "e"; result must be non-empty
-        assert!(!hits.is_empty(), "non-empty source must yield hits for matching prefix");
+        assert!(
+            !hits.is_empty(),
+            "non-empty source must yield hits for matching prefix"
+        );
     }
 
     // ── Workspace symbol list tests ──────────────────────────────────────────
@@ -1260,12 +1502,23 @@ mod tests {
     fn workspace_symbols_returns_vec_of_symbol_infos() {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
         state.update_grammar_kinds(vec![
-            crate::shared::GrammarKind { name: "emit".into(), description: "output value".into() },
-            crate::shared::GrammarKind { name: "receive".into(), description: "input value".into() },
+            crate::shared::GrammarKind {
+                name: "emit".into(),
+                description: "output value".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            crate::shared::GrammarKind {
+                name: "receive".into(),
+                description: "input value".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
         ]);
         let tier = UiTier::new(state);
         let symbols = tier.grammar_keywords();
-        assert!(!symbols.is_empty(), "workspace_symbols must return a non-empty Vec");
+        assert!(
+            !symbols.is_empty(),
+            "workspace_symbols must return a non-empty Vec"
+        );
     }
 
     /// Empty query returns all symbols in the workspace.
@@ -1274,10 +1527,14 @@ mod tests {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
         let names = vec!["alpha", "beta", "gamma", "delta"];
         state.update_grammar_kinds(
-            names.iter().map(|n| crate::shared::GrammarKind {
-                name: n.to_string(),
-                description: "symbol".into(),
-            }).collect(),
+            names
+                .iter()
+                .map(|n| crate::shared::GrammarKind {
+                    name: n.to_string(),
+                    description: "symbol".into(),
+                    status: crate::shared::KindStatus::Transient,
+                })
+                .collect(),
         );
         let tier = UiTier::new(state);
         let symbols = tier.grammar_keywords();
@@ -1289,16 +1546,34 @@ mod tests {
     fn workspace_symbols_prefix_query_returns_subset() {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
         state.update_grammar_kinds(vec![
-            crate::shared::GrammarKind { name: "stream_a".into(), description: "first stream".into() },
-            crate::shared::GrammarKind { name: "stream_b".into(), description: "second stream".into() },
-            crate::shared::GrammarKind { name: "buffer".into(), description: "data buffer".into() },
+            crate::shared::GrammarKind {
+                name: "stream_a".into(),
+                description: "first stream".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            crate::shared::GrammarKind {
+                name: "stream_b".into(),
+                description: "second stream".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            crate::shared::GrammarKind {
+                name: "buffer".into(),
+                description: "data buffer".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
         ]);
         let tier = UiTier::new(state);
         // search_bm25 with prefix "stream" returns only the two stream kinds
         let hits = tier.search_bm25("stream");
         let words: Vec<&str> = hits.iter().map(|h| h.word.as_str()).collect();
-        assert!(words.contains(&"stream_a"), "subset must include 'stream_a'");
-        assert!(words.contains(&"stream_b"), "subset must include 'stream_b'");
+        assert!(
+            words.contains(&"stream_a"),
+            "subset must include 'stream_a'"
+        );
+        assert!(
+            words.contains(&"stream_b"),
+            "subset must include 'stream_b'"
+        );
         assert!(!words.contains(&"buffer"), "subset must exclude 'buffer'");
     }
 
@@ -1306,9 +1581,11 @@ mod tests {
     #[test]
     fn workspace_symbols_each_has_name_and_kind() {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
-        state.update_grammar_kinds(vec![
-            crate::shared::GrammarKind { name: "pipeline".into(), description: "data pipeline".into() },
-        ]);
+        state.update_grammar_kinds(vec![crate::shared::GrammarKind {
+            name: "pipeline".into(),
+            description: "data pipeline".into(),
+            status: crate::shared::KindStatus::Transient,
+        }]);
         let tier = UiTier::new(state);
         // The symbol name must be a non-empty String
         let names = tier.grammar_keywords();
@@ -1316,7 +1593,10 @@ mod tests {
         let name = &names[0];
         assert!(!name.is_empty(), "symbol name must be non-empty");
         // The kind is carried by the grammar kind entry (verified through is_known_kind)
-        assert!(tier.is_known_kind(name), "symbol must be known via is_known_kind");
+        assert!(
+            tier.is_known_kind(name),
+            "symbol must be known via is_known_kind"
+        );
     }
 
     /// Symbol list is sorted alphabetically by default (grammar_keywords preserves insertion order;
@@ -1325,9 +1605,21 @@ mod tests {
     fn workspace_symbols_sorted_alphabetically() {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
         state.update_grammar_kinds(vec![
-            crate::shared::GrammarKind { name: "zebra".into(), description: "last alphabetically".into() },
-            crate::shared::GrammarKind { name: "apple".into(), description: "first alphabetically".into() },
-            crate::shared::GrammarKind { name: "mango".into(), description: "middle alphabetically".into() },
+            crate::shared::GrammarKind {
+                name: "zebra".into(),
+                description: "last alphabetically".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            crate::shared::GrammarKind {
+                name: "apple".into(),
+                description: "first alphabetically".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            crate::shared::GrammarKind {
+                name: "mango".into(),
+                description: "middle alphabetically".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
         ]);
         let tier = UiTier::new(state);
         let mut symbols = tier.grammar_keywords();
@@ -1342,14 +1634,30 @@ mod tests {
     fn workspace_symbols_no_duplicates() {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
         state.update_grammar_kinds(vec![
-            crate::shared::GrammarKind { name: "emit".into(), description: "a".into() },
-            crate::shared::GrammarKind { name: "pipe".into(), description: "b".into() },
-            crate::shared::GrammarKind { name: "flow".into(), description: "c".into() },
+            crate::shared::GrammarKind {
+                name: "emit".into(),
+                description: "a".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            crate::shared::GrammarKind {
+                name: "pipe".into(),
+                description: "b".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            crate::shared::GrammarKind {
+                name: "flow".into(),
+                description: "c".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
         ]);
         let tier = UiTier::new(state);
         let symbols = tier.grammar_keywords();
         let unique: std::collections::HashSet<_> = symbols.iter().collect();
-        assert_eq!(unique.len(), symbols.len(), "symbol list must contain no duplicates");
+        assert_eq!(
+            unique.len(),
+            symbols.len(),
+            "symbol list must contain no duplicates"
+        );
     }
 
     /// workspace_symbols with 10 kinds returns exactly 10 symbols.
@@ -1360,12 +1668,17 @@ mod tests {
             .map(|i| crate::shared::GrammarKind {
                 name: format!("sym_{i:02}"),
                 description: format!("symbol {i}"),
+                status: crate::shared::KindStatus::Transient,
             })
             .collect();
         state.update_grammar_kinds(kinds);
         let tier = UiTier::new(state);
         let symbols = tier.grammar_keywords();
-        assert_eq!(symbols.len(), 10, "symbol count must match number of loaded kinds");
+        assert_eq!(
+            symbols.len(),
+            10,
+            "symbol count must match number of loaded kinds"
+        );
     }
 
     /// workspace_symbols with empty grammar cache returns empty list.
@@ -1374,7 +1687,10 @@ mod tests {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
         let tier = UiTier::new(state);
         let symbols = tier.grammar_keywords();
-        assert!(symbols.is_empty(), "workspace_symbols with no cache must return empty");
+        assert!(
+            symbols.is_empty(),
+            "workspace_symbols with no cache must return empty"
+        );
     }
 
     /// Symbol location info: is_known_kind confirms each symbol belongs to the workspace.
@@ -1382,8 +1698,16 @@ mod tests {
     fn workspace_symbols_location_confirmed_via_is_known_kind() {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
         state.update_grammar_kinds(vec![
-            crate::shared::GrammarKind { name: "confirm_a".into(), description: "".into() },
-            crate::shared::GrammarKind { name: "confirm_b".into(), description: "".into() },
+            crate::shared::GrammarKind {
+                name: "confirm_a".into(),
+                description: "".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            crate::shared::GrammarKind {
+                name: "confirm_b".into(),
+                description: "".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
         ]);
         let tier = UiTier::new(state);
         let symbols = tier.grammar_keywords();
@@ -1401,8 +1725,16 @@ mod tests {
     fn workspace_symbols_query_exact_match_returns_symbol() {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
         state.update_grammar_kinds(vec![
-            crate::shared::GrammarKind { name: "workspace_kind".into(), description: "target".into() },
-            crate::shared::GrammarKind { name: "other_kind".into(), description: "other".into() },
+            crate::shared::GrammarKind {
+                name: "workspace_kind".into(),
+                description: "target".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            crate::shared::GrammarKind {
+                name: "other_kind".into(),
+                description: "other".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
         ]);
         let tier = UiTier::new(state);
         let hits = tier.search_bm25("workspace_kind");
@@ -1416,23 +1748,30 @@ mod tests {
     #[test]
     fn workspace_symbols_concurrent_tiers_share_state() {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
-        state.update_grammar_kinds(vec![
-            crate::shared::GrammarKind { name: "shared_sym".into(), description: "shared".into() },
-        ]);
+        state.update_grammar_kinds(vec![crate::shared::GrammarKind {
+            name: "shared_sym".into(),
+            description: "shared".into(),
+            status: crate::shared::KindStatus::Transient,
+        }]);
         let tier_a = UiTier::new(state.clone());
         let tier_b = UiTier::new(state.clone());
         let syms_a = tier_a.grammar_keywords();
         let syms_b = tier_b.grammar_keywords();
-        assert_eq!(syms_a, syms_b, "two tiers sharing same state must return identical symbol lists");
+        assert_eq!(
+            syms_a, syms_b,
+            "two tiers sharing same state must return identical symbol lists"
+        );
     }
 
     /// Concurrent: UiTierOps on same SharedState returns consistent is_known_kind.
     #[test]
     fn workspace_symbols_ops_concurrent_is_known_kind_consistent() {
         let state = SharedState::new("a.db", "b.db");
-        state.update_grammar_kinds(vec![
-            crate::shared::GrammarKind { name: "consistent_kind".into(), description: "".into() },
-        ]);
+        state.update_grammar_kinds(vec![crate::shared::GrammarKind {
+            name: "consistent_kind".into(),
+            description: "".into(),
+            status: crate::shared::KindStatus::Transient,
+        }]);
         let ops_a = UiTierOps::new(&state);
         let ops_b = UiTierOps::new(&state);
         // Both ops on same state must agree on is_known_kind
@@ -1453,14 +1792,25 @@ mod tests {
     fn workspace_symbols_repeated_calls_idempotent() {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
         state.update_grammar_kinds(vec![
-            crate::shared::GrammarKind { name: "idempotent_a".into(), description: "".into() },
-            crate::shared::GrammarKind { name: "idempotent_b".into(), description: "".into() },
+            crate::shared::GrammarKind {
+                name: "idempotent_a".into(),
+                description: "".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            crate::shared::GrammarKind {
+                name: "idempotent_b".into(),
+                description: "".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
         ]);
         let tier = UiTier::new(state);
         let first = tier.grammar_keywords();
         let second = tier.grammar_keywords();
         let third = tier.grammar_keywords();
-        assert_eq!(first, second, "repeated grammar_keywords calls must be idempotent");
+        assert_eq!(
+            first, second,
+            "repeated grammar_keywords calls must be idempotent"
+        );
         assert_eq!(second, third);
     }
 
@@ -1472,30 +1822,38 @@ mod tests {
         // Simulate two concurrent prepare-rename ops on different regions of the same source
         let source = "define alpha that is beta";
         // Op A: position 7 → "alpha"
-        let word_a = source
-            .split_whitespace()
-            .find(|w| source.find(w).unwrap_or(0) <= 7 && 7 < source.find(w).unwrap_or(0) + w.len());
+        let word_a = source.split_whitespace().find(|w| {
+            source.find(w).unwrap_or(0) <= 7 && 7 < source.find(w).unwrap_or(0) + w.len()
+        });
         // Op B: position inside "beta"
         let pos_beta = source.rfind("beta").unwrap_or(0);
-        let word_b = source[pos_beta..].split(|c: char| !c.is_alphanumeric() && c != '_').next();
+        let word_b = source[pos_beta..]
+            .split(|c: char| !c.is_alphanumeric() && c != '_')
+            .next();
         // Both must produce a non-empty result and not conflict
-        assert!(word_a.is_some() || word_b.is_some(), "at least one prepare-rename must find a word");
+        assert!(
+            word_a.is_some() || word_b.is_some(),
+            "at least one prepare-rename must find a word"
+        );
     }
 
     /// Bridge: rapid repeated search_bm25 calls with same query return consistent results.
     #[test]
     fn bridge_rapid_repeated_search_consistent() {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
-        state.update_grammar_kinds(vec![
-            crate::shared::GrammarKind { name: "stable_kind".into(), description: "always here".into() },
-        ]);
+        state.update_grammar_kinds(vec![crate::shared::GrammarKind {
+            name: "stable_kind".into(),
+            description: "always here".into(),
+            status: crate::shared::KindStatus::Transient,
+        }]);
         let tier = UiTier::new(state);
         // 50 rapid calls must all return the same result
         let reference = tier.search_bm25("stable");
         for _ in 0..50 {
             let hits = tier.search_bm25("stable");
             assert_eq!(
-                hits.len(), reference.len(),
+                hits.len(),
+                reference.len(),
                 "rapid calls must return consistent result counts"
             );
         }
@@ -1544,14 +1902,19 @@ mod tests {
     #[test]
     fn bridge_is_known_kind_long_input_no_panic() {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
-        state.update_grammar_kinds(vec![
-            crate::shared::GrammarKind { name: "short".into(), description: "".into() },
-        ]);
+        state.update_grammar_kinds(vec![crate::shared::GrammarKind {
+            name: "short".into(),
+            description: "".into(),
+            status: crate::shared::KindStatus::Transient,
+        }]);
         let tier = UiTier::new(state);
         let long_kind = "a".repeat(10_000);
         // Must not panic regardless of input length
         let result = tier.is_known_kind(&long_kind);
-        assert!(!result, "very long kind name must not match any loaded kind");
+        assert!(
+            !result,
+            "very long kind name must not match any loaded kind"
+        );
     }
 
     /// Bridge: grammar_keywords count stays stable after many read calls.
@@ -1559,14 +1922,30 @@ mod tests {
     fn bridge_grammar_keywords_stable_count() {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
         state.update_grammar_kinds(vec![
-            crate::shared::GrammarKind { name: "stable_a".into(), description: "".into() },
-            crate::shared::GrammarKind { name: "stable_b".into(), description: "".into() },
-            crate::shared::GrammarKind { name: "stable_c".into(), description: "".into() },
+            crate::shared::GrammarKind {
+                name: "stable_a".into(),
+                description: "".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            crate::shared::GrammarKind {
+                name: "stable_b".into(),
+                description: "".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            crate::shared::GrammarKind {
+                name: "stable_c".into(),
+                description: "".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
         ]);
         let tier = UiTier::new(state);
         for _ in 0..20 {
             let kw = tier.grammar_keywords();
-            assert_eq!(kw.len(), 3, "grammar_keywords count must remain stable at 3");
+            assert_eq!(
+                kw.len(),
+                3,
+                "grammar_keywords count must remain stable at 3"
+            );
         }
     }
 
@@ -1574,9 +1953,11 @@ mod tests {
     #[test]
     fn bridge_search_bm25_non_ascii_query_no_panic() {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
-        state.update_grammar_kinds(vec![
-            crate::shared::GrammarKind { name: "emit".into(), description: "output".into() },
-        ]);
+        state.update_grammar_kinds(vec![crate::shared::GrammarKind {
+            name: "emit".into(),
+            description: "output".into(),
+            status: crate::shared::KindStatus::Transient,
+        }]);
         let tier = UiTier::new(state);
         // Non-ASCII query must not panic; result may be empty
         let hits = tier.search_bm25("émission");
@@ -1596,44 +1977,79 @@ mod tests {
     fn kind_count_matches_loaded_kinds() {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
         state.update_grammar_kinds(vec![
-            crate::shared::GrammarKind { name: "alpha".into(), description: "".into() },
-            crate::shared::GrammarKind { name: "beta".into(), description: "".into() },
-            crate::shared::GrammarKind { name: "gamma".into(), description: "".into() },
+            crate::shared::GrammarKind {
+                name: "alpha".into(),
+                description: "".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            crate::shared::GrammarKind {
+                name: "beta".into(),
+                description: "".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            crate::shared::GrammarKind {
+                name: "gamma".into(),
+                description: "".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
         ]);
         let tier = UiTier::new(state);
-        assert_eq!(tier.kind_count(), 3, "kind_count must equal the number of loaded kinds");
+        assert_eq!(
+            tier.kind_count(),
+            3,
+            "kind_count must equal the number of loaded kinds"
+        );
     }
 
     #[test]
     fn is_grammar_empty_true_when_no_kinds() {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
         let tier = UiTier::new(state);
-        assert!(tier.is_grammar_empty(), "fresh tier must report grammar as empty");
+        assert!(
+            tier.is_grammar_empty(),
+            "fresh tier must report grammar as empty"
+        );
     }
 
     #[test]
     fn is_grammar_empty_false_when_kinds_loaded() {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
-        state.update_grammar_kinds(vec![
-            crate::shared::GrammarKind { name: "one".into(), description: "".into() },
-        ]);
+        state.update_grammar_kinds(vec![crate::shared::GrammarKind {
+            name: "one".into(),
+            description: "".into(),
+            status: crate::shared::KindStatus::Transient,
+        }]);
         let tier = UiTier::new(state);
-        assert!(!tier.is_grammar_empty(), "tier with kinds must not be empty");
+        assert!(
+            !tier.is_grammar_empty(),
+            "tier with kinds must not be empty"
+        );
     }
 
     #[test]
     fn shared_state_getter_returns_same_arc() {
         let state = Arc::new(SharedState::new("ref.db", "g.db"));
         let tier = UiTier::new(state.clone());
-        assert!(Arc::ptr_eq(&state, tier.shared_state()), "shared_state() must return same Arc");
+        assert!(
+            Arc::ptr_eq(&state, tier.shared_state()),
+            "shared_state() must return same Arc"
+        );
     }
 
     #[test]
     fn kinds_containing_empty_substr_returns_all() {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
         state.update_grammar_kinds(vec![
-            crate::shared::GrammarKind { name: "alpha".into(), description: "".into() },
-            crate::shared::GrammarKind { name: "beta".into(), description: "".into() },
+            crate::shared::GrammarKind {
+                name: "alpha".into(),
+                description: "".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            crate::shared::GrammarKind {
+                name: "beta".into(),
+                description: "".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
         ]);
         let tier = UiTier::new(state);
         let result = tier.kinds_containing("");
@@ -1644,9 +2060,21 @@ mod tests {
     fn kinds_containing_matches_substring() {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
         state.update_grammar_kinds(vec![
-            crate::shared::GrammarKind { name: "stream_data".into(), description: "".into() },
-            crate::shared::GrammarKind { name: "stream_log".into(), description: "".into() },
-            crate::shared::GrammarKind { name: "buffer".into(), description: "".into() },
+            crate::shared::GrammarKind {
+                name: "stream_data".into(),
+                description: "".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            crate::shared::GrammarKind {
+                name: "stream_log".into(),
+                description: "".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            crate::shared::GrammarKind {
+                name: "buffer".into(),
+                description: "".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
         ]);
         let tier = UiTier::new(state);
         let result = tier.kinds_containing("stream");
@@ -1658,21 +2086,28 @@ mod tests {
     #[test]
     fn kinds_containing_case_insensitive() {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
-        state.update_grammar_kinds(vec![
-            crate::shared::GrammarKind { name: "Render".into(), description: "".into() },
-        ]);
+        state.update_grammar_kinds(vec![crate::shared::GrammarKind {
+            name: "Render".into(),
+            description: "".into(),
+            status: crate::shared::KindStatus::Transient,
+        }]);
         let tier = UiTier::new(state);
         // "render" (lowercase) should match "Render"
         let result = tier.kinds_containing("render");
-        assert!(!result.is_empty(), "kinds_containing must be case-insensitive");
+        assert!(
+            !result.is_empty(),
+            "kinds_containing must be case-insensitive"
+        );
     }
 
     #[test]
     fn kinds_containing_no_match_returns_empty() {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
-        state.update_grammar_kinds(vec![
-            crate::shared::GrammarKind { name: "emit".into(), description: "".into() },
-        ]);
+        state.update_grammar_kinds(vec![crate::shared::GrammarKind {
+            name: "emit".into(),
+            description: "".into(),
+            status: crate::shared::KindStatus::Transient,
+        }]);
         let tier = UiTier::new(state);
         let result = tier.kinds_containing("zzz_no_match");
         assert!(result.is_empty(), "no-match substr must return empty");
@@ -1684,9 +2119,21 @@ mod tests {
         let tier = UiTier::new(state.clone());
         assert_eq!(tier.kind_count(), 0);
         state.update_grammar_kinds(vec![
-            crate::shared::GrammarKind { name: "x".into(), description: "".into() },
-            crate::shared::GrammarKind { name: "y".into(), description: "".into() },
+            crate::shared::GrammarKind {
+                name: "x".into(),
+                description: "".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            crate::shared::GrammarKind {
+                name: "y".into(),
+                description: "".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
         ]);
-        assert_eq!(tier.kind_count(), 2, "kind_count must reflect updated grammar kinds");
+        assert_eq!(
+            tier.kind_count(),
+            2,
+            "kind_count must reflect updated grammar kinds"
+        );
     }
 }

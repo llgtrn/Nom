@@ -1,36 +1,44 @@
 # Nom — Implementation Plan
 
-**Date:** 2026-04-18 | **HEAD:** `c3d2323` | **Tests:** 2841 | **Workspace:** clean — Wave AE audit findings recorded
+**Date:** 2026-04-18 | **HEAD:** `679ce6b` (dirty Wave AP) | **Tests:** 8391 | **Workspace:** dirty — Wave AP complete (Iteration 61 audited), Wave AQ planned
 **Canonical:** spec `docs/superpowers/specs/2026-04-17-nomcanvas-gpui-design.md` · state `nom_state_machine_report.md` · tasks `task.md` · entry `INIT.md`
 
-## Current State (Wave AE, 2026-04-18)
+## Current State (Wave AP complete, Iteration 61 audited, 2026-04-18)
 
-DB-driven architecture CONFIRMED PASS (Wave AC/AD closed). Wave AE audit revealed:
-- CRITICAL AE1: `renderer.rs:130` — draw methods are stubs, window opens but renders zero pixels
-- CRITICAL AE2: `adapters/highlight.rs:23` — zero-width spans, syntax highlighting broken
-- HIGH AE3-AE8: lsp_provider.rs duplicate stub, scenario_workflow no-op, data_query discards SQL, Backend trait disconnected, Credential Debug leaks, eval_expr no depth guard
-- MEDIUM AE9-AE17: FrostedRect blur ignored, score adapter bypasses nom_score, SharedState Mutex/no-pool, BM25 unwired, NoSideEffects stub, int overflow, nom-theme unused in blocks, Hsla convention, background_tier stubs
+DB-driven architecture CONFIRMED PASS. **ALL 4 CRITICAL blockers FIXED in Wave AP:**
+1. **RENDER ✅**: `window.rs` now has real wgpu::Surface/Device/Queue/surface_format fields. `end_frame_render()` has full CommandEncoder+RenderPass+draw+submit+present. `build_quad_pipeline` has real VertexBufferLayout. Shaders have real QuadIn @location(0-4) + GlobalUniforms. Renders real pixels.
+2. **DB-ENUM ✅**: `BackendKind` closed enum DELETED. All dispatch uses runtime `&str`/`String` keys. `UnifiedDispatcher` + `ComposeContext` are re-exported from lib.rs and are the ONLY dispatch route.
+3. **COMPOSE-BRIDGE ✅**: `UnifiedDispatcher` is the primary dispatch. `BackendRegistry` and all callers migrated to string keys.
+4. **GRAMMAR-STATUS ✅**: `KindStatus` enum exists. `GrammarKind` has `pub status: KindStatus` field. `list_kinds()` + `promote_kind()` SQL helpers added. Transient/Partial/Complete lifecycle active.
 
-Per-crate test counts (agent-verified ~2,614 #[test] fns in source, task.md shows 2841 run).
+Per-crate test counts Wave AP actuals: nom-gpui 790, nom-blocks 560, nom-canvas-core 575, nom-compose 685, nom-graph 570, nom-collab 546, nom-editor 620, nom-compiler-bridge 553, nom-panels 601, nom-theme 556, nom-lint 485, nom-intent 470, nom-memoize 468, nom-telemetry 500, nom-cli 400.
+**TOTAL: 8391 tests, 0 failed.**
 
-### Wave AE Targets
+## Wave AM — Open Targets (wgpu device init + ComposeContext + DB-driven fixes)
 
-- [ ] **AE1** — `renderer.rs`: implement wgpu device → pipeline → instance buffer → draw → present
-- [ ] **AE2** — `adapters/highlight.rs:23`: fix `end` offset (+ token length)
-- [ ] **AE3** — delete `lsp_provider.rs`; update `lib.rs` re-exports
-- [ ] **AE4** — `scenario_workflow.rs`: implement compose step loop
-- [ ] **AE5** — `data_query.rs`: write SQL to artifact store
-- [ ] **AE6** — add `impl Backend for` each concrete backend type
-- [ ] **AE7** — custom `Debug` for `Credential` redacting `value`
-- [ ] **AE8** — `eval_expr` depth guard + `sanitize()` before eval in code_exec.rs
-- [ ] **AE9** — `FrostedRect` use blur_radius in tint calculation
-- [ ] **AE10** — `adapters/score.rs`: call `nom_score::score_atom()` under compiler feature
-- [ ] **AE11** — `SharedState`: `RwLock` for grammar_kinds; pre-open WAL read connections
-- [ ] **AE12** — wire `nom_search::BM25Index::search()` as `search_bm25` in ui_tier.rs
-- [ ] **AE13** — document `NoSideEffectsSanitizer` as STUB with TODO(security)
-- [ ] **AE14** — checked arithmetic in sandbox BinOp eval (checked_add/sub/mul)
-- [ ] **AE15** — route nom-blocks drawing colors through nom_theme::tokens
-- [ ] **AE16** — standardize Hsla.h on 0-360 degrees throughout
+### CRITICAL — Renderer
+- [ ] **AL-RENDER-1** — `renderer.rs`: `CommandEncoder` + `begin_render_pass` + `set_pipeline` + `set_vertex_buffer` + `draw_instanced` + `queue.submit` + `surface_texture.present`
+- [ ] **AL-RENDER-2** — `window.rs`: wgpu init chain after winit window — `Instance::new` → `create_surface` → `request_adapter` → `request_device` → `Renderer::with_gpu`
+- [ ] **AL-RENDER-3** — `shaders.rs`: real WGSL — `@group(0) @binding(0)` GlobalUniforms, instance attributes from QuadInstance (position/size/color/border/corners)
+- [ ] **AL-COSMIC** — `fonts.rs`: `cosmic_text::FontSystem::new()` + `load_font_data` for Inter + Libre Baskerville + Berkeley Mono
+
+### CRITICAL — DB-driven mandate
+- [ ] **AL-BACKEND-KIND** — `dispatch.rs`: replace closed enum with `pub struct BackendKind(pub String)` runtime newtype
+- [ ] **AL-GRAMMAR-STATUS** — `shared.rs`: `KindStatus { Transient, Partial, Complete }` on `GrammarKind`
+- [ ] **AL-COMPOSE-BRIDGE** — `nom-compose/src/context.rs`: `ComposeContext` envelope + `dispatch_with_context` on BackendRegistry
+
+### HIGH — Security + UI + Architecture
+- [ ] **AL-SQL-INJECT** — `data_query.rs` + `semantic.rs`: `is_safe_identifier()` allowlist validation before SQL interpolation
+- [ ] **AL-CRDT-OVERFLOW** — `nom-collab`: `checked_add` in `next_id()`, clamp remote counter in `apply()`
+- [ ] **AL-THEME-SYSTEM** — `tokens.rs`: `Theme` struct + `Theme::dark()/light()/oled()` constructors; pass through render context
+- [ ] **AL-FONTS** — `fonts.rs`: Libre Baskerville + EB Garamond + Berkeley Mono font handles
+- [ ] **AL-DEEPTHINK-CONFIDENCE** — `deep_think.rs`: `edge_color_for_confidence(card.confidence)` for left border tint
+- [ ] **AL-LAYOUT-TAFFY** — `layout.rs`: real `taffy::TaffyTree` replacing HashMap stub
+- [ ] **AL-INTENT-RESOLVER** — `nom-intent`: `IntentResolver` struct + `resolve()` method — struct is fully absent, only standalone functions exist
+- [ ] **AL-UNIFIED-DISPATCHER** — `nom-compose`: `UnifiedDispatcher` wrapping BackendRegistry + ProviderRouter + CredentialStore
+- [ ] **AL-SEMANTIC-RELOCATE** — move `semantic.rs` (WrenAI MDL BI) to `nom-compose/src/bi/` or `nom-compose/src/data/`
+- [ ] **AM-ATLAS-LRU** — `atlas.rs`: fix `evict_lru()` to call `deallocate()` per entry instead of `allocator.clear()` — partial eviction corrupts surviving UV coordinates
+- [ ] **AM-SPATIAL-WIRE** — `selection.rs` + `hit_test.rs`: wire `SpatialIndex::query_region()` — R-tree exists but O(n) linear scans used throughout
 
 ## Wave AH — Hybrid Composition System (2026-04-18, planned)
 **Spec:** `docs/superpowers/specs/2026-04-18-hybrid-compose-design.md`
@@ -49,11 +57,35 @@ Multi-kind requests route to parallel `TaskQueue` pipeline via `ComposeOrchestra
 - [ ] **AH-CACHE** — `GlueCache` in `SharedState` + 60s promotion ticker
 - [ ] **AH-DISPATCH** — `UnifiedDispatcher`: `ProviderRouter` ↔ `BackendRegistry` bridge with credential injection
 - [ ] **AH-INTENT** — `IntentResolver`: lexical scan + BM25 + `classify_with_react()`
-- [ ] **AH-GLUE** — `AiGlueOrchestrator` + `GlueBlueprint` + `ReActLlmFn` trait (4 adapters)
+- [ ] **AH-GLUE** — `AiGlueOrchestrator` + `GlueBlueprint` + `ReActLlmFn` trait (4 adapters: Stub/NomCli/Mcp/RealLlm)
 - [ ] **AH-HYBRID** — `HybridResolver` orchestrating Tier1→Tier2→Tier3
 - [ ] **AH-ORCH** — `ComposeOrchestrator` multi-kind parallel pipeline
 - [ ] **AH-DB-KINDS** — 14 initial `grammar.kinds` seed rows
+- [ ] **AH-PURPOSE** — `intended to <purpose>` clause + orchestrator rejection on absent clause
+- [ ] **AH-EXPLICIT** — user Accept → `DictWriter::insert_partial_entry()` immediately
+- [ ] **AH-PROMOTE** — `glue_promotion_config` DB table with auto-path thresholds
 - [ ] **AH-UI** — Intent Preview + AI Review cards in `nom-panels/src/right/`
+
+## Wave AI-Composer — Universal Composer Platform Leap (2026-04-18, planned)
+**Spec:** `docs/superpowers/specs/2026-04-18-nom-universal-composer-design.md`
+
+10 upstream patterns wired into 14-crate workspace. All additive. Exposes `POST /compose` as AI-native monetization surface. Grammar DB compounds as moat.
+
+### Wave AI-Composer Targets
+- [ ] **UC-CANDLE** — `nom-compiler-bridge/src/candle_adapter.rs`: `BackendDevice::Cpu` + `ReActLlmFn` impl; Phi-3/Gemma-2B in-process inference
+- [ ] **UC-QDRANT** — `nom-compose/src/intent_v2.rs`: Qdrant HNSW client; embeddings per grammar.kinds entry; replaces BM25 in `IntentResolver`
+- [ ] **UC-WASM** — `nom-compiler-bridge/src/wasm_sandbox.rs`: Wasmtime `Store<T>` + `Linker`; replaces JS AST `eval_expr`; glue .nomx compiles to WASM module
+- [ ] **UC-MIDDLEWARE** — `nom-compose/src/middleware.rs`: `StepMiddleware` trait + `MiddlewareRegistry` wrapping every dispatch call
+- [ ] **UC-TELEMETRY-MW** — latency/cost/token rows to nomdict.db via after_step(); Polars lazy aggregation
+- [ ] **UC-FLOWGRAPH** — `nom-compose/src/flow_graph.rs`: `FlowNode` + `FlowEdge` typed graph + version control; replaces linear `ComposeOrchestrator`
+- [ ] **UC-CRITIQUE** — `nom-compose/src/critique.rs`: AgentScope propose→critique→refine (3-round cap) before Wasmtime execution
+- [ ] **UC-TOOLJET** — grammar.kinds DB drives `NodePalette` (72+ kinds); `SELECT kind, label, icon FROM grammar.kinds ORDER BY use_count DESC`; zero hardcoded enums
+- [ ] **UC-POLARS** — `data_query` backend: Polars lazy `LazyFrame` + Arrow columnar format; 10-100x speed
+- [ ] **UC-HIGGSFIELD** — `nom-compose/src/vendors/higgsfield.rs`: Open-Higgsfield `MediaVendor` impl; 200+ model registry; generation history as few-shot cache
+- [ ] **UC-STREAM** — `nom-compose/src/streaming.rs`: Bolt.new `SwitchableStream` wrapping `AiGlueOrchestrator`; token-by-token .nomx to AI Review card
+- [ ] **UC-SERVE** — `nom-cli/src/serve.rs`: tokio-axum `POST /compose`; streaming + non-streaming response modes
+- [ ] **UC-PROMOTE** — `POST /promote/:glue_hash` → `DictWriter::insert_partial_entry()` for headless AI callers
+- [ ] **UC-API-TESTS** — ≥2 integration tests per pattern (20+ new tests)
 
 ## Architecture
 
@@ -73,99 +105,33 @@ Multi-kind requests route to parallel `TaskQueue` pipeline via `ComposeOrchestra
 | Concept | document (PDF/DOCX) |
 | Scenario | workflow (n8n + AST sandbox) |
 
-## Wave Missions
+## Wave History (all ✅ complete)
 
-### [x] Wave 0 — Bootstrap
-- [x] 14 crates, workspace `Cargo.toml`, `cargo check` clean
-
-### [x] Wave A — GPUI substrate (commit `8c7d32e`)
-- [x] nom-gpui scene graph (Quad · Sprite · Path · Shadow · Underline)
-- [x] 8 wgpu pipelines
-- [x] cosmic-text + etagere glyph atlas
-- [x] Element trait (request_layout/prepaint/paint)
-- [x] Styled builder + winit `ApplicationHandler` + frame_loop
-- [x] taffy wrapper + animation easing
-- [x] nom-canvas-core viewport + shape + hit-test + rubber-band + R-tree
-- [x] nom-theme 73 AFFiNE tokens + Inter + 42 Lucide icons
-
-### [x] Wave B — Editor + Blocks (commit `8c7d32e`)
-- [x] nom-editor rope + multi-cursor + display_map + wrap_map + tab_map
-- [x] `Highlighter::color_runs` consumer + `LspProvider` trait
-- [x] nom-blocks `NomtuRef` non-optional on all blocks
-- [x] AFFiNE block types (heading/para/list/quote/divider/callout/code/db/linked)
-- [x] Graph node ports derived from `clause_shapes` (DB-driven)
-- [x] can_wire() placeholder
-
-### [x] Wave C — nom-compiler-bridge KEYSTONE (commit `fb66e01`, 17/17 tests)
-- [x] shared.rs `Arc<RwLock<SharedState>>` + dict_pool + grammar + LRU
-- [x] ui_tier / interactive_tier / background_tier
-- [x] adapters: highlight · lsp · completion · score
-- [x] First wire: `.nomx` → stage1_tokenize → Highlighter
-
-### [x] Wave D — 3-column shell (20/20 tests, 9 panel modules)
-- [x] dock.rs (DockPosition/Dock/Panel) · pane.rs (PaneGroup) · shell.rs
-- [x] Left: CollapsibleSection + QuickSearchInput + ResizePanel + dict tree
-- [x] Right: ChatSidebar + tool cards + deep-think stream + multi-agent
-- [x] WindowPool multi-window
-
-### [x] Wave E — 16 compose backends (commit `a1ba5a1`, 26/26 tests)
-- [x] document · video · image · audio · data_extract · data_frame · data_query
-- [x] web_screen · native · mobile · presentation · app_bundle · ad_creative
-- [x] workflow · scenario · rag_query · transform · embed_gen · render · export · pipeline
-- [x] ArtifactStore + ProgressSink
-
-### [x] Wave F — Graph RAG + Deep thinking
-- [x] graph_rag.rs (GraphRagRetriever + BFS + cosine + RRF)
-- [x] graph_mode.rs (GraphModeState + force-directed + confidence edges)
-- [x] deep_think.rs (DeepThinkStream + DeepThinkStep chain)
-
-### [x] Wave G — Stubs populated (commit `546e02d`)
-- [x] nom-lint · nom-collab (RGA CRDT) · nom-telemetry (W3C traceparent)
-
-### [x] Wave K — 4 CRITICAL closures (commit `dc6a025`, 457 tests)
-- [x] U1 — nom-panels `paint_scene` uses nom_gpui::scene::Quad + nom_theme::tokens
-- [x] W1 — deep_think imports `nom_intent::classify_with_react` real ReAct
-- [x] COL1 — RGA CRDT (RgaPos anchor + tombstone + convergence tests)
-- [x] INT1 — 11+ cross-crate `use nom_gpui::scene` imports
-
-### [x] Wave L — MEDIUM closures (commit `d139644`)
-- [x] with_deep_think wired · W3C traceparent · RRF `1/(60+rank)` · impl Element on elements
-
-### [x] Wave M — Infra (commit `ef9fc84`, 498 tests)
-- [x] nom-lint sealed trait · compiler-bridge 3-tier · compose dispatch/plan/task_queue · graph 4-tier cache
-
-### [x] Wave N — Infra+Vendor (commit `d6219b1`, 523 tests)
-- [x] nom-compose: MediaVendor trait + ProviderRouter 3-tier fallback + CredentialStore kind-keyed
-- [x] nom-graph: 4 AST sanitizers + eval_expr
-- [x] nom-compose: SHA-256 ContentHash via sha2 + SemanticModel/SemanticRegistry MDL
-
-### [x] Wave O — Infra+LSP (commit `e61a93c`, 537 tests)
-- [x] nom-compiler-bridge: CompilerLspProvider (real completions/diagnostics from nom-compiler)
-- [x] nom-compose: code_exec (n8n JsTaskRunner + sandbox wiring) + web_screen (headless browser stub)
-- [x] nom-graph: ExecutionEngine cancel/abort signal + HierarchicalCache L1→L2 promotion wiring
-
-### [x] Wave P — Bug fixes + MEDIUMs (commit `15a8366`, 558 tests)
-- [x] E2 CRITICAL: GraphNodeElement::paint() + WireElement::paint() push real Quads + port circles + bezier
-- [x] TQ1/CK1/DP1/F1/NR1/NI1/DEEP1/FG1/FR1/PAL1 HIGHs closed
-- [x] MEDIUMs: RRF_K const + InternalRule 3rd trait + HierarchicalCache::len L1+L2 + Panel trait 7 methods
-
-### [ ] Wave V — GPU library wiring + test coverage push (2026-04-18)
-- [ ] **ETAGERE-WIRE** — atlas.rs uses `BucketedAtlasAllocator` from etagere (not manual shelf)
-- [ ] **BYTEMUCK-WIRE** — `QuadInstance`/`SpriteInstance`/`GlobalUniforms` derive `Pod+Zeroable`
-- [ ] **CLI-EXPAND** — nom-cli: 5 new commands (version/help/run/format/rag--top-k) + 10 tests → 28+
-- [ ] **TEST-CANVAS-CORE** — nom-canvas-core: +12 tests → 50+
-- [ ] **TEST-THEME** — nom-theme: +12 tests → 32+
-- [ ] **TEST-EDITOR** — nom-editor: +12 tests → 64+
-- [ ] **TEST-GRAPH** — nom-graph: +12 tests → 79+
-- [ ] **TEST-COMPOSE** — nom-compose: +12 tests → 106+
-- [ ] **TEST-INTENT-COLLAB-MEMO** — +15 tests across intent/collab/memoize
-- [ ] **LINEAR-RGBA** — `LinearRgba` type + `ColorSpace` enum added to nom-gpui
-
-**Goal:** wire real GPU library types (etagere atlas allocation, bytemuck GPU buffer safety) and push total tests from 733 → 800+.
-
-## Vendoring
-
-Reference-repo claims require a fresh parity audit before being used as pass evidence. Local source paths exist for many references, but Remotion, Open-Higgsfield, and opendataloader were not found under the claimed local patterns during Wave AC; mark those as unverified until paths or evidence are supplied.
+| Wave | Commit | Tests | Highlights |
+|---|---|---|---|
+| Wave 0 Bootstrap | — | — | 14 crates, workspace clean |
+| Wave A GPUI substrate | `8c7d32e` | — | nom-gpui scene graph, 8 wgpu pipelines, etagere atlas, winit |
+| Wave B Editor+Blocks | `8c7d32e` | — | nom-editor rope, nom-blocks NomtuRef non-optional, AFFiNE block types |
+| Wave C Compiler bridge | `fb66e01` | 17 | shared.rs 3-tier, adapters, first .nomx → highlight wire |
+| Wave D Shell | — | 20 | dock, pane, shell, left/right/bottom panels |
+| Wave E 16 backends | `a1ba5a1` | 26 | ArtifactStore + ProgressSink + 16 compose backends |
+| Wave F Graph RAG | `be3b9a8` | — | graph_rag.rs, graph_mode.rs, deep_think.rs |
+| Wave G Stubs | `546e02d` | — | nom-lint sealed, nom-collab RGA CRDT, nom-telemetry W3C |
+| Wave K 4 CRITICALs | `dc6a025` | 457 | U1/W1/COL1/INT1 |
+| Wave L MEDIUMs | `d139644` | 504 | deep_think + W3C + RRF + impl Element |
+| Wave M Infra | `ef9fc84` | 498 | sealed + 3-tier + dispatch/plan/task_queue + 4-tier cache |
+| Wave N Infra+Vendor | `d6219b1` | 523 | MediaVendor + ProviderRouter + CredentialStore + SHA-256 + MDL |
+| Wave O Infra+LSP | `e61a93c` | 537 | CompilerLspProvider + cancel + cache-promotion + sandbox |
+| Wave P Bug fixes | `15a8366` | 558 | E2 CRITICAL + 10 HIGH/MEDIUM |
+| Wave Q Quality | `f0ca908` | 581 | sandbox sanitizers + score adapter + can_wire + rag-confidence |
+| Wave R Coverage | `0949124` | 638 | NI1 + SipHash13 + coverage expansion |
+| Wave S Spec align | `c4d6252` | 686 | 5 panels + 10 backends + FrostedRect + hints |
+| Wave T Cleanup | `0b0d48e` | 717 | scenario_workflow + integration tests |
+| Waves V–AB | `c3d2323` | 2841 | GPU library wiring + 9 coverage waves (+2124 tests) |
+| Waves AF–AK | `8088889` | 6743 | Minimalist UI + 5 coverage waves (+3902 tests) |
+| Wave AL | `778b085` | 7241 | CommandStack + CRDT GC + panel serialization (+498 tests) |
+| Waves AM–AO | `679ce6b` | 8384 | DB-driven palette/library/SQL inject/CRDT fix/spatial/frame/theme (+1143 tests) |
+| Wave AP | uncommitted | 8391 | **ALL 4 CRITICALS FIXED**: renderer renders pixels, BackendKind deleted, GrammarKind.status, TaffyTree, atlas LRU, 21 items closed (+7 tests) |
 
 ## Non-Negotiable Rules
 

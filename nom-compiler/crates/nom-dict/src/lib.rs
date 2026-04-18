@@ -2718,7 +2718,7 @@ mod tests {
     /// find_entity returns the inserted row by hash and None for an unknown hash.
     #[test]
     fn canonical_find_entity_round_trip() {
-        use dict::{find_entity, upsert_entity, Dict};
+        use dict::{Dict, find_entity, upsert_entity};
         let d = Dict::open_in_memory().unwrap();
         let row = make_word_v2_row("deadbeef0001", "compress_lz4");
         upsert_entity(&d, &row).unwrap();
@@ -2734,7 +2734,7 @@ mod tests {
     /// find_entities_by_word and find_entities_by_kind return consistent counts.
     #[test]
     fn canonical_entities_query_consistency() {
-        use dict::{find_entities_by_kind, find_entities_by_word, upsert_entity, Dict};
+        use dict::{Dict, find_entities_by_kind, find_entities_by_word, upsert_entity};
         let d = Dict::open_in_memory().unwrap();
 
         upsert_entity(&d, &make_word_v2_row("h-enc-1", "encode_opus")).unwrap();
@@ -2764,7 +2764,7 @@ mod tests {
     /// count_entities_by_status groups rows into (status, count) pairs.
     #[test]
     fn canonical_count_entities_by_status() {
-        use dict::{count_entities_by_status, upsert_entity, Dict};
+        use dict::{Dict, count_entities_by_status, upsert_entity};
         let d = Dict::open_in_memory().unwrap();
 
         upsert_entity(&d, &make_word_v2_row("s-c1", "fn_a")).unwrap();
@@ -2783,7 +2783,7 @@ mod tests {
     /// find_entities_by_body_kind filters by the body_kind column.
     #[test]
     fn canonical_find_entities_by_body_kind() {
-        use dict::{find_entities_by_body_kind, upsert_entity, Dict};
+        use dict::{Dict, find_entities_by_body_kind, upsert_entity};
         use nom_types::body_kind;
         let d = Dict::open_in_memory().unwrap();
 
@@ -2801,7 +2801,11 @@ mod tests {
 
         let bc_rows = find_entities_by_body_kind(&d, body_kind::BC, 10).unwrap();
         assert_eq!(bc_rows.len(), 2);
-        assert!(bc_rows.iter().all(|r| r.body_kind.as_deref() == Some(body_kind::BC)));
+        assert!(
+            bc_rows
+                .iter()
+                .all(|r| r.body_kind.as_deref() == Some(body_kind::BC))
+        );
 
         let avif_rows = find_entities_by_body_kind(&d, body_kind::AVIF, 10).unwrap();
         assert_eq!(avif_rows.len(), 1);
@@ -2818,7 +2822,7 @@ mod tests {
     /// find_entities with an empty EntryFilter returns rows up to the limit.
     #[test]
     fn canonical_find_entities_empty_filter_respects_limit() {
-        use dict::{find_entities, upsert_entity, Dict};
+        use dict::{Dict, find_entities, upsert_entity};
         let d = Dict::open_in_memory().unwrap();
 
         for i in 0..10u8 {
@@ -2829,16 +2833,33 @@ mod tests {
             .unwrap();
         }
 
-        let all = find_entities(&d, &EntryFilter { limit: 20, ..EntryFilter::default() }).unwrap();
+        let all = find_entities(
+            &d,
+            &EntryFilter {
+                limit: 20,
+                ..EntryFilter::default()
+            },
+        )
+        .unwrap();
         assert_eq!(all.len(), 10);
 
-        let capped = find_entities(&d, &EntryFilter { limit: 3, ..EntryFilter::default() }).unwrap();
+        let capped = find_entities(
+            &d,
+            &EntryFilter {
+                limit: 3,
+                ..EntryFilter::default()
+            },
+        )
+        .unwrap();
         assert_eq!(capped.len(), 3);
 
         // Results are ordered by hash (deterministic).
         let hashes: Vec<&str> = capped.iter().map(|r| r.hash.as_str()).collect();
         let mut sorted = hashes.clone();
         sorted.sort();
-        assert_eq!(hashes, sorted, "find_entities must return rows ordered by hash");
+        assert_eq!(
+            hashes, sorted,
+            "find_entities must return rows ordered by hash"
+        );
     }
 }

@@ -664,8 +664,16 @@ mod tests {
         let w = br[0] - tl[0];
         let h = br[1] - tl[1];
         // At 0.1x zoom the visible canvas width = 800 / 0.1 = 8000
-        assert!(w > 7000.0, "visible width at min zoom should be huge, got {}", w);
-        assert!(h > 5000.0, "visible height at min zoom should be huge, got {}", h);
+        assert!(
+            w > 7000.0,
+            "visible width at min zoom should be huge, got {}",
+            w
+        );
+        assert!(
+            h > 5000.0,
+            "visible height at min zoom should be huge, got {}",
+            h
+        );
     }
 
     /// visible_bounds at maximum zoom covers a very small canvas area.
@@ -677,8 +685,16 @@ mod tests {
         let w = br[0] - tl[0];
         let h = br[1] - tl[1];
         // At 32x zoom the visible canvas width = 800 / 32 = 25
-        assert!(w < 30.0, "visible width at max zoom should be tiny, got {}", w);
-        assert!(h < 25.0, "visible height at max zoom should be tiny, got {}", h);
+        assert!(
+            w < 30.0,
+            "visible width at max zoom should be tiny, got {}",
+            w
+        );
+        assert!(
+            h < 25.0,
+            "visible height at max zoom should be tiny, got {}",
+            h
+        );
     }
 
     /// pan_by with negative delta moves viewport in negative direction.
@@ -759,10 +775,22 @@ mod tests {
         vp.pan_by([33.0, -17.0]);
         let vp2 = vp.clone();
         assert!((vp2.zoom - vp.zoom).abs() < 1e-6, "zoom must survive clone");
-        assert!((vp2.pan[0] - vp.pan[0]).abs() < 1e-6, "pan.x must survive clone");
-        assert!((vp2.pan[1] - vp.pan[1]).abs() < 1e-6, "pan.y must survive clone");
-        assert!((vp2.size[0] - vp.size[0]).abs() < 1e-6, "size.w must survive clone");
-        assert!((vp2.size[1] - vp.size[1]).abs() < 1e-6, "size.h must survive clone");
+        assert!(
+            (vp2.pan[0] - vp.pan[0]).abs() < 1e-6,
+            "pan.x must survive clone"
+        );
+        assert!(
+            (vp2.pan[1] - vp.pan[1]).abs() < 1e-6,
+            "pan.y must survive clone"
+        );
+        assert!(
+            (vp2.size[0] - vp.size[0]).abs() < 1e-6,
+            "size.w must survive clone"
+        );
+        assert!(
+            (vp2.size[1] - vp.size[1]).abs() < 1e-6,
+            "size.h must survive clone"
+        );
     }
 
     /// After zoom_toward then inverse zoom, the viewport returns to original zoom.
@@ -774,10 +802,19 @@ mod tests {
         let original_pan = vp.pan;
         vp.zoom_toward(3.0, cursor);
         vp.zoom_toward(original_zoom, cursor);
-        assert!((vp.zoom - original_zoom).abs() < 1e-5, "zoom must return to original");
+        assert!(
+            (vp.zoom - original_zoom).abs() < 1e-5,
+            "zoom must return to original"
+        );
         // Pan should also return to original when re-zooming to original level at screen centre.
-        assert!((vp.pan[0] - original_pan[0]).abs() < 1e-3, "pan.x must return");
-        assert!((vp.pan[1] - original_pan[1]).abs() < 1e-3, "pan.y must return");
+        assert!(
+            (vp.pan[0] - original_pan[0]).abs() < 1e-3,
+            "pan.x must return"
+        );
+        assert!(
+            (vp.pan[1] - original_pan[1]).abs() < 1e-3,
+            "pan.y must return"
+        );
     }
 
     /// Scroll wheel accumulation: multiple small zoom steps accumulate correctly.
@@ -790,7 +827,11 @@ mod tests {
         for &z in &step_zooms {
             vp.zoom_toward(z, cursor);
         }
-        assert!((vp.zoom - 1.5).abs() < 1e-5, "accumulated zoom should be 1.5, got {}", vp.zoom);
+        assert!(
+            (vp.zoom - 1.5).abs() < 1e-5,
+            "accumulated zoom should be 1.5, got {}",
+            vp.zoom
+        );
     }
 
     /// Fit-to-rect with aspect preservation: the smaller dimension fits and the
@@ -798,7 +839,7 @@ mod tests {
     #[test]
     fn fit_to_rect_aspect_preservation() {
         let mut vp = Viewport::new(800.0, 400.0); // 2:1 viewport
-        // A square canvas rect.
+                                                  // A square canvas rect.
         let (rx, ry, rw, rh) = (0.0_f32, 0.0, 100.0, 100.0);
         let zoom_x = vp.size[0] / rw; // 8.0
         let zoom_y = vp.size[1] / rh; // 4.0
@@ -809,11 +850,23 @@ mod tests {
         vp.pan = [-cx * new_zoom, -cy * new_zoom];
         // All four corners must be visible.
         assert!(vp.is_point_visible([rx, ry]), "top-left must be visible");
-        assert!(vp.is_point_visible([rx + rw, ry]), "top-right must be visible");
-        assert!(vp.is_point_visible([rx, ry + rh]), "bottom-left must be visible");
-        assert!(vp.is_point_visible([rx + rw, ry + rh]), "bottom-right must be visible");
+        assert!(
+            vp.is_point_visible([rx + rw, ry]),
+            "top-right must be visible"
+        );
+        assert!(
+            vp.is_point_visible([rx, ry + rh]),
+            "bottom-left must be visible"
+        );
+        assert!(
+            vp.is_point_visible([rx + rw, ry + rh]),
+            "bottom-right must be visible"
+        );
         // The zoom chosen is the height-limited one (4.0), not width-limited (8.0).
-        assert!((vp.zoom - zoom_y).abs() < 1e-5, "zoom must be height-limited");
+        assert!(
+            (vp.zoom - zoom_y).abs() < 1e-5,
+            "zoom must be height-limited"
+        );
     }
 
     /// Viewport size changes: visible_bounds correctly reflects new canvas area.
@@ -824,8 +877,14 @@ mod tests {
         let (_, br_small) = vp_small.visible_bounds();
         let (_, br_large) = vp_large.visible_bounds();
         // Larger screen → larger visible canvas area.
-        assert!(br_large[0] > br_small[0], "larger viewport shows more canvas width");
-        assert!(br_large[1] > br_small[1], "larger viewport shows more canvas height");
+        assert!(
+            br_large[0] > br_small[0],
+            "larger viewport shows more canvas width"
+        );
+        assert!(
+            br_large[1] > br_small[1],
+            "larger viewport shows more canvas height"
+        );
     }
 
     /// Pan then reset: visible_bounds returns to the default after reset.
@@ -836,7 +895,11 @@ mod tests {
         vp.reset();
         let (tl, br) = vp.visible_bounds();
         // At zoom=1, pan=0: canvas bounds are [-400,-300] to [400,300].
-        assert!((tl[0] - (-400.0)).abs() < 1e-4, "tl.x after reset={}", tl[0]);
+        assert!(
+            (tl[0] - (-400.0)).abs() < 1e-4,
+            "tl.x after reset={}",
+            tl[0]
+        );
         assert!((br[0] - 400.0).abs() < 1e-4, "br.x after reset={}", br[0]);
     }
 
@@ -852,12 +915,16 @@ mod tests {
             assert!(
                 (via_matrix[0] - direct[0]).abs() < 1e-3,
                 "x mismatch at zoom={}: matrix={} direct={}",
-                zoom, via_matrix[0], direct[0]
+                zoom,
+                via_matrix[0],
+                direct[0]
             );
             assert!(
                 (via_matrix[1] - direct[1]).abs() < 1e-3,
                 "y mismatch at zoom={}: matrix={} direct={}",
-                zoom, via_matrix[1], direct[1]
+                zoom,
+                via_matrix[1],
+                direct[1]
             );
         }
     }
@@ -869,7 +936,11 @@ mod tests {
         vp.zoom_toward(16.0, [400.0, 300.0]);
         let b = vp.visible_bounds_gpui();
         // At 16x zoom, visible width = 800/16 = 50 px canvas.
-        assert!(b.size.width.0 < 60.0, "visible width at 16x zoom should be < 60, got {}", b.size.width.0);
+        assert!(
+            b.size.width.0 < 60.0,
+            "visible width at 16x zoom should be < 60, got {}",
+            b.size.width.0
+        );
     }
 
     /// screen_to_canvas with pan: offset shifts the canvas mapping.
@@ -879,7 +950,11 @@ mod tests {
         vp.pan_by([100.0, 0.0]);
         // Screen centre is (400, 300). With pan_x=100, canvas_x = (400 - 400 - 100)/1 = -100.
         let canvas = vp.screen_to_canvas([400.0, 300.0]);
-        assert!((canvas[0] - (-100.0)).abs() < 1e-4, "canvas.x={}", canvas[0]);
+        assert!(
+            (canvas[0] - (-100.0)).abs() < 1e-4,
+            "canvas.x={}",
+            canvas[0]
+        );
         assert!((canvas[1]).abs() < 1e-4, "canvas.y={}", canvas[1]);
     }
 
@@ -927,7 +1002,7 @@ mod tests {
     #[test]
     fn zoom_to_fit_selects_limiting_axis() {
         let mut vp = Viewport::new(800.0, 400.0); // 2:1 viewport
-        // Very wide canvas rect: 400×100 — width-limited.
+                                                  // Very wide canvas rect: 400×100 — width-limited.
         let (rx, ry, rw, rh) = (0.0_f32, 0.0, 400.0, 100.0);
         let zoom_x = vp.size[0] / rw; // 2.0
         let zoom_y = vp.size[1] / rh; // 4.0
@@ -965,8 +1040,16 @@ mod tests {
         assert!((vp.pan[1]).abs() < 1e-6, "pan.y must be 0 after reset");
         // Screen centre must map to canvas origin after reset.
         let canvas = vp.screen_to_canvas([400.0, 300.0]);
-        assert!((canvas[0]).abs() < 1e-4, "canvas.x after reset={}", canvas[0]);
-        assert!((canvas[1]).abs() < 1e-4, "canvas.y after reset={}", canvas[1]);
+        assert!(
+            (canvas[0]).abs() < 1e-4,
+            "canvas.x after reset={}",
+            canvas[0]
+        );
+        assert!(
+            (canvas[1]).abs() < 1e-4,
+            "canvas.y after reset={}",
+            canvas[1]
+        );
     }
 
     /// nested_canvas_transform: apply two successive pan+zoom steps and verify
@@ -1071,7 +1154,11 @@ mod tests {
         // Canvas (1, 0) should be 2px to the right of the position it would occupy at zoom=1.
         // At zoom=2, pan=0: screen_x = 1*2 + 0 + 400 = 402; at zoom=1 it would be 401.
         let screen2 = vp.canvas_to_screen([1.0, 0.0]);
-        assert!((screen2[0] - 402.0).abs() < 1e-3, "screen.x at zoom=2: {}", screen2[0]);
+        assert!(
+            (screen2[0] - 402.0).abs() < 1e-3,
+            "screen.x at zoom=2: {}",
+            screen2[0]
+        );
     }
 
     /// pan_by offsets the world origin on screen.
@@ -1093,7 +1180,10 @@ mod tests {
         vp2.zoom_toward(0.5, [400.0, 300.0]);
         let (tl1, br1) = vp1.visible_bounds();
         let (tl2, br2) = vp2.visible_bounds();
-        assert!(br2[0] - tl2[0] > br1[0] - tl1[0], "lower zoom must expand visible rect");
+        assert!(
+            br2[0] - tl2[0] > br1[0] - tl1[0],
+            "lower zoom must expand visible rect"
+        );
     }
 
     /// Higher zoom level shrinks the visible canvas rect.
@@ -1104,7 +1194,10 @@ mod tests {
         vp2.zoom_toward(4.0, [400.0, 300.0]);
         let (tl1, br1) = vp1.visible_bounds();
         let (tl2, br2) = vp2.visible_bounds();
-        assert!(br2[0] - tl2[0] < br1[0] - tl1[0], "higher zoom must shrink visible rect");
+        assert!(
+            br2[0] - tl2[0] < br1[0] - tl1[0],
+            "higher zoom must shrink visible rect"
+        );
     }
 
     /// Zoom cannot go below 0.1.
@@ -1112,7 +1205,11 @@ mod tests {
     fn viewport_min_zoom_clamped() {
         let mut vp = Viewport::new(800.0, 600.0);
         vp.zoom_toward(0.0001, [400.0, 300.0]);
-        assert!((vp.zoom - 0.1).abs() < 1e-6, "zoom must clamp to min 0.1, got {}", vp.zoom);
+        assert!(
+            (vp.zoom - 0.1).abs() < 1e-6,
+            "zoom must clamp to min 0.1, got {}",
+            vp.zoom
+        );
     }
 
     /// Zoom cannot exceed 64 (clamp is at 32.0 per implementation, verify 32 is the max).
@@ -1141,11 +1238,20 @@ mod tests {
     fn viewport_contains_world_point_when_visible() {
         let vp = Viewport::new(800.0, 600.0);
         // Canvas origin maps to screen centre — clearly visible.
-        assert!(vp.is_point_visible([0.0, 0.0]), "canvas origin must be visible");
+        assert!(
+            vp.is_point_visible([0.0, 0.0]),
+            "canvas origin must be visible"
+        );
         // Point within the visible area at zoom=1: canvas (-300, -200) → screen (100, 100) — visible.
-        assert!(vp.is_point_visible([-300.0, -200.0]), "canvas (-300,-200) must be visible at zoom=1");
+        assert!(
+            vp.is_point_visible([-300.0, -200.0]),
+            "canvas (-300,-200) must be visible at zoom=1"
+        );
         // Canvas (500, 0) → screen (900, 300) > 800 → not visible.
-        assert!(!vp.is_point_visible([500.0, 0.0]), "canvas (500,0) must not be visible");
+        assert!(
+            !vp.is_point_visible([500.0, 0.0]),
+            "canvas (500,0) must not be visible"
+        );
     }
 
     /// Zoom = 0.5 doubles the visible canvas area vs zoom = 1.
@@ -1215,8 +1321,15 @@ mod tests {
         let zoom = (vp.size[0] / rw).min(vp.size[1] / rh).clamp(0.1, 32.0);
         vp.zoom = zoom;
         vp.pan = [-(rw / 2.0) * zoom, -(rh / 2.0) * zoom];
-        assert!((vp.zoom - 7.5).abs() < 1e-4, "zoom must be min(8,7.5)=7.5, got {}", vp.zoom);
-        assert!(vp.is_point_visible([0.0, 0.0]), "origin must be visible after fit");
+        assert!(
+            (vp.zoom - 7.5).abs() < 1e-4,
+            "zoom must be min(8,7.5)=7.5, got {}",
+            vp.zoom
+        );
+        assert!(
+            vp.is_point_visible([0.0, 0.0]),
+            "origin must be visible after fit"
+        );
     }
 
     #[test]
@@ -1226,8 +1339,16 @@ mod tests {
         let screen_pt = [300.0_f32, 200.0_f32];
         let canvas = vp.screen_to_canvas(screen_pt);
         let back = vp.canvas_to_screen(canvas);
-        assert!((back[0] - screen_pt[0]).abs() < 1e-4, "x round-trip: {}", back[0]);
-        assert!((back[1] - screen_pt[1]).abs() < 1e-4, "y round-trip: {}", back[1]);
+        assert!(
+            (back[0] - screen_pt[0]).abs() < 1e-4,
+            "x round-trip: {}",
+            back[0]
+        );
+        assert!(
+            (back[1] - screen_pt[1]).abs() < 1e-4,
+            "y round-trip: {}",
+            back[1]
+        );
     }
 
     #[test]
@@ -1244,7 +1365,10 @@ mod tests {
     #[test]
     fn viewport_canvas_origin_visible_at_default() {
         let vp = Viewport::new(800.0, 600.0);
-        assert!(vp.is_point_visible([0.0, 0.0]), "canvas origin must be visible at default");
+        assert!(
+            vp.is_point_visible([0.0, 0.0]),
+            "canvas origin must be visible at default"
+        );
     }
 
     #[test]
@@ -1252,8 +1376,16 @@ mod tests {
         let mut vp = Viewport::new(800.0, 600.0);
         vp.pan_by([25.0, 10.0]);
         vp.pan_by([25.0, 10.0]);
-        assert!((vp.pan[0] - 50.0).abs() < 1e-5, "pan.x should be 50, got {}", vp.pan[0]);
-        assert!((vp.pan[1] - 20.0).abs() < 1e-5, "pan.y should be 20, got {}", vp.pan[1]);
+        assert!(
+            (vp.pan[0] - 50.0).abs() < 1e-5,
+            "pan.x should be 50, got {}",
+            vp.pan[0]
+        );
+        assert!(
+            (vp.pan[1] - 20.0).abs() < 1e-5,
+            "pan.y should be 20, got {}",
+            vp.pan[1]
+        );
     }
 
     #[test]
@@ -1265,7 +1397,10 @@ mod tests {
         let (tl2, br2) = vp2.visible_bounds();
         let w1 = br1[0] - tl1[0];
         let w2 = br2[0] - tl2[0];
-        assert!(w2 > w1, "lower zoom must show more canvas area: w1={w1} w2={w2}");
+        assert!(
+            w2 > w1,
+            "lower zoom must show more canvas area: w1={w1} w2={w2}"
+        );
     }
 
     #[test]
@@ -1273,8 +1408,16 @@ mod tests {
         let mut vp = Viewport::new(800.0, 600.0);
         vp.zoom_toward(3.0, [400.0, 300.0]);
         let m = vp.to_scene_transform();
-        assert!((m[0][0] - 3.0).abs() < 1e-5, "scene transform must encode zoom=3, got {}", m[0][0]);
-        assert!((m[1][1] - 3.0).abs() < 1e-5, "scene transform must encode zoom=3, got {}", m[1][1]);
+        assert!(
+            (m[0][0] - 3.0).abs() < 1e-5,
+            "scene transform must encode zoom=3, got {}",
+            m[0][0]
+        );
+        assert!(
+            (m[1][1] - 3.0).abs() < 1e-5,
+            "scene transform must encode zoom=3, got {}",
+            m[1][1]
+        );
     }
 
     // ── new tests (Wave AI) ──────────────────────────────────────────────────
@@ -1286,9 +1429,15 @@ mod tests {
         let cursor = [400.0_f32, 300.0];
         let original = vp.zoom;
         vp.zoom_toward(2.0, cursor);
-        assert!((vp.zoom - 2.0).abs() < 1e-5, "zoom must be 2.0 after zoom-in");
+        assert!(
+            (vp.zoom - 2.0).abs() < 1e-5,
+            "zoom must be 2.0 after zoom-in"
+        );
         vp.zoom_toward(original, cursor);
-        assert!((vp.zoom - original).abs() < 1e-5, "zoom must return to original after zoom-out");
+        assert!(
+            (vp.zoom - original).abs() < 1e-5,
+            "zoom must return to original after zoom-out"
+        );
     }
 
     /// Pan then reset: pan is zeroed and canvas origin is at screen centre.
@@ -1301,8 +1450,16 @@ mod tests {
         assert!((vp.pan[1]).abs() < 1e-6, "pan.y must be 0 after reset");
         // Canvas origin maps to screen centre after reset.
         let screen = vp.canvas_to_screen([0.0, 0.0]);
-        assert!((screen[0] - 400.0).abs() < 1e-4, "screen.x of canvas origin after reset: {}", screen[0]);
-        assert!((screen[1] - 300.0).abs() < 1e-4, "screen.y of canvas origin after reset: {}", screen[1]);
+        assert!(
+            (screen[0] - 400.0).abs() < 1e-4,
+            "screen.x of canvas origin after reset: {}",
+            screen[0]
+        );
+        assert!(
+            (screen[1] - 300.0).abs() < 1e-4,
+            "screen.y of canvas origin after reset: {}",
+            screen[1]
+        );
     }
 
     /// pan_by is equivalent to scroll in screen space.
@@ -1331,8 +1488,14 @@ mod tests {
         let cy = ry + rh / 2.0;
         vp.zoom = new_zoom;
         vp.pan = [-cx * new_zoom, -cy * new_zoom];
-        assert!(vp.is_point_visible([rx, ry]), "top-left of selection must be visible");
-        assert!(vp.is_point_visible([rx + rw, ry + rh]), "bottom-right of selection must be visible");
+        assert!(
+            vp.is_point_visible([rx, ry]),
+            "top-left of selection must be visible"
+        );
+        assert!(
+            vp.is_point_visible([rx + rw, ry + rh]),
+            "bottom-right of selection must be visible"
+        );
     }
 
     // ── Wave AK: requested viewport scenarios ────────────────────────────────
@@ -1368,8 +1531,16 @@ mod tests {
         assert!((vp.pan[0]).abs() < 1e-6);
         assert!((vp.pan[1]).abs() < 1e-6);
         vp.pan_by([40.0, -15.0]);
-        assert!((vp.pan[0] - 40.0).abs() < 1e-6, "pan.x must be 40, got {}", vp.pan[0]);
-        assert!((vp.pan[1] - (-15.0)).abs() < 1e-6, "pan.y must be -15, got {}", vp.pan[1]);
+        assert!(
+            (vp.pan[0] - 40.0).abs() < 1e-6,
+            "pan.x must be 40, got {}",
+            vp.pan[0]
+        );
+        assert!(
+            (vp.pan[1] - (-15.0)).abs() < 1e-6,
+            "pan.y must be -15, got {}",
+            vp.pan[1]
+        );
     }
 
     /// world-to-screen and screen-to-world are inverse operations at default zoom/pan.
@@ -1379,8 +1550,14 @@ mod tests {
         let world_pt = [123.0_f32, -77.0];
         let screen = vp.canvas_to_screen(world_pt);
         let back = vp.screen_to_canvas(screen);
-        assert!((back[0] - world_pt[0]).abs() < 1e-4, "world x must survive round-trip");
-        assert!((back[1] - world_pt[1]).abs() < 1e-4, "world y must survive round-trip");
+        assert!(
+            (back[0] - world_pt[0]).abs() < 1e-4,
+            "world x must survive round-trip"
+        );
+        assert!(
+            (back[1] - world_pt[1]).abs() < 1e-4,
+            "world y must survive round-trip"
+        );
     }
 
     /// world-to-screen and screen-to-world are inverses at non-trivial zoom+pan.
@@ -1392,8 +1569,14 @@ mod tests {
         let world_pt = [-55.5_f32, 33.3];
         let screen = vp.canvas_to_screen(world_pt);
         let back = vp.screen_to_canvas(screen);
-        assert!((back[0] - world_pt[0]).abs() < 1e-3, "x round-trip at non-trivial viewport");
-        assert!((back[1] - world_pt[1]).abs() < 1e-3, "y round-trip at non-trivial viewport");
+        assert!(
+            (back[0] - world_pt[0]).abs() < 1e-3,
+            "x round-trip at non-trivial viewport"
+        );
+        assert!(
+            (back[1] - world_pt[1]).abs() < 1e-3,
+            "y round-trip at non-trivial viewport"
+        );
     }
 
     /// screen-to-world and world-to-screen are inverses (reverse direction).
@@ -1404,8 +1587,14 @@ mod tests {
         let screen_pt = [200.0_f32, 450.0];
         let world = vp.screen_to_canvas(screen_pt);
         let back = vp.canvas_to_screen(world);
-        assert!((back[0] - screen_pt[0]).abs() < 1e-3, "screen x must survive round-trip");
-        assert!((back[1] - screen_pt[1]).abs() < 1e-3, "screen y must survive round-trip");
+        assert!(
+            (back[0] - screen_pt[0]).abs() < 1e-3,
+            "screen x must survive round-trip"
+        );
+        assert!(
+            (back[1] - screen_pt[1]).abs() < 1e-3,
+            "screen y must survive round-trip"
+        );
     }
 
     /// reset() returns to identity: zoom=1, pan=[0,0]; screen-centre maps to canvas origin.
@@ -1453,8 +1642,14 @@ mod tests {
         vp.pan_by([100.0, -50.0]);
         let pan_before = vp.pan;
         vp.pan_by([0.0, 0.0]);
-        assert!((vp.pan[0] - pan_before[0]).abs() < 1e-6, "pan.x must be unchanged after zero delta");
-        assert!((vp.pan[1] - pan_before[1]).abs() < 1e-6, "pan.y must be unchanged after zero delta");
+        assert!(
+            (vp.pan[0] - pan_before[0]).abs() < 1e-6,
+            "pan.x must be unchanged after zero delta"
+        );
+        assert!(
+            (vp.pan[1] - pan_before[1]).abs() < 1e-6,
+            "pan.y must be unchanged after zero delta"
+        );
     }
 
     /// reset() after only pan (no zoom change) also resets pan to zero.
@@ -1475,7 +1670,10 @@ mod tests {
     #[test]
     fn scale_factor_returns_zoom_at_default() {
         let vp = Viewport::new(800.0, 600.0);
-        assert!((vp.scale_factor() - 1.0).abs() < 1e-6, "default scale_factor must be 1.0");
+        assert!(
+            (vp.scale_factor() - 1.0).abs() < 1e-6,
+            "default scale_factor must be 1.0"
+        );
     }
 
     /// scale_factor reflects zoom changes.
@@ -1483,7 +1681,11 @@ mod tests {
     fn scale_factor_reflects_zoom_changes() {
         let mut vp = Viewport::new(800.0, 600.0);
         vp.zoom_toward(2.5, [400.0, 300.0]);
-        assert!((vp.scale_factor() - 2.5).abs() < 1e-5, "scale_factor must match zoom=2.5, got {}", vp.scale_factor());
+        assert!(
+            (vp.scale_factor() - 2.5).abs() < 1e-5,
+            "scale_factor must match zoom=2.5, got {}",
+            vp.scale_factor()
+        );
     }
 
     /// scale_factor after clamp to max returns 32.0.
@@ -1491,7 +1693,11 @@ mod tests {
     fn scale_factor_at_max_clamp() {
         let mut vp = Viewport::new(800.0, 600.0);
         vp.zoom_toward(f32::MAX, [400.0, 300.0]);
-        assert!((vp.scale_factor() - 32.0).abs() < 1e-5, "scale_factor must be clamped to 32, got {}", vp.scale_factor());
+        assert!(
+            (vp.scale_factor() - 32.0).abs() < 1e-5,
+            "scale_factor must be clamped to 32, got {}",
+            vp.scale_factor()
+        );
     }
 
     /// scale_factor after clamp to min returns 0.1.
@@ -1499,7 +1705,11 @@ mod tests {
     fn scale_factor_at_min_clamp() {
         let mut vp = Viewport::new(800.0, 600.0);
         vp.zoom_toward(0.0, [400.0, 300.0]);
-        assert!((vp.scale_factor() - 0.1).abs() < 1e-5, "scale_factor must be clamped to 0.1, got {}", vp.scale_factor());
+        assert!(
+            (vp.scale_factor() - 0.1).abs() < 1e-5,
+            "scale_factor must be clamped to 0.1, got {}",
+            vp.scale_factor()
+        );
     }
 
     /// scale_factor matches self.zoom after reset.
@@ -1508,7 +1718,10 @@ mod tests {
         let mut vp = Viewport::new(800.0, 600.0);
         vp.zoom_toward(5.0, [400.0, 300.0]);
         vp.reset();
-        assert!((vp.scale_factor() - 1.0).abs() < 1e-6, "scale_factor must be 1 after reset");
+        assert!(
+            (vp.scale_factor() - 1.0).abs() < 1e-6,
+            "scale_factor must be 1 after reset"
+        );
     }
 
     /// clamp_to_bounds: a point inside visible bounds is returned unchanged.
@@ -1528,7 +1741,10 @@ mod tests {
         // At zoom=1, visible_bounds goes from (-400,-300) to (400,300).
         // Point at x=1000 must clamp to 400.
         let (cx, cy) = vp.clamp_to_bounds(1000.0, 0.0);
-        assert!((cx - 400.0).abs() < 1e-4, "x must clamp to right edge 400, got {cx}");
+        assert!(
+            (cx - 400.0).abs() < 1e-4,
+            "x must clamp to right edge 400, got {cx}"
+        );
         assert!((cy).abs() < 1e-4, "y must remain 0, got {cy}");
     }
 
@@ -1537,7 +1753,10 @@ mod tests {
     fn clamp_to_bounds_left_of_visible_clamped() {
         let vp = Viewport::new(800.0, 600.0);
         let (cx, cy) = vp.clamp_to_bounds(-1000.0, 0.0);
-        assert!((cx - (-400.0)).abs() < 1e-4, "x must clamp to left edge -400, got {cx}");
+        assert!(
+            (cx - (-400.0)).abs() < 1e-4,
+            "x must clamp to left edge -400, got {cx}"
+        );
         assert!((cy).abs() < 1e-4, "y must remain 0, got {cy}");
     }
 
@@ -1547,7 +1766,10 @@ mod tests {
         let vp = Viewport::new(800.0, 600.0);
         let (cx, cy) = vp.clamp_to_bounds(0.0, -1000.0);
         assert!((cx).abs() < 1e-4, "x must remain 0, got {cx}");
-        assert!((cy - (-300.0)).abs() < 1e-4, "y must clamp to top edge -300, got {cy}");
+        assert!(
+            (cy - (-300.0)).abs() < 1e-4,
+            "y must clamp to top edge -300, got {cy}"
+        );
     }
 
     /// clamp_to_bounds: a point below visible bounds is clamped to the bottom edge.
@@ -1556,7 +1778,10 @@ mod tests {
         let vp = Viewport::new(800.0, 600.0);
         let (cx, cy) = vp.clamp_to_bounds(0.0, 1000.0);
         assert!((cx).abs() < 1e-4, "x must remain 0, got {cx}");
-        assert!((cy - 300.0).abs() < 1e-4, "y must clamp to bottom edge 300, got {cy}");
+        assert!(
+            (cy - 300.0).abs() < 1e-4,
+            "y must clamp to bottom edge 300, got {cy}"
+        );
     }
 
     /// clamp_to_bounds at zoom=2: visible bounds are half-sized, clamping uses tighter range.
@@ -1568,7 +1793,11 @@ mod tests {
         let (tl, br) = vp.visible_bounds();
         // Point outside the zoomed visible range must clamp to the right edge.
         let (cx, _cy) = vp.clamp_to_bounds(br[0] + 100.0, 0.0);
-        assert!((cx - br[0]).abs() < 1e-3, "x must clamp to zoomed right edge {}, got {cx}", br[0]);
+        assert!(
+            (cx - br[0]).abs() < 1e-3,
+            "x must clamp to zoomed right edge {}, got {cx}",
+            br[0]
+        );
     }
 
     /// clamp_to_bounds is idempotent: clamping twice gives the same result.
@@ -1587,6 +1816,9 @@ mod tests {
         let vp = Viewport::new(800.0, 600.0);
         let (cx, cy) = vp.clamp_to_bounds(99999.0, 99999.0);
         // The clamped point is on the boundary — must be visible.
-        assert!(vp.is_point_visible([cx, cy]), "clamped boundary point must be visible");
+        assert!(
+            vp.is_point_visible([cx, cy]),
+            "clamped boundary point must be visible"
+        );
     }
 }

@@ -154,7 +154,10 @@ mod tests {
             t.set();
         });
         handle.join().unwrap();
-        assert!(token.is_set(), "flag set from another thread must be visible");
+        assert!(
+            token.is_set(),
+            "flag set from another thread must be visible"
+        );
     }
 
     #[test]
@@ -163,7 +166,9 @@ mod tests {
         use std::thread;
         let token = Arc::new(InterruptFlag::new());
         let t = token.clone();
-        let h = thread::spawn(move || { t.set(); });
+        let h = thread::spawn(move || {
+            t.set();
+        });
         h.join().unwrap();
         assert!(token.is_set());
         token.clear();
@@ -176,12 +181,17 @@ mod tests {
         use std::thread;
         let token = Arc::new(InterruptFlag::new());
         token.set();
-        let handles: Vec<_> = (0..4).map(|_| {
-            let t = token.clone();
-            thread::spawn(move || t.is_set())
-        }).collect();
+        let handles: Vec<_> = (0..4)
+            .map(|_| {
+                let t = token.clone();
+                thread::spawn(move || t.is_set())
+            })
+            .collect();
         for h in handles {
-            assert!(h.join().unwrap(), "all threads must see the cancelled state");
+            assert!(
+                h.join().unwrap(),
+                "all threads must see the cancelled state"
+            );
         }
     }
 
@@ -191,7 +201,10 @@ mod tests {
         let b = InterruptFlag::new();
         a.set();
         // b is independent — must not be affected.
-        assert!(!b.is_set(), "separate InterruptFlag instances must be independent");
+        assert!(
+            !b.is_set(),
+            "separate InterruptFlag instances must be independent"
+        );
     }
 
     #[test]
@@ -207,10 +220,17 @@ mod tests {
     fn cancel_token_toggle_multiple_times() {
         let flag = InterruptFlag::new();
         for i in 0..10 {
-            if i % 2 == 0 { flag.set(); } else { flag.clear(); }
+            if i % 2 == 0 {
+                flag.set();
+            } else {
+                flag.clear();
+            }
         }
         // After 10 toggles (0-9), last was odd so clear was last.
-        assert!(!flag.is_set(), "after even number of toggles ending on clear, must be unset");
+        assert!(
+            !flag.is_set(),
+            "after even number of toggles ending on clear, must be unset"
+        );
     }
 
     #[test]

@@ -326,7 +326,7 @@ mod tests {
     fn hash128_prefix_vs_full_differ() {
         // "abc" vs "abcd" — prefix must hash differently from the full string.
         let h_prefix = Hash128::of_str("abc");
-        let h_full   = Hash128::of_str("abcd");
+        let h_full = Hash128::of_str("abcd");
         assert_ne!(h_prefix, h_full);
     }
 
@@ -395,7 +395,10 @@ mod tests {
         let via_le = Hash128::of_bytes(&v.to_le_bytes());
         let via_be = Hash128::of_bytes(&v.to_be_bytes());
         // LE and BE encodings differ → hashes must differ.
-        assert_ne!(via_le, via_be, "LE vs BE encoding must produce different hashes");
+        assert_ne!(
+            via_le, via_be,
+            "LE vs BE encoding must produce different hashes"
+        );
     }
 
     #[test]
@@ -452,7 +455,11 @@ mod tests {
                 (h.0, h.1)
             })
             .collect();
-        assert_eq!(hashes.len(), 256, "all 256 single-byte hashes must be distinct");
+        assert_eq!(
+            hashes.len(),
+            256,
+            "all 256 single-byte hashes must be distinct"
+        );
     }
 
     #[test]
@@ -502,8 +509,16 @@ mod tests {
     fn hash128_combine_five_chain_deterministic() {
         // Combine five hashes in a chain; result must be deterministic.
         let hashes: Vec<Hash128> = (0u64..5).map(Hash128::of_u64).collect();
-        let c1 = hashes[0].combine(hashes[1]).combine(hashes[2]).combine(hashes[3]).combine(hashes[4]);
-        let c2 = hashes[0].combine(hashes[1]).combine(hashes[2]).combine(hashes[3]).combine(hashes[4]);
+        let c1 = hashes[0]
+            .combine(hashes[1])
+            .combine(hashes[2])
+            .combine(hashes[3])
+            .combine(hashes[4]);
+        let c2 = hashes[0]
+            .combine(hashes[1])
+            .combine(hashes[2])
+            .combine(hashes[3])
+            .combine(hashes[4]);
         assert_eq!(c1, c2, "5-way combine chain must be deterministic");
     }
 }

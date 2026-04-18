@@ -479,8 +479,8 @@ mod tests {
         let mut scene = Scene::new();
         let colors = [
             Hsla::new(0.0, 1.0, 0.5, 1.0),   // red — bottom
-            Hsla::new(120.0, 1.0, 0.5, 1.0),  // green — middle
-            Hsla::new(240.0, 1.0, 0.5, 1.0),  // blue — top
+            Hsla::new(120.0, 1.0, 0.5, 1.0), // green — middle
+            Hsla::new(240.0, 1.0, 0.5, 1.0), // blue — top
         ];
         for &c in &colors {
             scene.push_quad(Quad {
@@ -503,11 +503,21 @@ mod tests {
     fn scene_stat_counting_each_bucket() {
         let mut scene = Scene::new();
         // Push known counts into each bucket and verify lengths.
-        for _ in 0..3 { scene.push_quad(Quad::default()); }
-        for _ in 0..2 { scene.push_shadow(Shadow::default()); }
-        for _ in 0..4 { scene.push_path(Path::default()); }
-        for _ in 0..1 { scene.push_underline(Underline::default()); }
-        for _ in 0..2 { scene.push_frosted_rect(FrostedRect::default()); }
+        for _ in 0..3 {
+            scene.push_quad(Quad::default());
+        }
+        for _ in 0..2 {
+            scene.push_shadow(Shadow::default());
+        }
+        for _ in 0..4 {
+            scene.push_path(Path::default());
+        }
+        for _ in 0..1 {
+            scene.push_underline(Underline::default());
+        }
+        for _ in 0..2 {
+            scene.push_frosted_rect(FrostedRect::default());
+        }
         for i in 0..5u32 {
             scene.push_sprite(MonochromeSprite {
                 tile: crate::types::AtlasTile {
@@ -520,7 +530,9 @@ mod tests {
                 ..Default::default()
             });
         }
-        for _ in 0..2 { scene.push_poly_sprite(PolychromeSprite::default()); }
+        for _ in 0..2 {
+            scene.push_poly_sprite(PolychromeSprite::default());
+        }
 
         assert_eq!(scene.quads.len(), 3);
         assert_eq!(scene.shadows.len(), 2);
@@ -545,8 +557,16 @@ mod tests {
             });
         }
         scene.sort_and_batch();
-        let ids: Vec<u32> = scene.polychrome_sprites.iter().map(|s| s.tile.texture_id).collect();
-        assert_eq!(ids, vec![1, 3, 5, 7, 9], "poly sprites sorted by texture_id");
+        let ids: Vec<u32> = scene
+            .polychrome_sprites
+            .iter()
+            .map(|s| s.tile.texture_id)
+            .collect();
+        assert_eq!(
+            ids,
+            vec![1, 3, 5, 7, 9],
+            "poly sprites sorted by texture_id"
+        );
     }
 
     #[test]

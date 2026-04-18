@@ -5,6 +5,15 @@ use std::ops::Range;
 
 pub type BufferId = u64;
 
+/// A row/column position within a buffer (both 0-indexed).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Point {
+    /// Zero-based line number.
+    pub row: u32,
+    /// Zero-based column (character offset within the line).
+    pub column: u32,
+}
+
 #[derive(Clone, Debug)]
 pub struct Patch {
     pub old_range: Range<usize>,
@@ -126,6 +135,43 @@ impl Buffer {
 
     pub fn line_to_char(&self, line: usize) -> usize {
         self.rope.line_to_char(line.min(self.rope.len_lines()))
+    }
+
+    /// Convert a char offset into a [`Point`] (row, column).
+    ///
+    /// Clamps `offset` to `[0, len_chars]`. Returns `Point { row: 0, column: 0 }` for
+    /// an empty buffer.
+    pub fn point_at(&self, offset: usize) -> Point {
+        let offset = offset.min(self.rope.len_chars());
+        let row = self.rope.char_to_line(offset) as u32;
+        let line_start = self.rope.line_to_char(row as usize);
+        let column = (offset - line_start) as u32;
+        Point { row, column }
+    }
+
+    /// Convert a [`Point`] (row, column) into a char offset.
+    ///
+    /// Returns `len_chars()` if the point is past the end of the buffer.
+    pub fn offset_from_point(&self, point: Point) -> usize {
+        let row = (point.row as usize).min(self.rope.len_lines().saturating_sub(1));
+        let line_start = self.rope.line_to_char(row);
+        let line_len = self.rope.line(row).len_chars();
+        // Exclude trailing newline from column clamping
+        let usable_len = if line_len > 0
+            && self
+                .rope
+                .line(row)
+                .chars()
+                .last()
+                .map(|c| c == '\n')
+                .unwrap_or(false)
+        {
+            line_len - 1
+        } else {
+            line_len
+        };
+        let column = (point.column as usize).min(usable_len);
+        line_start + column
     }
 
     /// Atomic edit: replace range with new_text. Returns undo patch.
@@ -920,7 +966,7 @@ mod tests {
         // Combining accent: 'a' + combining grave = two code points, length 2 in ropey chars
         let mut buf = Buffer::new(1, "");
         buf.insert_at(0, "a\u{0300}"); // a + combining grave
-        // ropey counts char code points, so len = 2
+                                       // ropey counts char code points, so len = 2
         assert_eq!(buf.len(), 2);
     }
 
@@ -937,7 +983,7 @@ mod tests {
         // "é" is 2 UTF-8 bytes but 1 char in ropey
         let buf = Buffer::new(1, "é");
         assert_eq!(buf.len(), 1); // ropey char count
-        // String byte length
+                                  // String byte length
         let bytes = "é".len();
         assert_eq!(bytes, 2);
     }
@@ -1003,7 +1049,11 @@ mod tests {
     #[test]
     fn buffer_comment_toggle_removes_prefix() {
         let line = "// code here";
-        let uncommented = if line.starts_with("// ") { &line[3..] } else { line };
+        let uncommented = if line.starts_with("// ") {
+            &line[3..]
+        } else {
+            line
+        };
         assert!(!uncommented.starts_with("//"));
         assert!(uncommented.contains("code here"));
     }
@@ -1074,8 +1124,18 @@ mod tests {
     #[test]
     fn editor_diagnostic_error_at_line_3() {
         #[derive(Debug)]
-        struct Diagnostic { line: u32, col: u32, message: String, severity: &'static str }
-        let d = Diagnostic { line: 3, col: 0, message: "type mismatch".to_string(), severity: "error" };
+        struct Diagnostic {
+            line: u32,
+            col: u32,
+            message: String,
+            severity: &'static str,
+        }
+        let d = Diagnostic {
+            line: 3,
+            col: 0,
+            message: "type mismatch".to_string(),
+            severity: "error",
+        };
         assert_eq!(d.line, 3);
         assert_eq!(d.severity, "error");
     }
@@ -1084,8 +1144,16 @@ mod tests {
     #[test]
     fn editor_diagnostic_warning_at_col_5() {
         #[derive(Debug)]
-        struct Diagnostic { line: u32, col: u32, severity: &'static str }
-        let d = Diagnostic { line: 1, col: 5, severity: "warning" };
+        struct Diagnostic {
+            line: u32,
+            col: u32,
+            severity: &'static str,
+        }
+        let d = Diagnostic {
+            line: 1,
+            col: 5,
+            severity: "warning",
+        };
         assert_eq!(d.col, 5);
         assert_eq!(d.severity, "warning");
     }
@@ -1229,7 +1297,10 @@ mod tests {
     #[test]
     fn editor_fold_range_correct() {
         use crate::display_map::FoldRegion;
-        let fold = FoldRegion { buffer_range: 10..20, placeholder: "…".to_string() };
+        let fold = FoldRegion {
+            buffer_range: 10..20,
+            placeholder: "…".to_string(),
+        };
         assert_eq!(fold.buffer_range.start, 10);
         assert_eq!(fold.buffer_range.end, 20);
     }
@@ -1288,7 +1359,7 @@ mod tests {
         let wrap_width = 80usize;
         let sel_start = 75usize;
         let sel_end = 85usize; // crosses the wrap at 80
-        // Both endpoints exist and the selection crosses a wrap boundary
+                               // Both endpoints exist and the selection crosses a wrap boundary
         assert!(sel_start < wrap_width && sel_end > wrap_width);
         assert!(sel_end > sel_start);
     }
@@ -1331,8 +1402,16 @@ mod tests {
         let insert_len = 3usize;
         let original_start = 10usize;
         let original_end = 15usize;
-        let new_start = if original_start >= insert_offset { original_start + insert_len } else { original_start };
-        let new_end   = if original_end   >= insert_offset { original_end   + insert_len } else { original_end };
+        let new_start = if original_start >= insert_offset {
+            original_start + insert_len
+        } else {
+            original_start
+        };
+        let new_end = if original_end >= insert_offset {
+            original_end + insert_len
+        } else {
+            original_end
+        };
         assert_eq!(new_start, 13);
         assert_eq!(new_end, 18);
     }
@@ -1342,7 +1421,7 @@ mod tests {
     fn buffer_bracket_matching_finds_pair() {
         let text = "hello(world)";
         let open_pos = 5usize; // '('
-        // Scan forward to find matching ')'
+                               // Scan forward to find matching ')'
         let mut depth = 0i32;
         let mut close_pos = None;
         for (i, ch) in text[open_pos..].char_indices() {

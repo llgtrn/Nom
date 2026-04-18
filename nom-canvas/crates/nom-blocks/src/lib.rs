@@ -3,31 +3,31 @@
 //! Block primitives for the NomCanvas workspace — models, connectors, tables, dataviews.
 
 pub mod block_model;
-/// Block diff/patch: compute and apply structural differences between block lists.
-#[allow(missing_docs)]
-pub mod diff;
 /// Composition block types (app, audio, data, document, etc.).
 #[allow(missing_docs)]
 pub mod compose;
 pub mod connector;
-/// Edgeless (free-floating) text block.
-#[allow(missing_docs)]
-pub mod edgeless_text;
-/// Frame block: a named container for grouping child blocks.
-#[allow(missing_docs)]
-pub mod frame;
-/// LaTeX formula block.
-#[allow(missing_docs)]
-pub mod latex;
 pub mod dataview;
 pub mod dict_reader;
+/// Block diff/patch: compute and apply structural differences between block lists.
+#[allow(missing_docs)]
+pub mod diff;
 /// Drawing/shape block types.
 #[allow(missing_docs)]
 pub mod drawing;
+/// Edgeless (free-floating) text block.
+#[allow(missing_docs)]
+pub mod edgeless_text;
 /// Embed block types.
 #[allow(missing_docs)]
 pub mod embed;
+/// Frame block: a named container for grouping child blocks.
+#[allow(missing_docs)]
+pub mod frame;
 pub mod graph_node;
+/// LaTeX formula block.
+#[allow(missing_docs)]
+pub mod latex;
 /// Media block types.
 #[allow(missing_docs)]
 pub mod media;

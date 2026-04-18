@@ -52,14 +52,17 @@ mod tests {
             GrammarKind {
                 name: "render".into(),
                 description: "output action".into(),
+                status: crate::shared::KindStatus::Transient,
             },
             GrammarKind {
                 name: "resolve".into(),
                 description: "lookup action".into(),
+                status: crate::shared::KindStatus::Transient,
             },
             GrammarKind {
                 name: "concept".into(),
                 description: "abstract idea".into(),
+                status: crate::shared::KindStatus::Transient,
             },
         ]);
         let ops = InteractiveTierOps::new(&state);

@@ -333,7 +333,11 @@ mod tests {
         assert_eq!(panel.row_count(), 3);
         // Simulate "reset dirty" by loading a new entity
         panel.load_entity("ent-2", "Kind");
-        assert_eq!(panel.row_count(), 0, "all rows must be cleared on new entity load");
+        assert_eq!(
+            panel.row_count(),
+            0,
+            "all rows must be cleared on new entity load"
+        );
     }
 
     #[test]
@@ -395,9 +399,9 @@ mod tests {
     fn properties_mixed_valid_invalid_rows_quad_count() {
         let mut panel = PropertiesPanel::new();
         panel.load_entity("ent-1", "Function");
-        panel.set_row("name", "valid_name", false);         // non-editable: 2 quads
-        panel.set_row("return_type", "bad_type", true);     // editable: 3 quads
-        panel.set_row("visibility", "invalid", true);       // editable: 3 quads
+        panel.set_row("name", "valid_name", false); // non-editable: 2 quads
+        panel.set_row("return_type", "bad_type", true); // editable: 3 quads
+        panel.set_row("visibility", "invalid", true); // editable: 3 quads
         let mut scene = Scene::new();
         panel.paint_scene(280.0, 400.0, &mut scene);
         // header(2) + 2 + 3 + 3 = 10

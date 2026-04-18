@@ -563,7 +563,10 @@ mod tests {
             let input_hash = (idx as u64) + 1;
             c.validate(input_hash, &[snaps[idx].clone()])
         });
-        assert!(!all_pass, "AND chain with one failing constraint must be false");
+        assert!(
+            !all_pass,
+            "AND chain with one failing constraint must be false"
+        );
     }
 
     #[test]
@@ -576,16 +579,17 @@ mod tests {
                 c
             })
             .collect();
-        let snaps: Vec<TrackedSnapshot> = (1u64..=5)
-            .map(|i| snap(i, vec![]))
-            .collect();
+        let snaps: Vec<TrackedSnapshot> = (1u64..=5).map(|i| snap(i, vec![])).collect();
 
         // Validate with wrong input_hash for the 5th (index 4).
         let and_result = constraints.iter().enumerate().all(|(idx, c)| {
             let input_hash = if idx == 4 { 999u64 } else { (idx as u64) + 1 };
             c.validate(input_hash, &[snaps[idx].clone()])
         });
-        assert!(!and_result, "wrong input_hash on last constraint breaks the AND chain");
+        assert!(
+            !and_result,
+            "wrong input_hash on last constraint breaks the AND chain"
+        );
     }
 
     // --- Constraint error message (debug representation) ---
@@ -596,23 +600,29 @@ mod tests {
         let c = Constraint::new(0xDEADBEEF);
         let dbg = format!("{c:?}");
         // The debug output must contain some representation of the input_hash.
-        assert!(
-            !dbg.is_empty(),
-            "Constraint Debug output must be non-empty"
-        );
+        assert!(!dbg.is_empty(), "Constraint Debug output must be non-empty");
     }
 
     #[test]
     fn constraint_input_hash_zero_validates_on_zero() {
         let c = Constraint::new(0);
-        assert!(c.validate(0, &[]), "zero input_hash must validate against zero");
-        assert!(!c.validate(1, &[]), "zero input_hash must not validate against non-zero");
+        assert!(
+            c.validate(0, &[]),
+            "zero input_hash must validate against zero"
+        );
+        assert!(
+            !c.validate(1, &[]),
+            "zero input_hash must not validate against non-zero"
+        );
     }
 
     #[test]
     fn constraint_input_hash_max_u64() {
         let c = Constraint::new(u64::MAX);
-        assert!(c.validate(u64::MAX, &[]), "u64::MAX input_hash must validate");
+        assert!(
+            c.validate(u64::MAX, &[]),
+            "u64::MAX input_hash must validate"
+        );
         assert!(!c.validate(0, &[]), "u64::MAX must not match 0");
     }
 
@@ -629,7 +639,10 @@ mod tests {
             .collect();
 
         assert_eq!(c.snapshot_count(), 5);
-        assert!(c.validate(99, &current), "all 5 matching snapshots must pass");
+        assert!(
+            c.validate(99, &current),
+            "all 5 matching snapshots must pass"
+        );
     }
 
     #[test]
@@ -644,6 +657,9 @@ mod tests {
         // Corrupt the middle snapshot (index 2).
         current[2] = snap(2, vec![(2, Hash128::of_str("bad"))]);
 
-        assert!(!c.validate(7, &current), "corrupt middle snapshot must fail AND chain");
+        assert!(
+            !c.validate(7, &current),
+            "corrupt middle snapshot must fail AND chain"
+        );
     }
 }

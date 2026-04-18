@@ -1099,7 +1099,10 @@ mod tests {
         let sorted = dag.topological_sort().unwrap();
         assert_eq!(sorted.len(), 3, "all three independent roots must appear");
         for r in &["r1", "r2", "r3"] {
-            assert!(sorted.contains(&r.to_string()), "{r} must be in sorted list");
+            assert!(
+                sorted.contains(&r.to_string()),
+                "{r} must be in sorted list"
+            );
         }
     }
 
@@ -1145,7 +1148,10 @@ mod tests {
         dag.add_edge("X", "out", "Y", "in");
         dag.add_edge("Y", "out", "Z", "in");
         dag.add_edge("Z", "out", "X", "in");
-        assert!(dag.topological_sort().is_err(), "X→Y→Z→X must be detected as cycle");
+        assert!(
+            dag.topological_sort().is_err(),
+            "X→Y→Z→X must be detected as cycle"
+        );
     }
 
     #[test]
@@ -1336,13 +1342,16 @@ mod tests {
 
         // Manually accumulate the product along the path a→b→c→d.
         let path_edges: &[(&str, &str)] = &[("a", "b"), ("b", "c"), ("c", "d")];
-        let product: f32 = path_edges.iter().map(|(src, dst)| {
-            dag.edges
-                .iter()
-                .find(|e| e.src_node == *src && e.dst_node == *dst)
-                .expect("edge must exist")
-                .confidence
-        }).product();
+        let product: f32 = path_edges
+            .iter()
+            .map(|(src, dst)| {
+                dag.edges
+                    .iter()
+                    .find(|e| e.src_node == *src && e.dst_node == *dst)
+                    .expect("edge must exist")
+                    .confidence
+            })
+            .product();
         let expected = 0.9f32 * 0.8 * 0.7;
         assert!(
             (product - expected).abs() < 1e-5,
@@ -1362,7 +1371,11 @@ mod tests {
         dag.add_node(ExecNode::new("y", "verb"));
         dag.add_edge_weighted("x", "out", "y", "in", 0.6);
         let conf = dag.edges[0].confidence;
-        assert!((conf - 0.6).abs() < 1e-6, "single-hop weight must be 0.6, got {}", conf);
+        assert!(
+            (conf - 0.6).abs() < 1e-6,
+            "single-hop weight must be 0.6, got {}",
+            conf
+        );
     }
 
     // ------------------------------------------------------------------
@@ -1379,19 +1392,37 @@ mod tests {
         dag.add_edge_weighted("a", "out", "b", "in", 0.9);
         dag.add_edge_weighted("b", "out", "c", "in", 0.8);
 
-        let direct_conf = dag.edges.iter()
+        let direct_conf = dag
+            .edges
+            .iter()
             .find(|e| e.src_node == "a" && e.dst_node == "c")
-            .unwrap().confidence;
-        let via_b_conf: f32 = dag.edges.iter()
+            .unwrap()
+            .confidence;
+        let via_b_conf: f32 = dag
+            .edges
+            .iter()
             .find(|e| e.src_node == "a" && e.dst_node == "b")
-            .unwrap().confidence
-            * dag.edges.iter()
-            .find(|e| e.src_node == "b" && e.dst_node == "c")
-            .unwrap().confidence;
+            .unwrap()
+            .confidence
+            * dag
+                .edges
+                .iter()
+                .find(|e| e.src_node == "b" && e.dst_node == "c")
+                .unwrap()
+                .confidence;
 
-        assert!((direct_conf - 0.3).abs() < 1e-6, "direct path confidence must be 0.3");
-        assert!((via_b_conf - 0.72).abs() < 1e-5, "two-hop path confidence must be 0.72");
-        assert!(via_b_conf > direct_conf, "two-hop path must have higher accumulated weight");
+        assert!(
+            (direct_conf - 0.3).abs() < 1e-6,
+            "direct path confidence must be 0.3"
+        );
+        assert!(
+            (via_b_conf - 0.72).abs() < 1e-5,
+            "two-hop path confidence must be 0.72"
+        );
+        assert!(
+            via_b_conf > direct_conf,
+            "two-hop path must have higher accumulated weight"
+        );
     }
 
     // ------------------------------------------------------------------
@@ -1406,7 +1437,11 @@ mod tests {
             dag.add_node(ExecNode::new(name.clone(), "verb"));
         }
         let sorted = dag.topological_sort().unwrap();
-        assert_eq!(sorted.len(), 100, "all 100 isolated nodes must appear in sort");
+        assert_eq!(
+            sorted.len(),
+            100,
+            "all 100 isolated nodes must appear in sort"
+        );
         for name in &names {
             assert!(sorted.contains(name), "{name} must be in sort");
         }
@@ -1428,8 +1463,14 @@ mod tests {
         dag.add_edge("B", "out", "D", "in");
         dag.add_edge("C", "out", "D", "in");
 
-        let sorted = dag.topological_sort().expect("diamond DAG must not have a cycle");
-        assert_eq!(sorted.len(), 4, "all 4 nodes must appear in topological sort");
+        let sorted = dag
+            .topological_sort()
+            .expect("diamond DAG must not have a cycle");
+        assert_eq!(
+            sorted.len(),
+            4,
+            "all 4 nodes must appear in topological sort"
+        );
 
         let pos = |id: &str| sorted.iter().position(|x| x == id).expect(id);
         // A must appear before B, C, and D.
@@ -1462,7 +1503,9 @@ mod tests {
         dag.add_edge("B", "out", "D", "in");
         dag.add_edge("C", "out", "D", "in");
 
-        let sorted = dag.topological_sort().expect("diamond must sort without error");
+        let sorted = dag
+            .topological_sort()
+            .expect("diamond must sort without error");
         let pos = |id: &str| sorted.iter().position(|x| x == id).expect(id);
 
         let pos_a = pos("A");
@@ -1562,8 +1605,16 @@ mod tests {
         dag.add_edge("B", "out", "D", "in");
         dag.add_edge("C", "out", "D", "in");
         let sorted = dag.topological_sort().unwrap();
-        assert_eq!(sorted.first().map(|s| s.as_str()), Some("A"), "A must be first");
-        assert_eq!(sorted.last().map(|s| s.as_str()), Some("D"), "D must be last");
+        assert_eq!(
+            sorted.first().map(|s| s.as_str()),
+            Some("A"),
+            "A must be first"
+        );
+        assert_eq!(
+            sorted.last().map(|s| s.as_str()),
+            Some("D"),
+            "D must be last"
+        );
     }
 
     // ------------------------------------------------------------------
@@ -1583,10 +1634,12 @@ mod tests {
 
         // B and C have no edge between them — they are independent (parallel set).
         let bc_edge = dag.edges.iter().any(|e| {
-            (e.src_node == "B" && e.dst_node == "C")
-                || (e.src_node == "C" && e.dst_node == "B")
+            (e.src_node == "B" && e.dst_node == "C") || (e.src_node == "C" && e.dst_node == "B")
         });
-        assert!(!bc_edge, "B and C must have no direct edge (independent parallel nodes)");
+        assert!(
+            !bc_edge,
+            "B and C must have no direct edge (independent parallel nodes)"
+        );
     }
 
     // ------------------------------------------------------------------
@@ -1646,9 +1699,15 @@ mod tests {
         let sorted = dag.topological_sort().expect("nested diamonds must sort");
         assert_eq!(sorted.len(), 7, "all 7 nodes must appear");
         let pos = |id: &str| sorted.iter().position(|x| x == id).unwrap();
-        assert!(pos("A") < pos("B") && pos("A") < pos("C"), "A before B and C");
+        assert!(
+            pos("A") < pos("B") && pos("A") < pos("C"),
+            "A before B and C"
+        );
         assert!(pos("B") < pos("D") && pos("C") < pos("D"), "B,C before D");
-        assert!(pos("D") < pos("E") && pos("D") < pos("F"), "D before E and F");
+        assert!(
+            pos("D") < pos("E") && pos("D") < pos("F"),
+            "D before E and F"
+        );
         assert!(pos("E") < pos("G") && pos("F") < pos("G"), "E,F before G");
         assert_eq!(pos("G"), 6, "G must be last");
     }
@@ -1661,7 +1720,11 @@ mod tests {
         let mut dag = Dag::new();
         dag.add_node(ExecNode::new("key", "kind_a"));
         dag.add_node(ExecNode::new("key", "kind_b")); // overwrites
-        assert_eq!(dag.node_count(), 1, "overwrite must not increase node count");
+        assert_eq!(
+            dag.node_count(),
+            1,
+            "overwrite must not increase node count"
+        );
         assert_eq!(dag.nodes["key"].kind, "kind_b", "second insert must win");
     }
 
@@ -1701,7 +1764,10 @@ mod tests {
         let sorted = dag.topological_sort().unwrap();
         assert_eq!(sorted.len(), 6, "all 6 nodes must appear in topo result");
         for name in &["r1", "r2", "r3", "l1", "l2", "l3"] {
-            assert!(sorted.contains(&name.to_string()), "{name} must be in sorted output");
+            assert!(
+                sorted.contains(&name.to_string()),
+                "{name} must be in sorted output"
+            );
         }
     }
 
@@ -1718,10 +1784,18 @@ mod tests {
         let sorted = dag.topological_sort().unwrap();
         assert_eq!(sorted, vec!["isolated"]);
         // Verify it's a root: no incoming edges.
-        let in_count = dag.edges.iter().filter(|e| e.dst_node == "isolated").count();
+        let in_count = dag
+            .edges
+            .iter()
+            .filter(|e| e.dst_node == "isolated")
+            .count();
         assert_eq!(in_count, 0, "isolated node has no incoming edges");
         // Verify it's a leaf: no outgoing edges.
-        let out_count = dag.edges.iter().filter(|e| e.src_node == "isolated").count();
+        let out_count = dag
+            .edges
+            .iter()
+            .filter(|e| e.src_node == "isolated")
+            .count();
         assert_eq!(out_count, 0, "isolated node has no outgoing edges");
     }
 
@@ -1762,7 +1836,11 @@ mod tests {
         dag.add_edge("B", "out", "D", "in");
         dag.add_edge("C", "out", "D", "in");
         let sorted = dag.topological_sort().unwrap();
-        assert_eq!(sorted.last().map(|s| s.as_str()), Some("D"), "D must execute last in diamond");
+        assert_eq!(
+            sorted.last().map(|s| s.as_str()),
+            Some("D"),
+            "D must execute last in diamond"
+        );
     }
 
     // ------------------------------------------------------------------
@@ -1774,7 +1852,11 @@ mod tests {
         for i in 0..5 {
             dag.add_node(ExecNode::new(format!("n{i}"), "verb"));
         }
-        assert_eq!(dag.node_count(), 5, "node_count must be 5 after adding 5 nodes");
+        assert_eq!(
+            dag.node_count(),
+            5,
+            "node_count must be 5 after adding 5 nodes"
+        );
     }
 
     // ------------------------------------------------------------------
@@ -1834,7 +1916,10 @@ mod tests {
         let leaf_pos = sorted.iter().position(|x| x == "n4").unwrap();
         for i in 0..4 {
             let ancestor_pos = sorted.iter().position(|x| x == &names[i]).unwrap();
-            assert!(ancestor_pos < leaf_pos, "n{i} (ancestor) must precede n4 (leaf)");
+            assert!(
+                ancestor_pos < leaf_pos,
+                "n{i} (ancestor) must precede n4 (leaf)"
+            );
         }
     }
 
@@ -1869,9 +1954,13 @@ mod tests {
         if topo.is_empty() {
             return vec![];
         }
-        let mut children: std::collections::HashMap<&str, Vec<&str>> = std::collections::HashMap::new();
+        let mut children: std::collections::HashMap<&str, Vec<&str>> =
+            std::collections::HashMap::new();
         for edge in &dag.edges {
-            children.entry(edge.src_node.as_str()).or_default().push(edge.dst_node.as_str());
+            children
+                .entry(edge.src_node.as_str())
+                .or_default()
+                .push(edge.dst_node.as_str());
         }
         let mut depth: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
         for id in &topo {
@@ -1879,7 +1968,9 @@ mod tests {
             if let Some(dsts) = children.get(id.as_str()) {
                 for dst in dsts {
                     let e = depth.entry(dst).or_insert(0);
-                    if *e < d + 1 { *e = d + 1; }
+                    if *e < d + 1 {
+                        *e = d + 1;
+                    }
                 }
             }
         }
@@ -1917,8 +2008,14 @@ mod tests {
         );
         // Layer 1 must contain both B and C
         assert_eq!(layers[1].len(), 2, "layer 1 must have 2 parallel nodes");
-        assert!(layers[1].contains(&"B".to_string()), "layer 1 must contain B");
-        assert!(layers[1].contains(&"C".to_string()), "layer 1 must contain C");
+        assert!(
+            layers[1].contains(&"B".to_string()),
+            "layer 1 must contain B"
+        );
+        assert!(
+            layers[1].contains(&"C".to_string()),
+            "layer 1 must contain C"
+        );
     }
 
     // ------------------------------------------------------------------
@@ -1932,9 +2029,19 @@ mod tests {
         dag.add_edge("root", "out", "leaf", "in");
 
         let layers = compute_layers(&dag);
-        assert_eq!(layers.len(), 2, "single-edge DAG must have exactly 2 layers");
-        assert!(layers[0].contains(&"root".to_string()), "layer 0 must be root");
-        assert!(layers[1].contains(&"leaf".to_string()), "layer 1 must be leaf");
+        assert_eq!(
+            layers.len(),
+            2,
+            "single-edge DAG must have exactly 2 layers"
+        );
+        assert!(
+            layers[0].contains(&"root".to_string()),
+            "layer 0 must be root"
+        );
+        assert!(
+            layers[1].contains(&"leaf".to_string()),
+            "layer 1 must be leaf"
+        );
     }
 
     // ------------------------------------------------------------------
@@ -1960,7 +2067,10 @@ mod tests {
             "layers must collectively cover all nodes"
         );
         for name in &["n1", "n2", "n3", "n4", "n5"] {
-            assert!(all_in_layers.contains(&name.to_string()), "{name} must appear in some layer");
+            assert!(
+                all_in_layers.contains(&name.to_string()),
+                "{name} must appear in some layer"
+            );
         }
     }
 
@@ -1979,10 +2089,21 @@ mod tests {
 
         let layers = compute_layers(&dag);
         let layer_of = |id: &str| -> usize {
-            layers.iter().enumerate().find(|(_, l)| l.contains(&id.to_string())).unwrap().0
+            layers
+                .iter()
+                .enumerate()
+                .find(|(_, l)| l.contains(&id.to_string()))
+                .unwrap()
+                .0
         };
-        assert!(layer_of("A") < layer_of("B"), "A must be in earlier layer than B");
-        assert!(layer_of("B") < layer_of("C"), "B must be in earlier layer than C");
+        assert!(
+            layer_of("A") < layer_of("B"),
+            "A must be in earlier layer than B"
+        );
+        assert!(
+            layer_of("B") < layer_of("C"),
+            "B must be in earlier layer than C"
+        );
     }
 
     // ------------------------------------------------------------------
@@ -1998,8 +2119,15 @@ mod tests {
         dag.add_edge("root", "out", "leaf2", "in");
 
         for leaf in &["leaf1", "leaf2"] {
-            let out_count = dag.edges.iter().filter(|e| e.src_node.as_str() == *leaf).count();
-            assert_eq!(out_count, 0, "{leaf} is a leaf and must have no outgoing edges");
+            let out_count = dag
+                .edges
+                .iter()
+                .filter(|e| e.src_node.as_str() == *leaf)
+                .count();
+            assert_eq!(
+                out_count, 0,
+                "{leaf} is a leaf and must have no outgoing edges"
+            );
         }
     }
 
@@ -2016,8 +2144,15 @@ mod tests {
         dag.add_edge("root2", "out", "leaf", "in");
 
         for root in &["root1", "root2"] {
-            let in_count = dag.edges.iter().filter(|e| e.dst_node.as_str() == *root).count();
-            assert_eq!(in_count, 0, "{root} is a root and must have no incoming edges");
+            let in_count = dag
+                .edges
+                .iter()
+                .filter(|e| e.dst_node.as_str() == *root)
+                .count();
+            assert_eq!(
+                in_count, 0,
+                "{root} is a root and must have no incoming edges"
+            );
         }
     }
 
@@ -2035,11 +2170,16 @@ mod tests {
         dag.add_edge("B", "out", "C", "in");
 
         let layers = compute_layers(&dag);
-        let layer_of_c = layers.iter().enumerate()
+        let layer_of_c = layers
+            .iter()
+            .enumerate()
             .find(|(_, l)| l.contains(&"C".to_string()))
             .map(|(i, _)| i)
             .unwrap();
-        assert_eq!(layer_of_c, 1, "C with two layer-0 parents must be in layer 1");
+        assert_eq!(
+            layer_of_c, 1,
+            "C with two layer-0 parents must be in layer 1"
+        );
     }
 
     // ------------------------------------------------------------------
@@ -2077,8 +2217,13 @@ mod tests {
         dag.add_edge("b", "out", "c", "in");
         assert_eq!(dag.edge_count(), 2);
         // Remove the a→b edge by retaining only b→c.
-        dag.edges.retain(|e| !(e.src_node == "a" && e.dst_node == "b"));
-        assert_eq!(dag.edge_count(), 1, "removing a→b must reduce edge_count to 1");
+        dag.edges
+            .retain(|e| !(e.src_node == "a" && e.dst_node == "b"));
+        assert_eq!(
+            dag.edge_count(),
+            1,
+            "removing a→b must reduce edge_count to 1"
+        );
         // After removal, topological sort still succeeds (no cycle in remaining edges).
         assert!(dag.topological_sort().is_ok());
     }
@@ -2122,7 +2267,10 @@ mod tests {
 
         let r1 = dag.topological_sort().unwrap();
         let r2 = dag.topological_sort().unwrap();
-        assert_eq!(r1, r2, "topological_sort must be deterministic for the same DAG");
+        assert_eq!(
+            r1, r2,
+            "topological_sort must be deterministic for the same DAG"
+        );
     }
 
     // ------------------------------------------------------------------
@@ -2180,8 +2328,16 @@ mod tests {
             dag.add_node(ExecNode::new(*n, "verb"));
         }
         let layers = compute_layers(&dag);
-        assert_eq!(layers.len(), 1, "5 isolated nodes must form exactly 1 layer");
-        assert_eq!(layers[0].len(), 5, "all 5 independent nodes must be in layer 0");
+        assert_eq!(
+            layers.len(),
+            1,
+            "5 isolated nodes must form exactly 1 layer"
+        );
+        assert_eq!(
+            layers[0].len(),
+            5,
+            "all 5 independent nodes must be in layer 0"
+        );
     }
 
     // ------------------------------------------------------------------
@@ -2191,7 +2347,10 @@ mod tests {
     fn dag_layers_empty_graph_zero_layers_v2() {
         let dag = Dag::new();
         let layers = compute_layers(&dag);
-        assert!(layers.is_empty(), "empty DAG must yield zero layers from compute_layers");
+        assert!(
+            layers.is_empty(),
+            "empty DAG must yield zero layers from compute_layers"
+        );
     }
 
     // ------------------------------------------------------------------
@@ -2285,7 +2444,11 @@ mod tests {
         let sorted = dag.topological_sort().unwrap();
         let rev: Vec<&String> = sorted.iter().rev().collect();
         // c must be first in reverse, a last.
-        assert_eq!(rev[0].as_str(), "c", "c must be first in reverse topo order");
+        assert_eq!(
+            rev[0].as_str(),
+            "c",
+            "c must be first in reverse topo order"
+        );
         assert_eq!(rev[2].as_str(), "a", "a must be last in reverse topo order");
     }
 
@@ -2332,7 +2495,15 @@ mod tests {
         let edges: Vec<(String, String, String, String, f32)> = original
             .edges
             .iter()
-            .map(|e| (e.src_node.clone(), e.src_port.clone(), e.dst_node.clone(), e.dst_port.clone(), e.confidence))
+            .map(|e| {
+                (
+                    e.src_node.clone(),
+                    e.src_port.clone(),
+                    e.dst_node.clone(),
+                    e.dst_port.clone(),
+                    e.confidence,
+                )
+            })
             .collect();
 
         let mut reconstructed = Dag::new();
@@ -2340,7 +2511,13 @@ mod tests {
             reconstructed.add_node(ExecNode::new(id.clone(), "verb"));
         }
         for (src, sp, dst, dp, conf) in &edges {
-            reconstructed.add_edge_weighted(src.clone(), sp.clone(), dst.clone(), dp.clone(), *conf);
+            reconstructed.add_edge_weighted(
+                src.clone(),
+                sp.clone(),
+                dst.clone(),
+                dp.clone(),
+                *conf,
+            );
         }
 
         assert_eq!(reconstructed.node_count(), original.node_count());
@@ -2348,7 +2525,10 @@ mod tests {
 
         let orig_sort = original.topological_sort().unwrap();
         let rec_sort = reconstructed.topological_sort().unwrap();
-        assert_eq!(orig_sort, rec_sort, "round-trip DAG must produce identical topo sort");
+        assert_eq!(
+            orig_sort, rec_sort,
+            "round-trip DAG must produce identical topo sort"
+        );
     }
 
     // ------------------------------------------------------------------
@@ -2371,11 +2551,16 @@ mod tests {
 
         let layers = compute_layers(&dag);
         // E must be in layer 3 (longest path A→C→D→E is 3 hops).
-        let e_layer = layers.iter().enumerate()
+        let e_layer = layers
+            .iter()
+            .enumerate()
             .find(|(_, l)| l.contains(&"E".to_string()))
             .map(|(i, _)| i)
             .unwrap();
-        assert_eq!(e_layer, 3, "critical path A→C→D→E has length 3; E must be in layer 3");
+        assert_eq!(
+            e_layer, 3,
+            "critical path A→C→D→E has length 3; E must be in layer 3"
+        );
     }
 
     // ------------------------------------------------------------------
@@ -2393,8 +2578,14 @@ mod tests {
 
         let sorted = dag.topological_sort().unwrap();
         let pos = |id: &str| sorted.iter().position(|x| x == id).unwrap();
-        assert!(pos("src") < pos("mid"), "src must precede mid regardless of weight");
-        assert!(pos("mid") < pos("dst"), "mid must precede dst regardless of weight");
+        assert!(
+            pos("src") < pos("mid"),
+            "src must precede mid regardless of weight"
+        );
+        assert!(
+            pos("mid") < pos("dst"),
+            "mid must precede dst regardless of weight"
+        );
 
         // Confidence values are stored as-is.
         assert!((dag.edges[0].confidence - 0.4).abs() < 1e-6);
@@ -2490,9 +2681,15 @@ mod tests {
             }
         }
 
-        assert!(reachable.contains("src"), "src must be reachable from itself");
+        assert!(
+            reachable.contains("src"),
+            "src must be reachable from itself"
+        );
         assert!(reachable.contains("a"), "a must be reachable from src");
-        assert!(reachable.contains("b"), "b must be reachable from src via a");
+        assert!(
+            reachable.contains("b"),
+            "b must be reachable from src via a"
+        );
         assert!(reachable.contains("c"), "c must be reachable from src");
         assert!(
             !reachable.contains("d"),
@@ -2523,9 +2720,16 @@ mod tests {
                 }
             }
         }
-        assert_eq!(reachable.len(), 1, "leaf has no outgoing edges; subgraph = singleton");
+        assert_eq!(
+            reachable.len(),
+            1,
+            "leaf has no outgoing edges; subgraph = singleton"
+        );
         assert!(reachable.contains("leaf"));
-        assert!(!reachable.contains("root"), "root is not reachable from leaf (directed graph)");
+        assert!(
+            !reachable.contains("root"),
+            "root is not reachable from leaf (directed graph)"
+        );
     }
 
     // ------------------------------------------------------------------
@@ -2567,10 +2771,22 @@ mod tests {
         let added_edges: Vec<_> = dag2_edge_set.difference(&dag1_edge_set).collect();
         let removed_edges: Vec<_> = dag1_edge_set.difference(&dag2_edge_set).collect();
 
-        assert!(added_nodes.is_empty(), "no nodes added between identical graphs");
-        assert!(removed_nodes.is_empty(), "no nodes removed between identical graphs");
-        assert!(added_edges.is_empty(), "no edges added between identical graphs");
-        assert!(removed_edges.is_empty(), "no edges removed between identical graphs");
+        assert!(
+            added_nodes.is_empty(),
+            "no nodes added between identical graphs"
+        );
+        assert!(
+            removed_nodes.is_empty(),
+            "no nodes removed between identical graphs"
+        );
+        assert!(
+            added_edges.is_empty(),
+            "no edges added between identical graphs"
+        );
+        assert!(
+            removed_edges.is_empty(),
+            "no edges removed between identical graphs"
+        );
     }
 
     // ------------------------------------------------------------------
@@ -2646,9 +2862,16 @@ mod tests {
         }
         let s1 = dag.topological_sort().unwrap();
         let s2 = dag.topological_sort().unwrap();
-        assert_eq!(s1, s2, "topological_sort must produce the same order on repeated calls");
+        assert_eq!(
+            s1, s2,
+            "topological_sort must produce the same order on repeated calls"
+        );
         // Kahn sorts roots alphabetically, so the result must be alphabetically sorted.
-        assert_eq!(s1, vec!["alpha", "beta", "delta", "gamma"], "no-edge DAG must sort alphabetically");
+        assert_eq!(
+            s1,
+            vec!["alpha", "beta", "delta", "gamma"],
+            "no-edge DAG must sort alphabetically"
+        );
     }
 
     // ------------------------------------------------------------------
@@ -2668,7 +2891,10 @@ mod tests {
         let sorted = dag.topological_sort().unwrap();
         assert_eq!(sorted.len(), 5, "all 5 nodes must appear in topo sort");
         for n in &["a", "b", "c", "d", "e"] {
-            assert!(sorted.contains(&n.to_string()), "{n} must appear in sorted output");
+            assert!(
+                sorted.contains(&n.to_string()),
+                "{n} must appear in sorted output"
+            );
         }
         // Within each chain, order must be respected.
         let pos = |id: &str| sorted.iter().position(|x| x == id).unwrap();
@@ -2690,7 +2916,11 @@ mod tests {
         dag.add_edge("C", "out", "D", "in");
         dag.add_edge("D", "out", "A", "in"); // closes the cycle
         let err = dag.topological_sort().unwrap_err();
-        assert_eq!(err.len(), 4, "all 4 cycle nodes must appear in the error set");
+        assert_eq!(
+            err.len(),
+            4,
+            "all 4 cycle nodes must appear in the error set"
+        );
     }
 
     // ------------------------------------------------------------------
@@ -2722,7 +2952,10 @@ mod tests {
         for n in &["hub", "t1", "t2", "t3"] {
             assert!(reachable.contains(*n), "{n} must be reachable from hub");
         }
-        assert!(!reachable.contains("isolated"), "isolated must not be reachable");
+        assert!(
+            !reachable.contains("isolated"),
+            "isolated must not be reachable"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -2920,7 +3153,11 @@ mod tests {
         dag.add_node(ExecNode::new("B", "verb"));
         dag.add_edge("A", "out", "B", "in");
         let sccs = kosaraju_sccs(&dag);
-        assert_eq!(sccs.len(), 2, "A→B with no back-edge must give 2 singleton SCCs");
+        assert_eq!(
+            sccs.len(),
+            2,
+            "A→B with no back-edge must give 2 singleton SCCs"
+        );
         for scc in &sccs {
             assert_eq!(scc.len(), 1, "each node must be its own SCC");
         }
@@ -3304,7 +3541,10 @@ mod tests {
     fn transitive_reduction_empty_graph_is_empty() {
         let dag = Dag::new();
         let reduced = transitive_reduction(&dag);
-        assert!(reduced.is_empty(), "empty graph transitive reduction must be empty");
+        assert!(
+            reduced.is_empty(),
+            "empty graph transitive reduction must be empty"
+        );
     }
 
     #[test]
@@ -3314,7 +3554,11 @@ mod tests {
         dag.add_node(ExecNode::new("v", "verb"));
         dag.add_edge("u", "out", "v", "in");
         let reduced = transitive_reduction(&dag);
-        assert_eq!(reduced.len(), 1, "single non-redundant edge must survive reduction");
+        assert_eq!(
+            reduced.len(),
+            1,
+            "single non-redundant edge must survive reduction"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -3386,16 +3630,22 @@ mod tests {
         dag.add_edge("n1", "out", "n2", "in");
         dag.add_edge("n2", "out", "n3", "in");
         dag.add_edge("n3", "out", "n1", "in"); // cycle
-        // n4 is isolated
+                                               // n4 is isolated
         let sccs = kosaraju_sccs(&dag);
         let mut all_nodes: Vec<String> = sccs.iter().flatten().cloned().collect();
         all_nodes.sort();
         let expected: Vec<String> = {
-            let mut v: Vec<_> = ["n1", "n2", "n3", "n4"].iter().map(|s| s.to_string()).collect();
+            let mut v: Vec<_> = ["n1", "n2", "n3", "n4"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
             v.sort();
             v
         };
-        assert_eq!(all_nodes, expected, "union of all SCCs must cover every node exactly once");
+        assert_eq!(
+            all_nodes, expected,
+            "union of all SCCs must cover every node exactly once"
+        );
     }
 
     #[test]
@@ -3410,7 +3660,11 @@ mod tests {
         dag.add_edge("C", "out", "D", "in");
         dag.add_edge("D", "out", "E", "in");
         let reduced = transitive_reduction(&dag);
-        assert_eq!(reduced.len(), 4, "chain with no shortcuts must keep all 4 edges after reduction");
+        assert_eq!(
+            reduced.len(),
+            4,
+            "chain with no shortcuts must keep all 4 edges after reduction"
+        );
     }
 
     #[test]

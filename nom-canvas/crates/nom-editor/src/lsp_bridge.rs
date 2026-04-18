@@ -54,8 +54,14 @@ pub fn classify_token(text: &str) -> String {
     {
         return "string".to_string();
     }
-    if text.chars().all(|c| c.is_ascii_digit() || c == '.' || c == '_')
-        && text.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false)
+    if text
+        .chars()
+        .all(|c| c.is_ascii_digit() || c == '.' || c == '_')
+        && text
+            .chars()
+            .next()
+            .map(|c| c.is_ascii_digit())
+            .unwrap_or(false)
     {
         return "number".to_string();
     }
@@ -82,11 +88,7 @@ pub fn extract_symbols(source: &str) -> Vec<DocumentSymbol> {
     for (line_idx, line) in source.lines().enumerate() {
         let trimmed = line.trim_start();
         if let Some(rest) = trimmed.strip_prefix("define ") {
-            let name: String = rest
-                .split_whitespace()
-                .next()
-                .unwrap_or("")
-                .to_string();
+            let name: String = rest.split_whitespace().next().unwrap_or("").to_string();
             if !name.is_empty() {
                 let range_start = line_idx as u32;
                 let range_end = range_start + 1;
@@ -336,14 +338,20 @@ mod tests {
     #[test]
     fn code_lens_run_action_present() {
         let code_lens = vec!["Run", "Test", "Debug"];
-        assert!(code_lens.contains(&"Run"), "Run action must be present in code lens");
+        assert!(
+            code_lens.contains(&"Run"),
+            "Run action must be present in code lens"
+        );
     }
 
     /// Code lens test action present — label is "Test".
     #[test]
     fn code_lens_test_action_present() {
         let code_lens = vec!["Run", "Test", "Debug"];
-        assert!(code_lens.contains(&"Test"), "Test action must be present in code lens");
+        assert!(
+            code_lens.contains(&"Test"),
+            "Test action must be present in code lens"
+        );
     }
 
     /// Semantic tokens: type category is distinct from function category.
@@ -390,7 +398,10 @@ mod tests {
         let positions: Vec<usize> = spans.iter().map(|(p, _)| *p).collect();
         let mut sorted = positions.clone();
         sorted.sort();
-        assert_eq!(positions, sorted, "semantic token spans must be sorted by position");
+        assert_eq!(
+            positions, sorted,
+            "semantic token spans must be sorted by position"
+        );
     }
 
     /// Semantic tokens full coverage: spans for a 3-token source have no gaps in this sim.
@@ -509,7 +520,10 @@ mod tests {
             if timeout_ms == 0 {
                 Err("timeout")
             } else {
-                Ok(HoverResult { contents: "ok".into(), range: None })
+                Ok(HoverResult {
+                    contents: "ok".into(),
+                    range: None,
+                })
             }
         }
         let result = request_with_timeout(0); // instant timeout
@@ -839,8 +853,14 @@ mod tests {
         // Should have two ranges (inner and outer).
         assert_eq!(ranges.len(), 2);
         // Find the smaller range (inner) and the larger range (outer).
-        let inner = ranges.iter().min_by_key(|r| r.end_line - r.start_line).unwrap();
-        let outer = ranges.iter().max_by_key(|r| r.end_line - r.start_line).unwrap();
+        let inner = ranges
+            .iter()
+            .min_by_key(|r| r.end_line - r.start_line)
+            .unwrap();
+        let outer = ranges
+            .iter()
+            .max_by_key(|r| r.end_line - r.start_line)
+            .unwrap();
         assert!(inner.start_line >= outer.start_line);
         assert!(inner.end_line <= outer.end_line);
     }
@@ -862,35 +882,65 @@ mod tests {
     #[test]
     fn lsp_pos_empty_string_offset_zero() {
         let pos = byte_offset_to_lsp_position("", 0);
-        assert_eq!(pos, LspPosition { line: 0, character: 0 });
+        assert_eq!(
+            pos,
+            LspPosition {
+                line: 0,
+                character: 0
+            }
+        );
     }
 
     /// Empty string: out-of-bounds offset is clamped → line 0, character 0.
     #[test]
     fn lsp_pos_empty_string_oob_clamped() {
         let pos = byte_offset_to_lsp_position("", 999);
-        assert_eq!(pos, LspPosition { line: 0, character: 0 });
+        assert_eq!(
+            pos,
+            LspPosition {
+                line: 0,
+                character: 0
+            }
+        );
     }
 
     /// Single line, offset at start → line 0, character 0.
     #[test]
     fn lsp_pos_single_line_offset_start() {
         let pos = byte_offset_to_lsp_position("hello", 0);
-        assert_eq!(pos, LspPosition { line: 0, character: 0 });
+        assert_eq!(
+            pos,
+            LspPosition {
+                line: 0,
+                character: 0
+            }
+        );
     }
 
     /// Single line, offset in the middle.
     #[test]
     fn lsp_pos_single_line_offset_middle() {
         let pos = byte_offset_to_lsp_position("hello", 3);
-        assert_eq!(pos, LspPosition { line: 0, character: 3 });
+        assert_eq!(
+            pos,
+            LspPosition {
+                line: 0,
+                character: 3
+            }
+        );
     }
 
     /// Single line, offset at end.
     #[test]
     fn lsp_pos_single_line_offset_end() {
         let pos = byte_offset_to_lsp_position("hello", 5);
-        assert_eq!(pos, LspPosition { line: 0, character: 5 });
+        assert_eq!(
+            pos,
+            LspPosition {
+                line: 0,
+                character: 5
+            }
+        );
     }
 
     /// Multi-line: offset at start of second line.
@@ -898,14 +948,26 @@ mod tests {
     fn lsp_pos_multiline_start_of_second_line() {
         // "hello\nworld" — byte 6 is 'w' on line 1
         let pos = byte_offset_to_lsp_position("hello\nworld", 6);
-        assert_eq!(pos, LspPosition { line: 1, character: 0 });
+        assert_eq!(
+            pos,
+            LspPosition {
+                line: 1,
+                character: 0
+            }
+        );
     }
 
     /// Multi-line: offset in the middle of the second line.
     #[test]
     fn lsp_pos_multiline_middle_of_second_line() {
         let pos = byte_offset_to_lsp_position("hello\nworld", 8);
-        assert_eq!(pos, LspPosition { line: 1, character: 2 });
+        assert_eq!(
+            pos,
+            LspPosition {
+                line: 1,
+                character: 2
+            }
+        );
     }
 
     /// Multi-line: offset at the newline character (still on line 0).
@@ -913,7 +975,13 @@ mod tests {
     fn lsp_pos_multiline_at_newline_char() {
         // '\n' is at byte 5; it belongs to line 0
         let pos = byte_offset_to_lsp_position("hello\nworld", 5);
-        assert_eq!(pos, LspPosition { line: 0, character: 5 });
+        assert_eq!(
+            pos,
+            LspPosition {
+                line: 0,
+                character: 5
+            }
+        );
     }
 
     /// Out-of-bounds offset is clamped to end of text.
@@ -922,7 +990,13 @@ mod tests {
         let text = "abc";
         let pos = byte_offset_to_lsp_position(text, 9999);
         // clamped to len=3 → line 0, character 3
-        assert_eq!(pos, LspPosition { line: 0, character: 3 });
+        assert_eq!(
+            pos,
+            LspPosition {
+                line: 0,
+                character: 3
+            }
+        );
     }
 
     /// Unicode: two-byte UTF-8 char is counted as 1 UTF-16 unit.
@@ -932,7 +1006,13 @@ mod tests {
         // "aéb" → byte offsets: a=0, é=1..3, b=3
         let text = "aéb";
         let pos_b = byte_offset_to_lsp_position(text, 3); // byte of 'b'
-        assert_eq!(pos_b, LspPosition { line: 0, character: 2 }); // 'a' + 'é' = 2 UTF-16
+        assert_eq!(
+            pos_b,
+            LspPosition {
+                line: 0,
+                character: 2
+            }
+        ); // 'a' + 'é' = 2 UTF-16
     }
 
     /// lsp_position_to_byte_offset: round-trip on single line.
@@ -986,10 +1066,16 @@ mod tests {
     /// LspPosition and LspRange implement Copy — can be used without move.
     #[test]
     fn lsp_position_and_range_are_copy() {
-        let pos = LspPosition { line: 1, character: 5 };
+        let pos = LspPosition {
+            line: 1,
+            character: 5,
+        };
         let _copy = pos; // copy
         let _ = pos.line; // original still accessible
-        let r = LspRange { start: pos, end: pos };
+        let r = LspRange {
+            start: pos,
+            end: pos,
+        };
         let _r2 = r; // copy
         let _ = r.start.line; // original still accessible
     }
@@ -1009,22 +1095,43 @@ mod tests {
     fn lsp_pos_offset_at_text_len() {
         let text = "hello";
         let pos = byte_offset_to_lsp_position(text, text.len());
-        assert_eq!(pos, LspPosition { line: 0, character: 5 });
+        assert_eq!(
+            pos,
+            LspPosition {
+                line: 0,
+                character: 5
+            }
+        );
     }
 
     /// lsp_position_to_byte_offset: position on empty string returns 0.
     #[test]
     fn lsp_pos_to_offset_empty_string() {
-        let offset = lsp_position_to_byte_offset("", LspPosition { line: 0, character: 0 });
+        let offset = lsp_position_to_byte_offset(
+            "",
+            LspPosition {
+                line: 0,
+                character: 0,
+            },
+        );
         assert_eq!(offset, 0);
     }
 
     /// LspPosition equality: same line/character are equal, different are not.
     #[test]
     fn lsp_position_equality() {
-        let a = LspPosition { line: 3, character: 7 };
-        let b = LspPosition { line: 3, character: 7 };
-        let c = LspPosition { line: 3, character: 8 };
+        let a = LspPosition {
+            line: 3,
+            character: 7,
+        };
+        let b = LspPosition {
+            line: 3,
+            character: 7,
+        };
+        let c = LspPosition {
+            line: 3,
+            character: 8,
+        };
         assert_eq!(a, b);
         assert_ne!(a, c);
     }
@@ -1034,8 +1141,20 @@ mod tests {
     fn lsp_range_full_text() {
         let text = "hello";
         let range = byte_range_to_lsp_range(text, 0..text.len());
-        assert_eq!(range.start, LspPosition { line: 0, character: 0 });
-        assert_eq!(range.end, LspPosition { line: 0, character: 5 });
+        assert_eq!(
+            range.start,
+            LspPosition {
+                line: 0,
+                character: 0
+            }
+        );
+        assert_eq!(
+            range.end,
+            LspPosition {
+                line: 0,
+                character: 5
+            }
+        );
     }
 
     /// LspRange start is before end in a forward range.
@@ -1066,7 +1185,10 @@ mod tests {
     #[test]
     fn lsp_pos_to_offset_second_line() {
         let text = "abc\nxyz";
-        let pos = LspPosition { line: 1, character: 1 };
+        let pos = LspPosition {
+            line: 1,
+            character: 1,
+        };
         let offset = lsp_position_to_byte_offset(text, pos);
         // line 1 starts at byte 4; char 1 → byte 5 ('y')
         assert_eq!(offset, 5);

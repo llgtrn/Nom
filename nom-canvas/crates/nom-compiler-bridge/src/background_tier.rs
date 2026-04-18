@@ -247,8 +247,8 @@ impl BackgroundWorker {
 
         // Grammar cache hit rate: known Nom keywords boost confidence
         let known_keywords = [
-            "define", "that", "is", "with", "and", "or", "not", "if", "then", "else",
-            "result", "each", "map", "filter", "reduce", "yield", "use", "from", "where",
+            "define", "that", "is", "with", "and", "or", "not", "if", "then", "else", "result",
+            "each", "map", "filter", "reduce", "yield", "use", "from", "where",
         ];
         let words: Vec<&str> = intent.split_whitespace().collect();
         let hits = words
@@ -353,7 +353,9 @@ impl BackgroundWorker {
         // Check 4: steps structural validation
         for (i, step) in plan.steps.iter().enumerate() {
             if step.id.is_empty() {
-                diagnostics.push(format!("ERROR StepMissingId: step at index {i} has empty id"));
+                diagnostics.push(format!(
+                    "ERROR StepMissingId: step at index {i} has empty id"
+                ));
             }
             if step.description.is_empty() {
                 diagnostics.push(format!(
@@ -379,14 +381,20 @@ impl BackgroundWorker {
         }
 
         // Extract key entities: words longer than 4 chars that are not common stop words
-        let stop_words = ["that", "with", "this", "from", "have", "will", "been", "they"];
+        let stop_words = [
+            "that", "with", "this", "from", "have", "will", "been", "they",
+        ];
         let entities: Vec<&str> = intent
             .split_whitespace()
             .filter(|w| w.len() > 4 && !stop_words.contains(&w.to_lowercase().as_str()))
             .take(5)
             .collect();
         let entities_str = if entities.is_empty() {
-            intent.split_whitespace().take(3).collect::<Vec<_>>().join(", ")
+            intent
+                .split_whitespace()
+                .take(3)
+                .collect::<Vec<_>>()
+                .join(", ")
         } else {
             entities.join(", ")
         };
@@ -405,8 +413,8 @@ impl BackgroundWorker {
         };
 
         let known_keywords = [
-            "define", "that", "is", "with", "and", "or", "not", "if", "then", "else",
-            "result", "each", "map", "filter", "reduce", "yield", "use", "from", "where",
+            "define", "that", "is", "with", "and", "or", "not", "if", "then", "else", "result",
+            "each", "map", "filter", "reduce", "yield", "use", "from", "where",
         ];
         let words: Vec<&str> = intent.split_whitespace().collect();
         let hits = words
@@ -444,7 +452,10 @@ impl BackgroundWorker {
             (
                 "Forming hypothesis based on entity relationships",
                 vec![
-                    format!("dominant_entity:{}", entities.first().copied().unwrap_or(intent)),
+                    format!(
+                        "dominant_entity:{}",
+                        entities.first().copied().unwrap_or(intent)
+                    ),
                     "relationship:compositional".into(),
                 ],
                 0.7,
@@ -690,7 +701,10 @@ mod tests {
             output_json: format!(r#"{{"intent":"{}"}}"#, goal),
         };
         let plan = worker.do_plan_flow(&output).unwrap();
-        assert!(plan.steps.len() >= 2, "expected multiple steps for long goal");
+        assert!(
+            plan.steps.len() >= 2,
+            "expected multiple steps for long goal"
+        );
         assert!(plan.steps.len() <= 10, "capped at 10 steps");
     }
 
@@ -827,7 +841,11 @@ mod tests {
             .iter()
             .filter(|e| matches!(e, DeepThinkEvent::Step(_)))
             .count();
-        assert!(step_count >= 5, "expected at least 5 steps, got {}", step_count);
+        assert!(
+            step_count >= 5,
+            "expected at least 5 steps, got {}",
+            step_count
+        );
     }
 
     #[test]
@@ -846,7 +864,10 @@ mod tests {
             }
         });
         assert!(final_confidence.is_some(), "expected a Final event");
-        assert!(final_confidence.unwrap() > 0.0, "final confidence should be > 0");
+        assert!(
+            final_confidence.unwrap() > 0.0,
+            "final confidence should be > 0"
+        );
     }
 
     // ── AE3 additions ──────────────────────────────────────────────────────
@@ -908,7 +929,13 @@ mod tests {
         // Collect all Step events in order
         let steps: Vec<_> = events
             .iter()
-            .filter_map(|e| if let DeepThinkEvent::Step(s) = e { Some(s) } else { None })
+            .filter_map(|e| {
+                if let DeepThinkEvent::Step(s) = e {
+                    Some(s)
+                } else {
+                    None
+                }
+            })
             .collect();
         assert!(steps.len() >= 3, "expected at least 3 steps");
         // Step at index 2 (third step) is "Identifying key entities"
@@ -1137,7 +1164,10 @@ mod tests {
             confidence: 0.5,
         };
         let diags = worker.do_verify(&plan);
-        assert!(!diags.is_empty(), "unbalanced braces must yield diagnostics");
+        assert!(
+            !diags.is_empty(),
+            "unbalanced braces must yield diagnostics"
+        );
     }
 
     #[test]
@@ -1151,7 +1181,11 @@ mod tests {
             confidence: 0.5,
         };
         let diags = worker.do_verify(&plan);
-        assert!(diags.is_empty(), "valid plan must have no diagnostics: {:?}", diags);
+        assert!(
+            diags.is_empty(),
+            "valid plan must have no diagnostics: {:?}",
+            diags
+        );
     }
 
     #[test]
@@ -1162,7 +1196,10 @@ mod tests {
         let interrupt = Arc::new(std::sync::atomic::AtomicBool::new(false));
         worker.do_deep_think("analyze the pipeline", &interrupt, &tx);
         let events: Vec<DeepThinkEvent> = rx.try_iter().collect();
-        let step_count = events.iter().filter(|e| matches!(e, DeepThinkEvent::Step(_))).count();
+        let step_count = events
+            .iter()
+            .filter(|e| matches!(e, DeepThinkEvent::Step(_)))
+            .count();
         assert!(step_count > 0, "deep_think must emit at least one step");
     }
 
@@ -1188,7 +1225,10 @@ mod tests {
         let events: Vec<DeepThinkEvent> = rx.try_iter().collect();
         for e in &events {
             if let DeepThinkEvent::Step(s) = e {
-                assert!(!s.hypothesis.is_empty(), "step hypothesis must not be empty");
+                assert!(
+                    !s.hypothesis.is_empty(),
+                    "step hypothesis must not be empty"
+                );
             }
         }
     }
@@ -1277,7 +1317,10 @@ mod tests {
         };
         let plan = worker.do_plan_flow(&output).unwrap();
         // Non-empty Nom-keyword intent must yield confidence > 0.4 (base)
-        assert!(plan.confidence > 0.4, "non-empty intent must yield confidence > 0.4");
+        assert!(
+            plan.confidence > 0.4,
+            "non-empty intent must yield confidence > 0.4"
+        );
     }
 
     // ── wave AJ-7: additional background_tier tests ──────────────────────────
@@ -1297,7 +1340,9 @@ mod tests {
     fn bridge_highlight_1000_line_file_ok() {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
         let worker = BackgroundWorker::new(state);
-        let source: String = (0..1000).map(|i| format!("define line_{i} that is {i}\n")).collect();
+        let source: String = (0..1000)
+            .map(|i| format!("define line_{i} that is {i}\n"))
+            .collect();
         let result = worker.do_compile(&source, &CompileOpts::full());
         assert!(result.is_ok(), "1000-line compile must succeed");
     }
@@ -1307,7 +1352,9 @@ mod tests {
     fn bridge_score_all_10_kinds_ok() {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
         let worker = BackgroundWorker::new(state);
-        let kinds = ["define", "result", "map", "filter", "reduce", "yield", "use", "from", "where", "if"];
+        let kinds = [
+            "define", "result", "map", "filter", "reduce", "yield", "use", "from", "where", "if",
+        ];
         for kind in &kinds {
             let output = PipelineOutput {
                 source_hash: 0,
@@ -1340,7 +1387,11 @@ mod tests {
         // compile before update
         let r1 = worker.do_compile("define a that is 1", &CompileOpts::full());
         // update grammar
-        state.update_grammar_kinds(vec![GrammarKind { name: "verb".into(), description: "".into() }]);
+        state.update_grammar_kinds(vec![GrammarKind {
+            name: "verb".into(),
+            description: "".into(),
+            status: crate::shared::KindStatus::Transient,
+        }]);
         // compile after update
         let r2 = worker.do_compile("define b that is 2", &CompileOpts::full());
         assert!(r1.is_ok());
@@ -1356,11 +1407,19 @@ mod tests {
         let r = worker.do_compile("", &CompileOpts::full());
         assert!(r.is_ok(), "empty source compile must not fail");
         // plan_flow empty json
-        let output = PipelineOutput { source_hash: 0, grammar_version: 0, output_json: "{}".into() };
+        let output = PipelineOutput {
+            source_hash: 0,
+            grammar_version: 0,
+            output_json: "{}".into(),
+        };
         let p = worker.do_plan_flow(&output);
         assert!(p.is_ok(), "plan_flow with empty json must succeed");
         // verify empty intent
-        let plan = CompositionPlan { intent: "x".into(), steps: vec![], confidence: 0.5 };
+        let plan = CompositionPlan {
+            intent: "x".into(),
+            steps: vec![],
+            confidence: 0.5,
+        };
         let diags = worker.do_verify(&plan);
         assert!(diags.is_empty(), "valid simple plan must have no diags");
     }
@@ -1393,7 +1452,10 @@ mod tests {
     #[test]
     fn score_atom_under_compiler_feature() {
         let opts = CompileOpts::full();
-        assert!(opts.cache_enabled, "CompileOpts::full must have cache enabled");
+        assert!(
+            opts.cache_enabled,
+            "CompileOpts::full must have cache enabled"
+        );
         assert_eq!(opts.max_stages, 0);
     }
 
@@ -1402,7 +1464,12 @@ mod tests {
     fn score_overall_in_0_1_range() {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
         let worker = BackgroundWorker::new(state);
-        for intent in ["", "x", "define result that is map", "a b c d e f g h i j k l m n o p"] {
+        for intent in [
+            "",
+            "x",
+            "define result that is map",
+            "a b c d e f g h i j k l m n o p",
+        ] {
             let output = PipelineOutput {
                 source_hash: 0,
                 grammar_version: 1,
@@ -1434,9 +1501,12 @@ mod tests {
         };
         let nom_plan = worker.do_plan_flow(&nom_output).unwrap();
         let junk_plan = worker.do_plan_flow(&junk_output).unwrap();
-        assert!(nom_plan.confidence >= junk_plan.confidence,
+        assert!(
+            nom_plan.confidence >= junk_plan.confidence,
             "exact-match (Nom keywords) must score >= junk: {:.3} vs {:.3}",
-            nom_plan.confidence, junk_plan.confidence);
+            nom_plan.confidence,
+            junk_plan.confidence
+        );
     }
 
     /// score_no_match_lowest: all-junk intent produces the minimum possible confidence.
@@ -1451,7 +1521,10 @@ mod tests {
         };
         let plan = worker.do_plan_flow(&junk_output).unwrap();
         // Minimum confidence for all-non-keyword words is 0.4 (base only)
-        assert_eq!(plan.confidence, 0.4, "all-junk intent must produce base confidence 0.4");
+        assert_eq!(
+            plan.confidence, 0.4,
+            "all-junk intent must produce base confidence 0.4"
+        );
     }
 
     /// lsp_references_returns_positions: goto_definition for unknown path returns None.
@@ -1469,15 +1542,23 @@ mod tests {
     #[test]
     fn lsp_rename_all_positions_updated_bridge() {
         use crate::adapters::lsp::CompilerLspProvider;
-        use nom_editor::lsp_bridge::LspProvider;
         use crate::shared::GrammarKind;
+        use nom_editor::lsp_bridge::LspProvider;
         let state = Arc::new(SharedState::new("a.db", "b.db"));
-        state.update_grammar_kinds(vec![GrammarKind { name: "old_name".into(), description: "".into() }]);
+        state.update_grammar_kinds(vec![GrammarKind {
+            name: "old_name".into(),
+            description: "".into(),
+            status: crate::shared::KindStatus::Transient,
+        }]);
         let provider = CompilerLspProvider::new(Arc::clone(&state));
         let before = provider.completions(std::path::Path::new("f.nomx"), 0);
         assert!(before.iter().any(|c| c.label == "old_name"));
         // Rename: replace kinds
-        state.update_grammar_kinds(vec![GrammarKind { name: "new_name".into(), description: "".into() }]);
+        state.update_grammar_kinds(vec![GrammarKind {
+            name: "new_name".into(),
+            description: "".into(),
+            status: crate::shared::KindStatus::Transient,
+        }]);
         let after = provider.completions(std::path::Path::new("f.nomx"), 0);
         assert!(after.iter().any(|c| c.label == "new_name"));
         assert!(!after.iter().any(|c| c.label == "old_name"));
@@ -1487,11 +1568,8 @@ mod tests {
     #[test]
     fn lsp_workspace_edit_has_text_edits_bridge() {
         // Simulate workspace edit: rename "foo" → "bar" at 3 locations
-        let edits: Vec<(usize, &str, &str)> = vec![
-            (0, "foo", "bar"),
-            (15, "foo", "bar"),
-            (42, "foo", "bar"),
-        ];
+        let edits: Vec<(usize, &str, &str)> =
+            vec![(0, "foo", "bar"), (15, "foo", "bar"), (42, "foo", "bar")];
         assert_eq!(edits.len(), 3, "workspace edit must have 3 entries");
         for (_, old, new) in &edits {
             assert_ne!(old, new, "old and new names must differ");
@@ -1503,11 +1581,18 @@ mod tests {
     fn inlay_hint_type_annotation_present_bridge() {
         use crate::shared::GrammarKind;
         let state = Arc::new(SharedState::new("a.db", "b.db"));
-        state.update_grammar_kinds(vec![GrammarKind { name: "result".into(), description: "output value".into() }]);
+        state.update_grammar_kinds(vec![GrammarKind {
+            name: "result".into(),
+            description: "output value".into(),
+            status: crate::shared::KindStatus::Transient,
+        }]);
         // The grammar cache is non-empty → type annotation inlay hints would be available
         let kinds = state.cached_grammar_kinds();
         let has_result = kinds.iter().any(|k| k.name == "result");
-        assert!(has_result, "grammar cache must contain 'result' for type annotation hints");
+        assert!(
+            has_result,
+            "grammar cache must contain 'result' for type annotation hints"
+        );
     }
 
     /// inlay_hint_position_correct: hint line and col match what was requested.
@@ -1556,7 +1641,10 @@ mod tests {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
         let ops = BackgroundTierOps::new(state);
         let steps = ops.plan_pipeline("   \n\n   \n");
-        assert!(steps.is_empty(), "blank-only source must produce no pipeline steps");
+        assert!(
+            steps.is_empty(),
+            "blank-only source must produce no pipeline steps"
+        );
     }
 
     /// BackgroundTierOps::plan_pipeline with one line returns one step.
@@ -1577,7 +1665,10 @@ mod tests {
         let src = "define cache_test that is 99";
         let r1 = worker.do_compile(src, &CompileOpts::full()).unwrap();
         let r2 = worker.do_compile(src, &CompileOpts::full()).unwrap();
-        assert_eq!(r1.source_hash, r2.source_hash, "same source must produce same hash");
+        assert_eq!(
+            r1.source_hash, r2.source_hash,
+            "same source must produce same hash"
+        );
     }
 
     /// deep_think produces a Final event even for very short intent.
@@ -1605,7 +1696,10 @@ mod tests {
             output_json: r#"{"intent":"define result that is map each item"}"#.into(),
         };
         let plan = worker.do_plan_flow(&output).unwrap();
-        assert!(!plan.steps.is_empty(), "non-empty task must produce at least one step");
+        assert!(
+            !plan.steps.is_empty(),
+            "non-empty task must produce at least one step"
+        );
     }
 
     /// verify with valid (well-formed) input returns a diagnostic list (possibly empty).
@@ -1626,7 +1720,11 @@ mod tests {
         // Returns Vec<String> — may be empty for valid input, but must not panic
         let diags: Vec<String> = worker.do_verify(&plan);
         // Valid input: no diagnostics expected
-        assert!(diags.is_empty(), "valid plan must produce no diagnostics: {:?}", diags);
+        assert!(
+            diags.is_empty(),
+            "valid plan must produce no diagnostics: {:?}",
+            diags
+        );
     }
 
     /// deep_think returns at least 1 step event.
@@ -1638,8 +1736,15 @@ mod tests {
         let interrupt = Arc::new(std::sync::atomic::AtomicBool::new(false));
         worker.do_deep_think("summarize the result", &interrupt, &tx);
         let events: Vec<DeepThinkEvent> = rx.try_iter().collect();
-        let step_count = events.iter().filter(|e| matches!(e, DeepThinkEvent::Step(_))).count();
-        assert!(step_count >= 1, "deep_think must emit at least 1 step, got {}", step_count);
+        let step_count = events
+            .iter()
+            .filter(|e| matches!(e, DeepThinkEvent::Step(_)))
+            .count();
+        assert!(
+            step_count >= 1,
+            "deep_think must emit at least 1 step, got {}",
+            step_count
+        );
     }
 
     /// deep_think step content (hypothesis) is a non-empty string.
@@ -1653,8 +1758,10 @@ mod tests {
         let events: Vec<DeepThinkEvent> = rx.try_iter().collect();
         for event in &events {
             if let DeepThinkEvent::Step(s) = event {
-                assert!(!s.hypothesis.is_empty(),
-                    "every deep_think step hypothesis must be non-empty");
+                assert!(
+                    !s.hypothesis.is_empty(),
+                    "every deep_think step hypothesis must be non-empty"
+                );
             }
         }
     }
@@ -1669,7 +1776,10 @@ mod tests {
         let interrupt = Arc::new(std::sync::atomic::AtomicBool::new(true));
         worker.do_deep_think("compute large result set", &interrupt, &tx);
         let events: Vec<DeepThinkEvent> = rx.try_iter().collect();
-        assert!(events.is_empty(), "pre-interrupted task must emit no events (cancelled status)");
+        assert!(
+            events.is_empty(),
+            "pre-interrupted task must emit no events (cancelled status)"
+        );
     }
 
     /// Background tier handles concurrent requests without panic (two workers on same state).
@@ -1699,11 +1809,18 @@ mod tests {
         worker.do_deep_think(intent_str, &interrupt, &tx);
         let events: Vec<DeepThinkEvent> = rx.try_iter().collect();
         let final_plan = events.iter().find_map(|e| {
-            if let DeepThinkEvent::Final(p) = e { Some(p) } else { None }
+            if let DeepThinkEvent::Final(p) = e {
+                Some(p)
+            } else {
+                None
+            }
         });
         assert!(final_plan.is_some(), "must have a Final event");
-        assert_eq!(final_plan.unwrap().intent, intent_str,
-            "Final event intent must match the original input");
+        assert_eq!(
+            final_plan.unwrap().intent,
+            intent_str,
+            "Final event intent must match the original input"
+        );
     }
 
     /// plan_flow step id fields are non-empty strings.
@@ -1734,7 +1851,10 @@ mod tests {
         };
         let plan = worker.do_plan_flow(&output).unwrap();
         for step in &plan.steps {
-            assert!(!step.description.is_empty(), "step description must not be empty");
+            assert!(
+                !step.description.is_empty(),
+                "step description must not be empty"
+            );
         }
     }
 
@@ -1747,10 +1867,15 @@ mod tests {
         let output = PipelineOutput {
             source_hash: 202,
             grammar_version: 1,
-            output_json: r#"{"intent":"define result that is map each item with filter reduce"}"#.into(),
+            output_json: r#"{"intent":"define result that is map each item with filter reduce"}"#
+                .into(),
         };
         let plan = worker.do_plan_flow(&output).unwrap();
-        assert_eq!(plan.steps.len(), 2, "10-word intent must produce exactly 2 steps");
+        assert_eq!(
+            plan.steps.len(),
+            2,
+            "10-word intent must produce exactly 2 steps"
+        );
     }
 
     /// verify with completely well-formed plan returns empty Vec<String>.
@@ -1777,7 +1902,11 @@ mod tests {
             confidence: 0.8,
         };
         let diags = worker.do_verify(&plan);
-        assert!(diags.is_empty(), "well-formed plan must produce no diagnostics: {:?}", diags);
+        assert!(
+            diags.is_empty(),
+            "well-formed plan must produce no diagnostics: {:?}",
+            diags
+        );
     }
 
     // ── Workspace diagnostics API ─────────────────────────────────────────────
@@ -1809,7 +1938,10 @@ mod tests {
             confidence: 0.0,
         };
         let diags = worker.do_verify(&plan);
-        assert!(!diags.is_empty(), "empty intent must produce at least one diagnostic");
+        assert!(
+            !diags.is_empty(),
+            "empty intent must produce at least one diagnostic"
+        );
         // Each diagnostic is a non-empty String
         for d in &diags {
             assert!(!d.is_empty(), "diagnostic message must not be empty");
@@ -1835,7 +1967,10 @@ mod tests {
         );
 
         // 1001-line intent → WARN
-        let long_intent: String = (0..1001).map(|i| format!("line_{i}")).collect::<Vec<_>>().join("\n");
+        let long_intent: String = (0..1001)
+            .map(|i| format!("line_{i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
         let perf_plan = CompositionPlan {
             intent: long_intent,
             steps: vec![],
@@ -1874,7 +2009,11 @@ mod tests {
         assert_eq!(results.len(), 5, "batch of 5 must return 5 result sets");
         // All are valid (no braces issues) → all empty
         for (i, r) in results.iter().enumerate() {
-            assert!(r.is_empty(), "valid plan {i} must have no diagnostics: {:?}", r);
+            assert!(
+                r.is_empty(),
+                "valid plan {i} must have no diagnostics: {:?}",
+                r
+            );
         }
     }
 
@@ -1895,9 +2034,15 @@ mod tests {
             confidence: 0.5,
         };
         let diags = worker.do_verify(&plan);
-        assert!(!diags.is_empty(), "step with empty id must produce a diagnostic");
+        assert!(
+            !diags.is_empty(),
+            "step with empty id must produce a diagnostic"
+        );
         // The diagnostic has a message even though no file path was provided
-        assert!(!diags[0].is_empty(), "diagnostic message must not be empty even without file path");
+        assert!(
+            !diags[0].is_empty(),
+            "diagnostic message must not be empty even without file path"
+        );
     }
 
     // ── Code action kinds ────────────────────────────────────────────────────
@@ -1907,7 +2052,10 @@ mod tests {
     fn code_action_known_kinds_present() {
         let known_kinds = ["quickfix", "refactor", "source.organizeImports"];
         for kind in &known_kinds {
-            assert!(!kind.is_empty(), "code action kind '{kind}' must be non-empty");
+            assert!(
+                !kind.is_empty(),
+                "code action kind '{kind}' must be non-empty"
+            );
         }
         // All three are distinct
         assert_ne!(known_kinds[0], known_kinds[1]);
@@ -1920,8 +2068,14 @@ mod tests {
     fn code_action_empty_title_is_empty() {
         let empty_title = "";
         let normal_title = "Fix import";
-        assert!(empty_title.is_empty(), "empty title must be detected as empty");
-        assert!(!normal_title.is_empty(), "non-empty title must not be empty");
+        assert!(
+            empty_title.is_empty(),
+            "empty title must be detected as empty"
+        );
+        assert!(
+            !normal_title.is_empty(),
+            "non-empty title must not be empty"
+        );
     }
 
     /// Code action kind filter: only items matching the filter kind are returned.
@@ -1936,9 +2090,16 @@ mod tests {
         ];
         let filter = "quickfix";
         let filtered: Vec<_> = actions.iter().filter(|(k, _)| *k == filter).collect();
-        assert_eq!(filtered.len(), 2, "quickfix filter must return exactly 2 actions");
+        assert_eq!(
+            filtered.len(),
+            2,
+            "quickfix filter must return exactly 2 actions"
+        );
         for (kind, _) in &filtered {
-            assert_eq!(*kind, filter, "all returned actions must have kind 'quickfix'");
+            assert_eq!(
+                *kind, filter,
+                "all returned actions must have kind 'quickfix'"
+            );
         }
     }
 
@@ -1952,7 +2113,10 @@ mod tests {
             ("refactor", 2),
         ];
         actions.sort_by_key(|(_, priority)| *priority);
-        assert_eq!(actions[0].0, "quickfix", "highest priority action must be first");
+        assert_eq!(
+            actions[0].0, "quickfix",
+            "highest priority action must be first"
+        );
         assert_eq!(actions[1].0, "refactor");
         assert_eq!(actions[2].0, "source.organizeImports");
     }
@@ -1963,8 +2127,14 @@ mod tests {
         // A command-only action has empty edits list but non-empty command
         let edits: Vec<(usize, &str, &str)> = vec![];
         let command = "editor.action.formatDocument";
-        assert!(edits.is_empty(), "command-only action must have empty edits");
-        assert!(!command.is_empty(), "command-only action must have a non-empty command");
+        assert!(
+            edits.is_empty(),
+            "command-only action must have empty edits"
+        );
+        assert!(
+            !command.is_empty(),
+            "command-only action must have a non-empty command"
+        );
     }
 
     // ── Diff apply ───────────────────────────────────────────────────────────
@@ -2006,7 +2176,10 @@ mod tests {
         // Simulate overlap detection: two changes affecting the same line index
         let changes: Vec<(usize, usize)> = vec![(2, 5), (3, 6)]; // (start, end) line ranges
         let overlapping = changes.windows(2).any(|w| w[0].1 > w[1].0);
-        assert!(overlapping, "overlapping ranges must be detected as overlapping");
+        assert!(
+            overlapping,
+            "overlapping ranges must be detected as overlapping"
+        );
     }
 
     /// Applying diff produced from two-version source reconstructs the target.
@@ -2018,7 +2191,10 @@ mod tests {
         let mut lines: Vec<&str> = source.lines().collect();
         lines[0] = "define x that is 42";
         let reconstructed = lines.join("\n") + "\n";
-        assert_eq!(reconstructed, target, "applying diff must reconstruct the target text");
+        assert_eq!(
+            reconstructed, target,
+            "applying diff must reconstruct the target text"
+        );
     }
 
     // ── SharedState concurrent access ────────────────────────────────────────
@@ -2030,9 +2206,11 @@ mod tests {
         use std::thread;
 
         let state = Arc::new(SharedState::new("d.db", "g.db"));
-        state.update_grammar_kinds(vec![
-            crate::shared::GrammarKind { name: "action".into(), description: "x".into() },
-        ]);
+        state.update_grammar_kinds(vec![crate::shared::GrammarKind {
+            name: "action".into(),
+            description: "x".into(),
+            status: crate::shared::KindStatus::Transient,
+        }]);
 
         let s1 = Arc::clone(&state);
         let s2 = Arc::clone(&state);
@@ -2055,25 +2233,32 @@ mod tests {
         use std::thread;
 
         let state = Arc::new(SharedState::new("d.db", "g.db"));
-        state.update_grammar_kinds(vec![
-            crate::shared::GrammarKind { name: "initial".into(), description: "x".into() },
-        ]);
+        state.update_grammar_kinds(vec![crate::shared::GrammarKind {
+            name: "initial".into(),
+            description: "x".into(),
+            status: crate::shared::KindStatus::Transient,
+        }]);
 
         let reader_state = Arc::clone(&state);
         let writer_state = Arc::clone(&state);
 
         let reader = thread::spawn(move || reader_state.cached_grammar_kinds());
         let writer = thread::spawn(move || {
-            writer_state.update_grammar_kinds(vec![
-                crate::shared::GrammarKind { name: "updated".into(), description: "y".into() },
-            ]);
+            writer_state.update_grammar_kinds(vec![crate::shared::GrammarKind {
+                name: "updated".into(),
+                description: "y".into(),
+                status: crate::shared::KindStatus::Transient,
+            }]);
         });
 
         let read_result = reader.join().expect("reader panicked");
         writer.join().expect("writer panicked");
 
         // Reader got a consistent snapshot (either "initial" or "updated" — both are valid)
-        assert!(!read_result.is_empty(), "reader must always return a consistent non-empty snapshot");
+        assert!(
+            !read_result.is_empty(),
+            "reader must always return a consistent non-empty snapshot"
+        );
         // Final state must be "updated"
         let final_kinds = state.cached_grammar_kinds();
         assert_eq!(final_kinds[0].name, "updated");
@@ -2100,19 +2285,30 @@ mod tests {
         let state = Arc::new(SharedState::new("d.db", "g.db"));
         // Populate pool with 4 slots, then drain them
         let init: Vec<_> = (0..4).map(|_| state.borrow_reader()).collect();
-        for s in init { state.return_reader(s); }
+        for s in init {
+            state.return_reader(s);
+        }
         assert_eq!(state.pool_idle_count(), 4);
 
         // Drain all 4
         let borrowed: Vec<_> = (0..4).map(|_| state.borrow_reader()).collect();
-        assert_eq!(state.pool_idle_count(), 0, "pool must be empty after draining 4 slots");
+        assert_eq!(
+            state.pool_idle_count(),
+            0,
+            "pool must be empty after draining 4 slots"
+        );
 
         // 5th borrow must succeed (creates fresh slot, no panic)
         let fifth = state.borrow_reader();
-        assert_eq!(fifth.state.dict_path, "d.db", "5th slot must have correct dict path");
+        assert_eq!(
+            fifth.state.dict_path, "d.db",
+            "5th slot must have correct dict path"
+        );
 
         // Clean up
-        for s in borrowed { state.return_reader(s); }
+        for s in borrowed {
+            state.return_reader(s);
+        }
         state.return_reader(fifth);
     }
 
@@ -2121,11 +2317,21 @@ mod tests {
     fn shared_state_pool_idle_count_returns_4() {
         use std::sync::Arc;
         let state = Arc::new(SharedState::new("d.db", "g.db"));
-        assert_eq!(state.pool_idle_count(), 0, "fresh pool must have 0 idle slots");
+        assert_eq!(
+            state.pool_idle_count(),
+            0,
+            "fresh pool must have 0 idle slots"
+        );
         // Return 4 slots
         let slots: Vec<_> = (0..4).map(|_| state.borrow_reader()).collect();
-        for s in slots { state.return_reader(s); }
-        assert_eq!(state.pool_idle_count(), 4, "pool_idle_count must return 4 after returning 4 slots");
+        for s in slots {
+            state.return_reader(s);
+        }
+        assert_eq!(
+            state.pool_idle_count(),
+            4,
+            "pool_idle_count must return 4 after returning 4 slots"
+        );
     }
 }
 

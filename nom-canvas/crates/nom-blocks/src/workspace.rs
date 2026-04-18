@@ -18,14 +18,13 @@ pub enum CanvasObject {
 }
 
 impl CanvasObject {
-    /// Return the [`NomtuRef`] for Block or Node variants. Panics for Connector.
-    pub fn entity(&self) -> &NomtuRef {
+    /// Return the [`NomtuRef`] for Block or Node variants.
+    /// Returns `None` for the Connector variant (connectors identify via src/dst node entities).
+    pub fn entity(&self) -> Option<&NomtuRef> {
         match self {
-            CanvasObject::Block(b) => &b.entity,
-            CanvasObject::Node(n) => &n.entity,
-            CanvasObject::Connector(_) => {
-                panic!("Connectors don't have a direct NomtuRef — use src/dst node entities")
-            }
+            CanvasObject::Block(b) => Some(&b.entity),
+            CanvasObject::Node(n) => Some(&n.entity),
+            CanvasObject::Connector(_) => None,
         }
     }
 }
@@ -50,7 +49,11 @@ impl Workspace {
     }
 
     /// Add a block and append its ID to `doc_tree`.
+    /// Returns early without inserting if a block with the same entity ref already exists.
     pub fn insert_block(&mut self, block: BlockModel) {
+        if self.blocks.values().any(|b| b.entity == block.entity) {
+            return;
+        }
         self.doc_tree.push(block.id.clone());
         self.blocks.insert(block.id.clone(), block);
     }
@@ -63,6 +66,26 @@ impl Workspace {
     /// Add a connector to the workspace.
     pub fn insert_connector(&mut self, connector: Connector) {
         self.connectors.insert(connector.id.clone(), connector);
+    }
+
+    /// Remove a node by its entity ref. Returns `true` if a node was removed.
+    pub fn remove_node(&mut self, entity: &NomtuRef) -> bool {
+        if let Some(id) = self
+            .nodes
+            .iter()
+            .find(|(_, n)| &n.entity == entity)
+            .map(|(id, _)| id.clone())
+        {
+            self.nodes.remove(&id);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Remove a connector by ID. Returns `true` if the connector was present and removed.
+    pub fn remove_connector(&mut self, id: &ConnectorId) -> bool {
+        self.connectors.remove(id).is_some()
     }
 
     /// Remove a block by ID, also removing it from `doc_tree`. Returns the block if found.
@@ -167,8 +190,8 @@ mod tests {
         let entity = NomtuRef::new("e1", "render", "verb");
         let block = BlockModel::new("b1", entity.clone(), "affine:paragraph");
         let obj = CanvasObject::Block(block);
-        assert_eq!(obj.entity().id, "e1");
-        assert_eq!(obj.entity().word, "render");
+        assert_eq!(obj.entity().unwrap().id, "e1");
+        assert_eq!(obj.entity().unwrap().word, "render");
     }
 
     /// Workspace::new() starts with zero counts
@@ -181,7 +204,8 @@ mod tests {
         assert!(ws.doc_tree.is_empty());
     }
 
-    /// Inserting the same block ID twice updates the map but doc_tree gets two entries
+    /// Two blocks with the same id but different entities: entity dedup passes (different entities).
+    /// HashMap uses id as key so overwrites — 1 block. doc_tree appends both — 2 entries.
     #[test]
     fn workspace_insert_duplicate_block_id() {
         let mut ws = Workspace::new();
@@ -189,9 +213,9 @@ mod tests {
         let b2 = BlockModel::new("dup", NomtuRef::new("e2", "w", "verb"), "affine:paragraph");
         ws.insert_block(b1);
         ws.insert_block(b2);
-        // HashMap replaces: still 1 block
+        // Different entities → both pass entity dedup guard; HashMap overwrites: 1 block.
         assert_eq!(ws.block_count(), 1);
-        // doc_tree appends: 2 entries
+        // doc_tree appends each id: 2 entries.
         assert_eq!(ws.doc_tree.len(), 2);
     }
 
@@ -202,8 +226,8 @@ mod tests {
         let entity = NomtuRef::new("ne1", "transform", "verb");
         let node = GraphNode::new("n1", entity.clone(), "verb", [0.0, 0.0]);
         let obj = CanvasObject::Node(node);
-        assert_eq!(obj.entity().id, "ne1");
-        assert_eq!(obj.entity().word, "transform");
+        assert_eq!(obj.entity().unwrap().id, "ne1");
+        assert_eq!(obj.entity().unwrap().word, "transform");
     }
 
     /// remove_block on non-existent ID returns None without panicking
@@ -348,11 +372,7 @@ mod tests {
     /// CanvasObject::Block and Node variants can coexist in a Vec
     #[test]
     fn canvas_object_vec_can_hold_block_and_node() {
-        let block = BlockModel::new(
-            "b1",
-            NomtuRef::new("e1", "w", "verb"),
-            "affine:paragraph",
-        );
+        let block = BlockModel::new("b1", NomtuRef::new("e1", "w", "verb"), "affine:paragraph");
         let node = GraphNode::new("n1", NomtuRef::new("e2", "x", "verb"), "verb", [0.0, 0.0]);
         let objects: Vec<CanvasObject> = vec![CanvasObject::Block(block), CanvasObject::Node(node)];
         assert_eq!(objects.len(), 2);
@@ -413,10 +433,7 @@ mod tests {
         }
         assert_eq!(ws.block_count(), 3);
         for (i, flavour) in flavours.iter().enumerate() {
-            assert_eq!(
-                ws.blocks.get(&format!("b{i}")).unwrap().flavour,
-                *flavour
-            );
+            assert_eq!(ws.blocks.get(&format!("b{i}")).unwrap().flavour, *flavour);
         }
     }
 
@@ -851,7 +868,11 @@ mod tests {
         assert_eq!(ws.block_count(), 5);
         let json = serde_json::to_string(&ws).expect("serialize workspace");
         let ws2: Workspace = serde_json::from_str(&json).expect("deserialize workspace");
-        assert_eq!(ws2.block_count(), 5, "block count must be preserved through serialization");
+        assert_eq!(
+            ws2.block_count(),
+            5,
+            "block count must be preserved through serialization"
+        );
     }
 
     /// Workspace clear then re-add same count produces same block_count().
@@ -878,7 +899,11 @@ mod tests {
                 "affine:paragraph",
             ));
         }
-        assert_eq!(ws.block_count(), 3, "re-added block count must match original");
+        assert_eq!(
+            ws.block_count(),
+            3,
+            "re-added block count must match original"
+        );
     }
 
     /// Workspace connector count is tracked separately from block count.
@@ -927,7 +952,11 @@ mod tests {
                 "affine:paragraph",
             ));
         }
-        assert_eq!(ws.doc_tree.len(), ws.block_count(), "doc_tree length must match block_count()");
+        assert_eq!(
+            ws.doc_tree.len(),
+            ws.block_count(),
+            "doc_tree length must match block_count()"
+        );
     }
 
     /// Workspace stats: block_count() + connector_count() return correct values after mixed ops.
@@ -964,7 +993,11 @@ mod tests {
         // Remove one block and one connector-slot (by clearing manually)
         ws.remove_block("st-b0");
         assert_eq!(ws.block_count(), 3);
-        assert_eq!(ws.connector_count(), 2, "connector count unchanged after block removal");
+        assert_eq!(
+            ws.connector_count(),
+            2,
+            "connector count unchanged after block removal"
+        );
     }
 
     // ── wave AB: additional workspace tests ────────────────────────────────────

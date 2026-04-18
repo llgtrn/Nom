@@ -375,8 +375,10 @@ fn eval_expr_inner(
             }
         }
         Expr::Call { name, args } => {
-            let evaled: Result<Vec<_>, _> =
-                args.iter().map(|a| eval_expr_inner(a, ctx, depth + 1)).collect();
+            let evaled: Result<Vec<_>, _> = args
+                .iter()
+                .map(|a| eval_expr_inner(a, ctx, depth + 1))
+                .collect();
             eval_call(name, evaled?)
         }
     }
@@ -1142,7 +1144,10 @@ mod tests {
             name: "upper".into(),
             args: vec![Expr::Literal(SandboxValue::Str("hello".into()))],
         };
-        assert_eq!(eval_expr(&expr, &ctx), Ok(SandboxValue::Str("HELLO".into())));
+        assert_eq!(
+            eval_expr(&expr, &ctx),
+            Ok(SandboxValue::Str("HELLO".into()))
+        );
     }
 
     // ------------------------------------------------------------------
@@ -1155,7 +1160,10 @@ mod tests {
             name: "lower".into(),
             args: vec![Expr::Literal(SandboxValue::Str("WORLD".into()))],
         };
-        assert_eq!(eval_expr(&expr, &ctx), Ok(SandboxValue::Str("world".into())));
+        assert_eq!(
+            eval_expr(&expr, &ctx),
+            Ok(SandboxValue::Str("world".into()))
+        );
     }
 
     // ------------------------------------------------------------------
@@ -1222,7 +1230,10 @@ mod tests {
     #[test]
     fn sandbox_error_display_undefined_var() {
         let e = SandboxError::UndefinedVar("x".into());
-        assert!(format!("{e}").contains("x"), "display must include var name");
+        assert!(
+            format!("{e}").contains("x"),
+            "display must include var name"
+        );
     }
 
     #[test]
@@ -1272,7 +1283,9 @@ mod tests {
                 args: vec![],
             }],
         };
-        assert!(AllowedFunctionsSanitizer::default_safe().check(&expr).is_err());
+        assert!(AllowedFunctionsSanitizer::default_safe()
+            .check(&expr)
+            .is_err());
     }
 
     // ------------------------------------------------------------------
@@ -1480,7 +1493,9 @@ mod tests {
         let result = eval_expr(&expr, &ctx);
         // to_str uses Debug formatting; just check it's a Str and non-empty.
         match result {
-            Ok(SandboxValue::Str(s)) => assert!(!s.is_empty(), "to_str must produce non-empty string"),
+            Ok(SandboxValue::Str(s)) => {
+                assert!(!s.is_empty(), "to_str must produce non-empty string")
+            }
             other => panic!("expected Str, got {:?}", other),
         }
     }
@@ -1499,7 +1514,10 @@ mod tests {
             right: Box::new(Expr::Literal(SandboxValue::Float(2.0))),
         };
         let result = eval_expr(&expr, &ctx);
-        assert!(result.is_err(), "Float Sub must return an error (not implemented)");
+        assert!(
+            result.is_err(),
+            "Float Sub must return an error (not implemented)"
+        );
     }
 
     // ------------------------------------------------------------------
@@ -1509,7 +1527,10 @@ mod tests {
     fn sandbox_error_display_forbidden_identifier() {
         let e = SandboxError::ForbiddenIdentifier("this".into());
         let msg = format!("{e}");
-        assert!(msg.contains("this"), "ForbiddenIdentifier display must include identifier name");
+        assert!(
+            msg.contains("this"),
+            "ForbiddenIdentifier display must include identifier name"
+        );
     }
 
     // ------------------------------------------------------------------
@@ -1529,7 +1550,10 @@ mod tests {
     fn sandbox_error_display_invalid_dollar_var() {
         let e = SandboxError::InvalidDollarVar("$custom".into());
         let msg = format!("{e}");
-        assert!(msg.contains("$custom"), "InvalidDollarVar display must include var name");
+        assert!(
+            msg.contains("$custom"),
+            "InvalidDollarVar display must include var name"
+        );
     }
 
     // ------------------------------------------------------------------
@@ -1540,7 +1564,10 @@ mod tests {
         let s = NoSideEffectsSanitizer;
         let expr = Expr::Literal(SandboxValue::Int(1));
         assert!(s.check(&expr).is_ok());
-        let call_expr = Expr::Call { name: "len".into(), args: vec![] };
+        let call_expr = Expr::Call {
+            name: "len".into(),
+            args: vec![],
+        };
         assert!(s.check(&call_expr).is_ok());
     }
 
@@ -1716,9 +1743,16 @@ mod tests {
         let expr = Expr::Literal(SandboxValue::Int(55));
         let ctx = EvalContext::new();
         let sanitize_result = sanitize(&expr);
-        assert!(sanitize_result.is_ok(), "sanitize must pass for literal before eval");
+        assert!(
+            sanitize_result.is_ok(),
+            "sanitize must pass for literal before eval"
+        );
         let eval_result = eval_expr(&expr, &ctx);
-        assert_eq!(eval_result, Ok(SandboxValue::Int(55)), "eval must succeed after sanitize");
+        assert_eq!(
+            eval_result,
+            Ok(SandboxValue::Int(55)),
+            "eval must succeed after sanitize"
+        );
     }
 
     // ------------------------------------------------------------------
@@ -1734,7 +1768,10 @@ mod tests {
             Expr::Literal(SandboxValue::Bool(false)),
             Expr::Literal(SandboxValue::Int(0)),
             Expr::Var("x".into()),
-            Expr::Call { name: "len".into(), args: vec![] },
+            Expr::Call {
+                name: "len".into(),
+                args: vec![],
+            },
         ];
         for expr in &exprs {
             assert!(
@@ -1756,7 +1793,10 @@ mod tests {
             left: Box::new(Expr::Literal(SandboxValue::Str("foo".into()))),
             right: Box::new(Expr::Literal(SandboxValue::Str("bar".into()))),
         };
-        assert_eq!(eval_expr(&expr, &ctx), Ok(SandboxValue::Str("foobar".into())));
+        assert_eq!(
+            eval_expr(&expr, &ctx),
+            Ok(SandboxValue::Str("foobar".into()))
+        );
     }
 
     // ------------------------------------------------------------------
@@ -1833,7 +1873,10 @@ mod tests {
         let exprs = [
             Expr::Literal(SandboxValue::Int(0)),
             Expr::Var("x".into()),
-            Expr::Call { name: "len".into(), args: vec![] },
+            Expr::Call {
+                name: "len".into(),
+                args: vec![],
+            },
             Expr::BinOp {
                 op: BinOpKind::Add,
                 left: Box::new(Expr::Literal(SandboxValue::Int(1))),
@@ -1956,7 +1999,11 @@ mod tests {
     fn eval_list_literal_correct() {
         let ctx = EvalContext::new();
         // A list literal evaluates to itself.
-        let items = vec![SandboxValue::Int(1), SandboxValue::Int(2), SandboxValue::Int(3)];
+        let items = vec![
+            SandboxValue::Int(1),
+            SandboxValue::Int(2),
+            SandboxValue::Int(3),
+        ];
         let expr = Expr::Literal(SandboxValue::List(items.clone()));
         assert_eq!(eval_expr(&expr, &ctx), Ok(SandboxValue::List(items)));
     }
@@ -1994,7 +2041,10 @@ mod tests {
             name: "upper".into(),
             args: vec![inner],
         };
-        assert_eq!(eval_expr(&outer, &ctx), Ok(SandboxValue::Str("HELLO".into())));
+        assert_eq!(
+            eval_expr(&outer, &ctx),
+            Ok(SandboxValue::Str("HELLO".into()))
+        );
     }
 
     // ------------------------------------------------------------------

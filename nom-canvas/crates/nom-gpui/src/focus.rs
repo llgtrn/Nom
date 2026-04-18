@@ -284,7 +284,10 @@ mod tests {
 
         // After blur: ring removed.
         fm.blur();
-        assert!(!h.is_focused(&fm), "handle must be unfocused after fm.blur()");
+        assert!(
+            !h.is_focused(&fm),
+            "handle must be unfocused after fm.blur()"
+        );
     }
 
     #[test]

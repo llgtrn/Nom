@@ -265,7 +265,11 @@ mod tests {
     #[test]
     fn sqlite_dict_stub_kind_count_called_twice_consistent() {
         let reader = SqliteDictReader::new_stub();
-        assert_eq!(reader.kind_count(), reader.kind_count(), "kind_count must be idempotent");
+        assert_eq!(
+            reader.kind_count(),
+            reader.kind_count(),
+            "kind_count must be idempotent"
+        );
     }
 
     #[test]
@@ -279,7 +283,10 @@ mod tests {
     fn sqlite_dict_stub_kind_count_zero_means_empty_list() {
         let reader = SqliteDictReader::new_stub();
         if reader.kind_count() == 0 {
-            assert!(reader.list_kinds().is_empty(), "kind_count=0 implies list_kinds is empty");
+            assert!(
+                reader.list_kinds().is_empty(),
+                "kind_count=0 implies list_kinds is empty"
+            );
         }
     }
 }

@@ -124,7 +124,10 @@ mod tests {
 
     #[test]
     fn embed_type_generic_for_unknown_url() {
-        assert_eq!(EmbedType::from_url("https://notion.so/page"), EmbedType::Web);
+        assert_eq!(
+            EmbedType::from_url("https://notion.so/page"),
+            EmbedType::Web
+        );
     }
 
     #[test]
@@ -155,10 +158,19 @@ mod tests {
 
     #[test]
     fn embed_type_all_variants_reachable() {
-        assert_eq!(EmbedType::from_url("https://youtube.com/"), EmbedType::Youtube);
+        assert_eq!(
+            EmbedType::from_url("https://youtube.com/"),
+            EmbedType::Youtube
+        );
         assert_eq!(EmbedType::from_url("https://figma.com/"), EmbedType::Figma);
-        assert_eq!(EmbedType::from_url("https://twitter.com/"), EmbedType::Tweet);
-        assert_eq!(EmbedType::from_url("https://github.com/"), EmbedType::Github);
+        assert_eq!(
+            EmbedType::from_url("https://twitter.com/"),
+            EmbedType::Tweet
+        );
+        assert_eq!(
+            EmbedType::from_url("https://github.com/"),
+            EmbedType::Github
+        );
         assert_eq!(EmbedType::from_url("https://other.com/"), EmbedType::Web);
     }
 

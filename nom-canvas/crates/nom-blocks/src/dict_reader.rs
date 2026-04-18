@@ -168,7 +168,9 @@ mod tests {
         let dict = StubDictReader::new();
         // All known kinds without custom shapes return at least input + output
         let shapes = dict.clause_shapes_for("verb");
-        assert!(shapes.iter().any(|s| s.name == "input" || s.name == "output"));
+        assert!(shapes
+            .iter()
+            .any(|s| s.name == "input" || s.name == "output"));
     }
 
     #[test]

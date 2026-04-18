@@ -104,6 +104,9 @@ impl DocState {
     /// Apply a single operation to the document, advancing the Lamport clock if
     /// the incoming counter is ahead of the local one.
     pub fn apply(&mut self, op: Op) {
+        if self.op_log.iter().any(|existing| existing.id == op.id) {
+            return;
+        }
         // Advance local counter to stay ahead of incoming ops, clamped to avoid overflow.
         if op.id.counter > self.counter {
             self.counter = op.id.counter.min(u64::MAX - 1);
@@ -1463,6 +1466,16 @@ mod tests {
         // Counter at each step must be strictly greater than the previous.
         assert!(op1.id.counter < op2.id.counter);
         assert!(op2.id.counter < op3.id.counter);
+    }
+
+    #[test]
+    fn apply_duplicate_op_is_idempotent() {
+        let mut doc = DocState::new(PeerId(9001));
+        let op = make_insert(9002, 1, RgaPos::Head, "once");
+        doc.apply(op.clone());
+        doc.apply(op);
+        assert_eq!(doc.text(), "once");
+        assert_eq!(doc.op_log.len(), 1);
     }
 
     // ── 24 new tests (wave expand-3) ─────────────────────────────────────────
@@ -3655,10 +3668,19 @@ mod tests {
             })
             .collect();
 
-        assert_eq!(docs[0], docs[1], "permutations 0,1,2 and 2,0,1 must converge");
-        assert_eq!(docs[1], docs[2], "permutations 2,0,1 and 1,2,0 must converge");
+        assert_eq!(
+            docs[0], docs[1],
+            "permutations 0,1,2 and 2,0,1 must converge"
+        );
+        assert_eq!(
+            docs[1], docs[2],
+            "permutations 2,0,1 and 1,2,0 must converge"
+        );
         for i in 0..3 {
-            assert!(docs[0].contains(&format!("peer{i}")), "text must contain peer{i}");
+            assert!(
+                docs[0].contains(&format!("peer{i}")),
+                "text must contain peer{i}"
+            );
         }
     }
 
@@ -3677,7 +3699,11 @@ mod tests {
         for op in &ops {
             merged.apply(op.clone());
         }
-        assert_eq!(merged.text().chars().count(), 4, "4 concurrent inserts must all appear");
+        assert_eq!(
+            merged.text().chars().count(),
+            4,
+            "4 concurrent inserts must all appear"
+        );
     }
 
     #[test]
@@ -3697,7 +3723,11 @@ mod tests {
         for op in ops.iter().rev() {
             doc_rev.apply(op.clone());
         }
-        assert_eq!(doc_fwd.text(), doc_rev.text(), "5 concurrent inserts must converge");
+        assert_eq!(
+            doc_fwd.text(),
+            doc_rev.text(),
+            "5 concurrent inserts must converge"
+        );
         for i in 0..5 {
             assert!(doc_fwd.text().contains(&format!("p{i}")));
         }
@@ -3718,8 +3748,16 @@ mod tests {
             restored.apply(op.clone());
         }
 
-        assert_eq!(restored.op_log().len(), doc.op_log().len(), "log length must match");
-        assert_eq!(restored.text(), doc.text(), "text must match after roundtrip");
+        assert_eq!(
+            restored.op_log().len(),
+            doc.op_log().len(),
+            "log length must match"
+        );
+        assert_eq!(
+            restored.text(),
+            doc.text(),
+            "text must match after roundtrip"
+        );
     }
 
     #[test]
@@ -3746,7 +3784,10 @@ mod tests {
         let mut doc = DocState::new(PeerId(34_020));
         doc.local_insert(RgaPos::Head, "content");
         doc.apply(Op {
-            id: OpId { peer: PeerId(34_020), counter: 99 },
+            id: OpId {
+                peer: PeerId(34_020),
+                counter: 99,
+            },
             kind: OpKind::SetMeta {
                 key: "author".to_string(),
                 value: "alice".to_string(),
@@ -3760,9 +3801,10 @@ mod tests {
         }
 
         assert_eq!(restored.text(), doc.text());
-        let has_meta = restored.op_log().iter().any(|op| {
-            matches!(&op.kind, OpKind::SetMeta { key, .. } if key == "author")
-        });
+        let has_meta = restored
+            .op_log()
+            .iter()
+            .any(|op| matches!(&op.kind, OpKind::SetMeta { key, .. } if key == "author"));
         assert!(has_meta, "SetMeta must survive roundtrip");
     }
 
@@ -3832,7 +3874,11 @@ mod tests {
         pc.merge(&pa);
 
         assert_eq!(pa.text(), pb.text());
-        assert_eq!(pa.text(), pc.text(), "3-way merge with delete must converge");
+        assert_eq!(
+            pa.text(),
+            pc.text(),
+            "3-way merge with delete must converge"
+        );
         assert_eq!(pa.text(), "B");
     }
 
@@ -3882,8 +3928,14 @@ mod tests {
         let op2 = doc.local_insert(RgaPos::After(op1.id), " world");
         doc.local_delete(op1.id);
         doc.apply(Op {
-            id: OpId { peer: PeerId(36_000), counter: 99 },
-            kind: OpKind::SetMeta { key: "status".to_string(), value: "draft".to_string() },
+            id: OpId {
+                peer: PeerId(36_000),
+                counter: 99,
+            },
+            kind: OpKind::SetMeta {
+                key: "status".to_string(),
+                value: "draft".to_string(),
+            },
         });
 
         let log: Vec<Op> = doc.op_log().to_vec();
@@ -3913,9 +3965,12 @@ mod tests {
         let op_c = pc.local_insert(RgaPos::After(root.id), "C");
 
         // Full cross-apply.
-        pa.apply(op_b.clone()); pa.apply(op_c.clone());
-        pb.apply(op_a.clone()); pb.apply(op_c.clone());
-        pc.apply(op_a.clone()); pc.apply(op_b.clone());
+        pa.apply(op_b.clone());
+        pa.apply(op_c.clone());
+        pb.apply(op_a.clone());
+        pb.apply(op_c.clone());
+        pc.apply(op_a.clone());
+        pc.apply(op_b.clone());
 
         assert_eq!(pa.text(), pb.text());
         assert_eq!(pb.text(), pc.text());
@@ -3943,10 +3998,17 @@ mod tests {
         doc_hl.apply(op_low.clone());
 
         // Both orders must converge.
-        assert_eq!(doc_lh.text(), doc_hl.text(), "insert ordering must be stable");
+        assert_eq!(
+            doc_lh.text(),
+            doc_hl.text(),
+            "insert ordering must be stable"
+        );
         // higher peer (9) wins left position.
         let text = doc_lh.text();
-        assert!(text.find("hi").unwrap() < text.find("lo").unwrap(), "higher peer must be left");
+        assert!(
+            text.find("hi").unwrap() < text.find("lo").unwrap(),
+            "higher peer must be left"
+        );
     }
 
     #[test]
@@ -3955,8 +4017,13 @@ mod tests {
         // The delete must be recorded; when the insert arrives it gets tombstoned.
         let insert_op = make_insert(1, 1, RgaPos::Head, "late");
         let delete_op = Op {
-            id: OpId { peer: PeerId(2), counter: 2 },
-            kind: OpKind::Delete { target: insert_op.id },
+            id: OpId {
+                peer: PeerId(2),
+                counter: 2,
+            },
+            kind: OpKind::Delete {
+                target: insert_op.id,
+            },
         };
 
         // Apply delete first, then the insert.
@@ -3972,7 +4039,10 @@ mod tests {
         //  This test documents the current behavior deterministically.)
         assert_eq!(doc.op_log().len(), 2, "both ops must be in log");
         // The delete op must be recorded.
-        let has_delete = doc.op_log().iter().any(|op| matches!(&op.kind, OpKind::Delete { .. }));
+        let has_delete = doc
+            .op_log()
+            .iter()
+            .any(|op| matches!(&op.kind, OpKind::Delete { .. }));
         assert!(has_delete, "delete op must be in log");
     }
 
@@ -3998,8 +4068,16 @@ mod tests {
         pa.merge(&pb);
         pa.merge(&pc);
 
-        assert_eq!(pa.text(), text_after_first, "second merge must not change text");
-        assert_eq!(pa.op_log().len(), log_after_first, "second merge must not grow log");
+        assert_eq!(
+            pa.text(),
+            text_after_first,
+            "second merge must not change text"
+        );
+        assert_eq!(
+            pa.op_log().len(),
+            log_after_first,
+            "second merge must not grow log"
+        );
     }
 
     // ── Wave AD new tests ────────────────────────────────────────────────────
@@ -4063,8 +4141,16 @@ mod tests {
             let op = doc.local_insert(RgaPos::After(prev_id), "a");
             prev_id = op.id;
         }
-        assert_eq!(doc.op_log().len(), 10_000, "op log must record all 10 000 ops");
-        assert_eq!(doc.text().chars().count(), 10_000, "all chars must be visible");
+        assert_eq!(
+            doc.op_log().len(),
+            10_000,
+            "op log must record all 10 000 ops"
+        );
+        assert_eq!(
+            doc.text().chars().count(),
+            10_000,
+            "all chars must be visible"
+        );
     }
 
     #[test]
@@ -4109,7 +4195,15 @@ mod tests {
         // (the "checksum" via content) must be identical.
         let ops = vec![
             make_insert(1, 1, RgaPos::Head, "nom"),
-            make_insert(1, 2, RgaPos::After(OpId { peer: PeerId(1), counter: 1 }), " canvas"),
+            make_insert(
+                1,
+                2,
+                RgaPos::After(OpId {
+                    peer: PeerId(1),
+                    counter: 1,
+                }),
+                " canvas",
+            ),
         ];
 
         let mut doc_a = DocState::new(PeerId(5000));
@@ -4135,7 +4229,10 @@ mod tests {
         let remote = make_insert(6001, 999, RgaPos::Head, "remote");
         doc.apply(remote);
         let local = doc.local_insert(RgaPos::Head, "local");
-        assert!(local.id.counter > 999, "clock must exceed remote op counter");
+        assert!(
+            local.id.counter > 999,
+            "clock must exceed remote op counter"
+        );
     }
 
     #[test]
@@ -4148,7 +4245,11 @@ mod tests {
         let empty = DocState::new(PeerId(7001));
         populated.merge(&empty);
 
-        assert_eq!(populated.text(), text_before, "merge of empty must not change text");
+        assert_eq!(
+            populated.text(),
+            text_before,
+            "merge of empty must not change text"
+        );
     }
 
     #[test]
@@ -4179,12 +4280,20 @@ mod tests {
         // Apply SetMeta with key "title" and value "My Doc"; retrieve it from op_log.
         let mut doc = DocState::new(PeerId(9000));
         doc.apply(Op {
-            id: OpId { peer: PeerId(9000), counter: 1 },
-            kind: OpKind::SetMeta { key: "title".into(), value: "My Doc".into() },
+            id: OpId {
+                peer: PeerId(9000),
+                counter: 1,
+            },
+            kind: OpKind::SetMeta {
+                key: "title".into(),
+                value: "My Doc".into(),
+            },
         });
         let meta = doc.op_log().iter().find_map(|op| {
             if let OpKind::SetMeta { key, value } = &op.kind {
-                if key == "title" { return Some(value.as_str()); }
+                if key == "title" {
+                    return Some(value.as_str());
+                }
             }
             None
         });
@@ -4196,20 +4305,36 @@ mod tests {
         // Two distinct SetMeta keys do not overwrite each other in the op_log.
         let mut doc = DocState::new(PeerId(9001));
         doc.apply(Op {
-            id: OpId { peer: PeerId(9001), counter: 1 },
-            kind: OpKind::SetMeta { key: "author".into(), value: "Alice".into() },
+            id: OpId {
+                peer: PeerId(9001),
+                counter: 1,
+            },
+            kind: OpKind::SetMeta {
+                key: "author".into(),
+                value: "Alice".into(),
+            },
         });
         doc.apply(Op {
-            id: OpId { peer: PeerId(9001), counter: 2 },
-            kind: OpKind::SetMeta { key: "language".into(), value: "nom".into() },
+            id: OpId {
+                peer: PeerId(9001),
+                counter: 2,
+            },
+            kind: OpKind::SetMeta {
+                key: "language".into(),
+                value: "nom".into(),
+            },
         });
-        let count = doc.op_log().iter()
+        let count = doc
+            .op_log()
+            .iter()
             .filter(|op| matches!(&op.kind, OpKind::SetMeta { .. }))
             .count();
         assert_eq!(count, 2);
         let author = doc.op_log().iter().find_map(|op| {
             if let OpKind::SetMeta { key, value } = &op.kind {
-                if key == "author" { return Some(value.as_str()); }
+                if key == "author" {
+                    return Some(value.as_str());
+                }
             }
             None
         });
@@ -4230,22 +4355,40 @@ mod tests {
         peer_a.apply(op_delete.clone());
 
         assert_eq!(peer_a.text(), "", "insert then delete → empty");
-        let has_insert = peer_a.op_log().iter().any(|o| matches!(&o.kind, OpKind::Insert { .. }));
-        let has_delete = peer_a.op_log().iter().any(|o| matches!(&o.kind, OpKind::Delete { .. }));
+        let has_insert = peer_a
+            .op_log()
+            .iter()
+            .any(|o| matches!(&o.kind, OpKind::Insert { .. }));
+        let has_delete = peer_a
+            .op_log()
+            .iter()
+            .any(|o| matches!(&o.kind, OpKind::Delete { .. }));
         assert!(has_insert && has_delete, "both ops must be in the log");
     }
 
     #[test]
     fn op_id_equality_same_peer_same_counter() {
-        let id_a = OpId { peer: PeerId(1), counter: 42 };
-        let id_b = OpId { peer: PeerId(1), counter: 42 };
+        let id_a = OpId {
+            peer: PeerId(1),
+            counter: 42,
+        };
+        let id_b = OpId {
+            peer: PeerId(1),
+            counter: 42,
+        };
         assert_eq!(id_a, id_b);
     }
 
     #[test]
     fn op_id_inequality_different_counter() {
-        let id_a = OpId { peer: PeerId(1), counter: 1 };
-        let id_b = OpId { peer: PeerId(1), counter: 2 };
+        let id_a = OpId {
+            peer: PeerId(1),
+            counter: 1,
+        };
+        let id_b = OpId {
+            peer: PeerId(1),
+            counter: 2,
+        };
         assert_ne!(id_a, id_b);
     }
 
@@ -4256,13 +4399,19 @@ mod tests {
 
     #[test]
     fn rga_pos_after_equality() {
-        let id = OpId { peer: PeerId(1), counter: 1 };
+        let id = OpId {
+            peer: PeerId(1),
+            counter: 1,
+        };
         assert_eq!(RgaPos::After(id), RgaPos::After(id));
     }
 
     #[test]
     fn rga_pos_head_ne_after() {
-        let id = OpId { peer: PeerId(1), counter: 1 };
+        let id = OpId {
+            peer: PeerId(1),
+            counter: 1,
+        };
         assert_ne!(RgaPos::Head, RgaPos::After(id));
     }
 
@@ -4341,13 +4490,19 @@ mod tests {
         // Applying a Delete that targets an OpId not in the doc must not panic.
         let mut doc = DocState::new(PeerId(14000));
         doc.local_insert(RgaPos::Head, "hello");
-        let ghost_id = OpId { peer: PeerId(99999), counter: 99999 };
+        let ghost_id = OpId {
+            peer: PeerId(99999),
+            counter: 99999,
+        };
         let del = Op {
-            id: OpId { peer: PeerId(14000), counter: 99 },
+            id: OpId {
+                peer: PeerId(14000),
+                counter: 99,
+            },
             kind: OpKind::Delete { target: ghost_id },
         };
         doc.apply(del); // must not panic
-        // Text unchanged because target didn't exist.
+                        // Text unchanged because target didn't exist.
         assert_eq!(doc.text(), "hello");
     }
 
@@ -4356,11 +4511,19 @@ mod tests {
         // SetMeta does not produce Insert nodes; only Insert ops produce visible text.
         let mut doc = DocState::new(PeerId(15000));
         doc.apply(Op {
-            id: OpId { peer: PeerId(15000), counter: 1 },
-            kind: OpKind::SetMeta { key: "k".into(), value: "v".into() },
+            id: OpId {
+                peer: PeerId(15000),
+                counter: 1,
+            },
+            kind: OpKind::SetMeta {
+                key: "k".into(),
+                value: "v".into(),
+            },
         });
         assert_eq!(doc.text(), ""); // SetMeta has no visible text.
-        let meta_count = doc.op_log().iter()
+        let meta_count = doc
+            .op_log()
+            .iter()
             .filter(|o| matches!(&o.kind, OpKind::SetMeta { .. }))
             .count();
         assert_eq!(meta_count, 1);
@@ -4382,8 +4545,7 @@ mod tests {
         pa.apply(op_c.clone());
 
         assert_eq!(pa.op_log().len(), 3, "merged log must have 3 ops");
-        let ids: std::collections::HashSet<OpId> =
-            pa.op_log().iter().map(|o| o.id).collect();
+        let ids: std::collections::HashSet<OpId> = pa.op_log().iter().map(|o| o.id).collect();
         assert!(ids.contains(&op_a.id));
         assert!(ids.contains(&op_b.id));
         assert!(ids.contains(&op_c.id));
@@ -4395,9 +4557,15 @@ mod tests {
         let mut doc = DocState::new(PeerId(17000));
         for i in 0..5u64 {
             doc.apply(Op {
-                id: OpId { peer: PeerId(17000), counter: i + 1 },
+                id: OpId {
+                    peer: PeerId(17000),
+                    counter: i + 1,
+                },
                 kind: OpKind::Delete {
-                    target: OpId { peer: PeerId(99), counter: i + 1 },
+                    target: OpId {
+                        peer: PeerId(99),
+                        counter: i + 1,
+                    },
                 },
             });
         }
@@ -4573,7 +4741,11 @@ mod tests {
         }
         let text = doc.text();
         // peer 4 has highest id → its content "4" is leftmost.
-        assert_eq!(text.chars().next().unwrap(), '4', "highest peer id must be leftmost");
+        assert_eq!(
+            text.chars().next().unwrap(),
+            '4',
+            "highest peer id must be leftmost"
+        );
     }
 
     #[test]
@@ -4625,7 +4797,11 @@ mod tests {
             replayed.apply(op);
         }
 
-        assert_eq!(replayed.text(), original.text(), "500-op replay must match original");
+        assert_eq!(
+            replayed.text(),
+            original.text(),
+            "500-op replay must match original"
+        );
         assert_eq!(replayed.op_log().len(), 500);
         assert_eq!(replayed.text().chars().count(), 500);
     }
@@ -4667,7 +4843,11 @@ mod tests {
         }
 
         // Both peers must converge to the same text.
-        assert_eq!(pa.text(), pb.text(), "500-op 2-peer sequential merge must converge");
+        assert_eq!(
+            pa.text(),
+            pb.text(),
+            "500-op 2-peer sequential merge must converge"
+        );
         assert_eq!(pa.text().chars().count(), 500, "R + 249 a + 250 b = 500");
         assert!(pa.text().contains('R'));
         assert_eq!(pa.text().chars().filter(|&c| c == 'a').count(), 249);
@@ -4688,7 +4868,11 @@ mod tests {
         let empty = DocState::new(PeerId(51_021));
         doc.merge(&empty);
 
-        assert_eq!(doc.text(), checksum_before, "merge with empty must not change checksum");
+        assert_eq!(
+            doc.text(),
+            checksum_before,
+            "merge with empty must not change checksum"
+        );
     }
 
     // Focus 3: SetMeta — multiple keys coexist, later SetMeta overwrites earlier for same key
@@ -4699,15 +4883,22 @@ mod tests {
         let mut doc = DocState::new(PeerId(52_000));
         for (ctr, key, val) in [(1u64, "a", "1"), (2, "b", "2"), (3, "c", "3")] {
             doc.apply(Op {
-                id: OpId { peer: PeerId(52_000), counter: ctr },
-                kind: OpKind::SetMeta { key: key.into(), value: val.into() },
+                id: OpId {
+                    peer: PeerId(52_000),
+                    counter: ctr,
+                },
+                kind: OpKind::SetMeta {
+                    key: key.into(),
+                    value: val.into(),
+                },
             });
         }
         assert_eq!(doc.op_log().len(), 3);
         for key in ["a", "b", "c"] {
-            let found = doc.op_log().iter().any(|op| {
-                matches!(&op.kind, OpKind::SetMeta { key: k, .. } if k == key)
-            });
+            let found = doc
+                .op_log()
+                .iter()
+                .any(|op| matches!(&op.kind, OpKind::SetMeta { key: k, .. } if k == key));
             assert!(found, "key {key} must be in op_log");
         }
         assert_eq!(doc.text(), "");
@@ -4719,18 +4910,32 @@ mod tests {
         // Looking up by scanning from the back yields "v2".
         let mut doc = DocState::new(PeerId(52_010));
         doc.apply(Op {
-            id: OpId { peer: PeerId(52_010), counter: 1 },
-            kind: OpKind::SetMeta { key: "title".into(), value: "v1".into() },
+            id: OpId {
+                peer: PeerId(52_010),
+                counter: 1,
+            },
+            kind: OpKind::SetMeta {
+                key: "title".into(),
+                value: "v1".into(),
+            },
         });
         doc.apply(Op {
-            id: OpId { peer: PeerId(52_010), counter: 2 },
-            kind: OpKind::SetMeta { key: "title".into(), value: "v2".into() },
+            id: OpId {
+                peer: PeerId(52_010),
+                counter: 2,
+            },
+            kind: OpKind::SetMeta {
+                key: "title".into(),
+                value: "v2".into(),
+            },
         });
         assert_eq!(doc.op_log().len(), 2);
 
         let latest = doc.op_log().iter().rev().find_map(|op| {
             if let OpKind::SetMeta { key, value } = &op.kind {
-                if key == "title" { return Some(value.as_str()); }
+                if key == "title" {
+                    return Some(value.as_str());
+                }
             }
             None
         });
@@ -4743,12 +4948,22 @@ mod tests {
         let mut doc = DocState::new(PeerId(52_020));
         for (ctr, val) in [(1u64, "draft"), (2, "review"), (3, "published")] {
             doc.apply(Op {
-                id: OpId { peer: PeerId(52_020), counter: ctr },
-                kind: OpKind::SetMeta { key: "status".into(), value: val.into() },
+                id: OpId {
+                    peer: PeerId(52_020),
+                    counter: ctr,
+                },
+                kind: OpKind::SetMeta {
+                    key: "status".into(),
+                    value: val.into(),
+                },
             });
         }
         let latest = doc.op_log().iter().rev().find_map(|op| {
-            if let OpKind::SetMeta { key, value } = &op.kind { if key == "status" { return Some(value.as_str()); } }
+            if let OpKind::SetMeta { key, value } = &op.kind {
+                if key == "status" {
+                    return Some(value.as_str());
+                }
+            }
             None
         });
         assert_eq!(latest, Some("published"));
@@ -4760,20 +4975,40 @@ mod tests {
         // Setting "color" and "font" independently; each retrieves its own value.
         let mut doc = DocState::new(PeerId(52_030));
         doc.apply(Op {
-            id: OpId { peer: PeerId(52_030), counter: 1 },
-            kind: OpKind::SetMeta { key: "color".into(), value: "red".into() },
+            id: OpId {
+                peer: PeerId(52_030),
+                counter: 1,
+            },
+            kind: OpKind::SetMeta {
+                key: "color".into(),
+                value: "red".into(),
+            },
         });
         doc.apply(Op {
-            id: OpId { peer: PeerId(52_030), counter: 2 },
-            kind: OpKind::SetMeta { key: "font".into(), value: "mono".into() },
+            id: OpId {
+                peer: PeerId(52_030),
+                counter: 2,
+            },
+            kind: OpKind::SetMeta {
+                key: "font".into(),
+                value: "mono".into(),
+            },
         });
 
         let color = doc.op_log().iter().find_map(|op| {
-            if let OpKind::SetMeta { key, value } = &op.kind { if key == "color" { return Some(value.as_str()); } }
+            if let OpKind::SetMeta { key, value } = &op.kind {
+                if key == "color" {
+                    return Some(value.as_str());
+                }
+            }
             None
         });
         let font = doc.op_log().iter().find_map(|op| {
-            if let OpKind::SetMeta { key, value } = &op.kind { if key == "font" { return Some(value.as_str()); } }
+            if let OpKind::SetMeta { key, value } = &op.kind {
+                if key == "font" {
+                    return Some(value.as_str());
+                }
+            }
             None
         });
         assert_eq!(color, Some("red"));
@@ -4786,16 +5021,32 @@ mod tests {
         let mut doc = DocState::new(PeerId(52_040));
         let op1 = doc.local_insert(RgaPos::Head, "content");
         doc.apply(Op {
-            id: OpId { peer: PeerId(52_040), counter: 10 },
-            kind: OpKind::SetMeta { key: "meta1".into(), value: "v1".into() },
+            id: OpId {
+                peer: PeerId(52_040),
+                counter: 10,
+            },
+            kind: OpKind::SetMeta {
+                key: "meta1".into(),
+                value: "v1".into(),
+            },
         });
         doc.local_insert(RgaPos::After(op1.id), "_more");
         doc.apply(Op {
-            id: OpId { peer: PeerId(52_040), counter: 11 },
-            kind: OpKind::SetMeta { key: "meta2".into(), value: "v2".into() },
+            id: OpId {
+                peer: PeerId(52_040),
+                counter: 12,
+            },
+            kind: OpKind::SetMeta {
+                key: "meta2".into(),
+                value: "v2".into(),
+            },
         });
         assert_eq!(doc.text(), "content_more");
-        let meta_count = doc.op_log().iter().filter(|op| matches!(&op.kind, OpKind::SetMeta { .. })).count();
+        let meta_count = doc
+            .op_log()
+            .iter()
+            .filter(|op| matches!(&op.kind, OpKind::SetMeta { .. }))
+            .count();
         assert_eq!(meta_count, 2);
     }
 
@@ -4830,11 +5081,18 @@ mod tests {
         pb.apply(del_b.clone());
         pb.apply(del_c.clone());
 
-        assert_eq!(pa.text(), pb.text(), "delete-range + insert-inside must converge");
+        assert_eq!(
+            pa.text(),
+            pb.text(),
+            "delete-range + insert-inside must converge"
+        );
         assert!(!pa.text().contains('A'), "A must be deleted");
         assert!(!pa.text().contains('B'), "B must be deleted");
         assert!(!pa.text().contains('C'), "C must be deleted");
-        assert!(pa.text().contains('X'), "X inserted inside deleted range must survive");
+        assert!(
+            pa.text().contains('X'),
+            "X inserted inside deleted range must survive"
+        );
     }
 
     #[test]
@@ -4858,7 +5116,11 @@ mod tests {
         pb.apply(del_p.clone());
         pb.apply(del_q.clone());
 
-        assert_eq!(pa.text(), pb.text(), "partial delete + insert-inside must converge");
+        assert_eq!(
+            pa.text(),
+            pb.text(),
+            "partial delete + insert-inside must converge"
+        );
         // P and Q deleted; Z and R live.
         assert!(!pa.text().contains('P'));
         assert!(!pa.text().contains('Q'));
@@ -4881,7 +5143,11 @@ mod tests {
         pa.apply(ins_new.clone());
         pb.apply(del_k.clone());
 
-        assert_eq!(pa.text(), pb.text(), "full delete + head insert must converge");
+        assert_eq!(
+            pa.text(),
+            pb.text(),
+            "full delete + head insert must converge"
+        );
         assert!(!pa.text().contains('K'));
         assert!(pa.text().contains("NEW"));
     }
@@ -4908,7 +5174,11 @@ mod tests {
         pa.apply(ins_x.clone());
         pb.apply(del_b.clone());
 
-        assert_eq!(pa.text(), pb.text(), "range delete + insert after dead anchor must converge");
+        assert_eq!(
+            pa.text(),
+            pb.text(),
+            "range delete + insert after dead anchor must converge"
+        );
         assert!(!pa.text().contains('B'), "B must be deleted");
         assert!(pa.text().contains('A'));
         assert!(pa.text().contains('C'));
@@ -4944,7 +5214,11 @@ mod tests {
             .op_log()
             .iter()
             .filter_map(|o| {
-                if let OpKind::Delete { target } = &o.kind { Some(*target) } else { None }
+                if let OpKind::Delete { target } = &o.kind {
+                    Some(*target)
+                } else {
+                    None
+                }
             })
             .collect();
         let live_ops: Vec<Op> = doc
@@ -4997,8 +5271,16 @@ mod tests {
             compacted.apply(op);
         }
 
-        assert_eq!(compacted.text(), original_text, "no-delete compaction must preserve text");
-        assert_eq!(compacted.op_log().len(), original_len, "no-delete compaction log length unchanged");
+        assert_eq!(
+            compacted.text(),
+            original_text,
+            "no-delete compaction must preserve text"
+        );
+        assert_eq!(
+            compacted.op_log().len(),
+            original_len,
+            "no-delete compaction log length unchanged"
+        );
     }
 
     #[test]
@@ -5008,8 +5290,14 @@ mod tests {
         let op_a = doc.local_insert(RgaPos::Head, "A");
         let op_b = doc.local_insert(RgaPos::After(op_a.id), "B");
         doc.apply(Op {
-            id: OpId { peer: PeerId(54_020), counter: 100 },
-            kind: OpKind::SetMeta { key: "cksum".into(), value: "abc".into() },
+            id: OpId {
+                peer: PeerId(54_020),
+                counter: 100,
+            },
+            kind: OpKind::SetMeta {
+                key: "cksum".into(),
+                value: "abc".into(),
+            },
         });
         doc.local_delete(op_a.id);
         let _ = op_b;
@@ -5019,7 +5307,13 @@ mod tests {
         let deleted_ids: std::collections::HashSet<OpId> = doc
             .op_log()
             .iter()
-            .filter_map(|o| if let OpKind::Delete { target } = &o.kind { Some(*target) } else { None })
+            .filter_map(|o| {
+                if let OpKind::Delete { target } = &o.kind {
+                    Some(*target)
+                } else {
+                    None
+                }
+            })
             .collect();
         let live_ops: Vec<Op> = doc
             .op_log()
@@ -5039,9 +5333,10 @@ mod tests {
 
         assert_eq!(compacted.text(), original_text, "compacted text must match");
         assert_eq!(compacted.text(), "B");
-        let has_meta = compacted.op_log().iter().any(|op| {
-            matches!(&op.kind, OpKind::SetMeta { key, .. } if key == "cksum")
-        });
+        let has_meta = compacted
+            .op_log()
+            .iter()
+            .any(|op| matches!(&op.kind, OpKind::SetMeta { key, .. } if key == "cksum"));
         assert!(has_meta, "SetMeta must survive compaction");
     }
 
@@ -5068,7 +5363,13 @@ mod tests {
         let deleted_ids: std::collections::HashSet<OpId> = doc
             .op_log()
             .iter()
-            .filter_map(|o| if let OpKind::Delete { target } = &o.kind { Some(*target) } else { None })
+            .filter_map(|o| {
+                if let OpKind::Delete { target } = &o.kind {
+                    Some(*target)
+                } else {
+                    None
+                }
+            })
             .collect();
         let live_ops: Vec<Op> = doc
             .op_log()
@@ -5097,12 +5398,24 @@ mod tests {
         // Peer A sets "status"="draft", then "status"="published"; peer B receives via merge.
         let mut pa = DocState::new(PeerId(55_000));
         pa.apply(Op {
-            id: OpId { peer: PeerId(55_000), counter: 1 },
-            kind: OpKind::SetMeta { key: "status".into(), value: "draft".into() },
+            id: OpId {
+                peer: PeerId(55_000),
+                counter: 1,
+            },
+            kind: OpKind::SetMeta {
+                key: "status".into(),
+                value: "draft".into(),
+            },
         });
         pa.apply(Op {
-            id: OpId { peer: PeerId(55_000), counter: 2 },
-            kind: OpKind::SetMeta { key: "status".into(), value: "published".into() },
+            id: OpId {
+                peer: PeerId(55_000),
+                counter: 2,
+            },
+            kind: OpKind::SetMeta {
+                key: "status".into(),
+                value: "published".into(),
+            },
         });
 
         let mut pb = DocState::new(PeerId(55_001));
@@ -5110,10 +5423,18 @@ mod tests {
 
         assert_eq!(pb.op_log().len(), 2, "both SetMeta ops must be merged");
         let latest = pb.op_log().iter().rev().find_map(|op| {
-            if let OpKind::SetMeta { key, value } = &op.kind { if key == "status" { return Some(value.as_str()); } }
+            if let OpKind::SetMeta { key, value } = &op.kind {
+                if key == "status" {
+                    return Some(value.as_str());
+                }
+            }
             None
         });
-        assert_eq!(latest, Some("published"), "merged doc must see latest status");
+        assert_eq!(
+            latest,
+            Some("published"),
+            "merged doc must see latest status"
+        );
     }
 
     #[test]
@@ -5144,7 +5465,11 @@ mod tests {
         pb.apply(del_w.clone());
         pb.apply(del_x.clone());
 
-        assert_eq!(pa.text(), pb.text(), "range delete + multiple inserts inside must converge");
+        assert_eq!(
+            pa.text(),
+            pb.text(),
+            "range delete + multiple inserts inside must converge"
+        );
         assert!(!pa.text().contains('W'));
         assert!(!pa.text().contains('X'));
         assert!(pa.text().contains("i1"));
@@ -5163,26 +5488,50 @@ mod tests {
         for op in &ops {
             doc.apply(op.clone());
         }
-        assert_eq!(doc.text().chars().count(), 4, "4-peer same-counter insert must yield 4 chars");
+        assert_eq!(
+            doc.text().chars().count(),
+            4,
+            "4-peer same-counter insert must yield 4 chars"
+        );
     }
 
     #[test]
     fn set_meta_five_different_keys_all_retrievable() {
         // 5 distinct SetMeta keys; all 5 are retrievable individually from op_log.
-        let keys_vals = [("k1", "v1"), ("k2", "v2"), ("k3", "v3"), ("k4", "v4"), ("k5", "v5")];
+        let keys_vals = [
+            ("k1", "v1"),
+            ("k2", "v2"),
+            ("k3", "v3"),
+            ("k4", "v4"),
+            ("k5", "v5"),
+        ];
         let mut doc = DocState::new(PeerId(58_000));
         for (i, (key, val)) in keys_vals.iter().enumerate() {
             doc.apply(Op {
-                id: OpId { peer: PeerId(58_000), counter: i as u64 + 1 },
-                kind: OpKind::SetMeta { key: (*key).into(), value: (*val).into() },
+                id: OpId {
+                    peer: PeerId(58_000),
+                    counter: i as u64 + 1,
+                },
+                kind: OpKind::SetMeta {
+                    key: (*key).into(),
+                    value: (*val).into(),
+                },
             });
         }
         for (key, expected_val) in &keys_vals {
             let found = doc.op_log().iter().find_map(|op| {
-                if let OpKind::SetMeta { key: k, value } = &op.kind { if k == key { return Some(value.as_str()); } }
+                if let OpKind::SetMeta { key: k, value } = &op.kind {
+                    if k == key {
+                        return Some(value.as_str());
+                    }
+                }
                 None
             });
-            assert_eq!(found, Some(*expected_val), "key {key} must have value {expected_val}");
+            assert_eq!(
+                found,
+                Some(*expected_val),
+                "key {key} must have value {expected_val}"
+            );
         }
     }
 
@@ -5191,11 +5540,21 @@ mod tests {
         // SetMeta with empty string value must be stored and retrievable.
         let mut doc = DocState::new(PeerId(60_000));
         doc.apply(Op {
-            id: OpId { peer: PeerId(60_000), counter: 1 },
-            kind: OpKind::SetMeta { key: "empty_val".into(), value: "".into() },
+            id: OpId {
+                peer: PeerId(60_000),
+                counter: 1,
+            },
+            kind: OpKind::SetMeta {
+                key: "empty_val".into(),
+                value: "".into(),
+            },
         });
         let found = doc.op_log().iter().find_map(|op| {
-            if let OpKind::SetMeta { key, value } = &op.kind { if key == "empty_val" { return Some(value.as_str()); } }
+            if let OpKind::SetMeta { key, value } = &op.kind {
+                if key == "empty_val" {
+                    return Some(value.as_str());
+                }
+            }
             None
         });
         assert_eq!(found, Some(""), "empty string value must be stored");
@@ -5217,7 +5576,11 @@ mod tests {
         for op in ops.iter().rev() {
             doc_rev.apply(op.clone());
         }
-        assert_eq!(doc_fwd.text(), doc_rev.text(), "4 peers different counters must converge");
+        assert_eq!(
+            doc_fwd.text(),
+            doc_rev.text(),
+            "4 peers different counters must converge"
+        );
         for p in 1..=4 {
             assert!(doc_fwd.text().contains(&format!("n{p}")));
         }
@@ -5244,7 +5607,13 @@ mod tests {
         let deleted_ids: std::collections::HashSet<OpId> = doc
             .op_log()
             .iter()
-            .filter_map(|o| if let OpKind::Delete { target } = &o.kind { Some(*target) } else { None })
+            .filter_map(|o| {
+                if let OpKind::Delete { target } = &o.kind {
+                    Some(*target)
+                } else {
+                    None
+                }
+            })
             .collect();
         let live_ops: Vec<Op> = doc
             .op_log()
@@ -5258,7 +5627,11 @@ mod tests {
             compacted.apply(op);
         }
 
-        assert_eq!(compacted.text(), original_text, "200-insert 100-delete compaction checksum must match");
+        assert_eq!(
+            compacted.text(),
+            original_text,
+            "200-insert 100-delete compaction checksum must match"
+        );
         assert_eq!(compacted.text().chars().count(), 100);
     }
 
@@ -5279,7 +5652,11 @@ mod tests {
         pa.apply(ins_tail.clone());
         pb.apply(del_b.clone());
 
-        assert_eq!(pa.text(), pb.text(), "delete-last + insert-after must converge");
+        assert_eq!(
+            pa.text(),
+            pb.text(),
+            "delete-last + insert-after must converge"
+        );
         assert!(!pa.text().contains('B'));
         assert!(pa.text().contains('A'));
         assert!(pa.text().contains("tail"));
@@ -5328,7 +5705,10 @@ mod tests {
         let op3 = doc.local_insert(RgaPos::After(op2.id), "C");
         doc.local_insert(RgaPos::After(op3.id), "D");
         doc.local_insert(RgaPos::After(op3.id), "E");
-        assert_eq!(doc.text().chars().filter(|c| "ABCDE".contains(*c)).count(), 5);
+        assert_eq!(
+            doc.text().chars().filter(|c| "ABCDE".contains(*c)).count(),
+            5
+        );
 
         // Simulate undo by rebuilding from first 3 ops.
         let snapshot: Vec<Op> = doc.op_log()[..3].to_vec();
@@ -5671,7 +6051,13 @@ mod tests {
             doc.local_delete(id);
         }
         assert_eq!(doc.text(), "");
-        assert_eq!(doc.op_log().iter().filter(|o| matches!(o.kind, OpKind::Delete { .. })).count(), 5);
+        assert_eq!(
+            doc.op_log()
+                .iter()
+                .filter(|o| matches!(o.kind, OpKind::Delete { .. }))
+                .count(),
+            5
+        );
     }
 
     // Additional tests to reach 270+
@@ -5687,7 +6073,9 @@ mod tests {
         // Revert to first 2 ops.
         let snap: Vec<Op> = doc.op_log()[..2].to_vec();
         let mut reverted = DocState::new(PeerId(31_000));
-        for op in snap { reverted.apply(op); }
+        for op in snap {
+            reverted.apply(op);
+        }
         assert_eq!(reverted.text(), "XY");
         assert_eq!(reverted.op_log().len(), 2);
     }
@@ -5709,7 +6097,10 @@ mod tests {
     fn set_meta_value_with_spaces() {
         let mut doc = DocState::new(PeerId(31_002));
         doc.apply(Op {
-            id: OpId { peer: PeerId(31_002), counter: 1 },
+            id: OpId {
+                peer: PeerId(31_002),
+                counter: 1,
+            },
             kind: OpKind::SetMeta {
                 key: "desc".to_string(),
                 value: "hello world".to_string(),
@@ -5717,7 +6108,9 @@ mod tests {
         });
         let val = doc.op_log().iter().find_map(|o| {
             if let OpKind::SetMeta { key, value } = &o.kind {
-                if key == "desc" { return Some(value.clone()); }
+                if key == "desc" {
+                    return Some(value.clone());
+                }
             }
             None
         });
@@ -5727,9 +6120,15 @@ mod tests {
     #[test]
     fn op_debug_includes_kind_info() {
         let op = Op {
-            id: OpId { peer: PeerId(10), counter: 1 },
+            id: OpId {
+                peer: PeerId(10),
+                counter: 1,
+            },
             kind: OpKind::Delete {
-                target: OpId { peer: PeerId(5), counter: 1 },
+                target: OpId {
+                    peer: PeerId(5),
+                    counter: 1,
+                },
             },
         };
         let s = format!("{op:?}");
@@ -5760,10 +6159,18 @@ mod tests {
         let mut doc = DocState::new(PeerId(31_012));
         doc.local_insert(RgaPos::Head, "hello");
         doc.apply(Op {
-            id: OpId { peer: PeerId(31_012), counter: 99 },
-            kind: OpKind::SetMeta { key: "k".to_string(), value: "v".to_string() },
+            id: OpId {
+                peer: PeerId(31_012),
+                counter: 99,
+            },
+            kind: OpKind::SetMeta {
+                key: "k".to_string(),
+                value: "v".to_string(),
+            },
         });
-        let insert_count = doc.op_log().iter()
+        let insert_count = doc
+            .op_log()
+            .iter()
             .filter(|o| matches!(o.kind, OpKind::Insert { .. }))
             .count();
         assert_eq!(insert_count, 1);
@@ -5789,9 +6196,15 @@ mod tests {
         let mut pc = DocState::new(PeerId(40_003));
         let opc = pc.local_insert(RgaPos::Head, "Z");
 
-        for op in [opb.clone(), opc.clone()] { pa.apply(op); }
-        for op in [opa.clone(), opc.clone()] { pb.apply(op); }
-        for op in [opa.clone(), opb.clone()] { pc.apply(op); }
+        for op in [opb.clone(), opc.clone()] {
+            pa.apply(op);
+        }
+        for op in [opa.clone(), opc.clone()] {
+            pb.apply(op);
+        }
+        for op in [opa.clone(), opb.clone()] {
+            pc.apply(op);
+        }
 
         assert_eq!(pa.text(), pb.text());
         assert_eq!(pb.text(), pc.text());
@@ -5808,9 +6221,12 @@ mod tests {
         let mut pc = DocState::new(PeerId(40_012));
         let opc = pc.local_insert(RgaPos::Head, "fix");
 
-        pa.apply(opb.clone()); pa.apply(opc.clone());
-        pb.apply(opa.clone()); pb.apply(opc.clone());
-        pc.apply(opa.clone()); pc.apply(opb.clone());
+        pa.apply(opb.clone());
+        pa.apply(opc.clone());
+        pb.apply(opa.clone());
+        pb.apply(opc.clone());
+        pc.apply(opa.clone());
+        pc.apply(opb.clone());
 
         assert_eq!(pa.text(), pb.text(), "split-brain: A and B must converge");
         assert_eq!(pb.text(), pc.text(), "split-brain: B and C must converge");
@@ -5821,12 +6237,20 @@ mod tests {
         // Apply a SetMeta op, then retrieve the value from op_log.
         let mut doc = DocState::new(PeerId(40_020));
         doc.apply(Op {
-            id: OpId { peer: PeerId(40_020), counter: 1 },
-            kind: OpKind::SetMeta { key: "theme".to_string(), value: "dark".to_string() },
+            id: OpId {
+                peer: PeerId(40_020),
+                counter: 1,
+            },
+            kind: OpKind::SetMeta {
+                key: "theme".to_string(),
+                value: "dark".to_string(),
+            },
         });
         let val = doc.op_log().iter().find_map(|op| {
             if let OpKind::SetMeta { key, value } = &op.kind {
-                if key == "theme" { return Some(value.clone()); }
+                if key == "theme" {
+                    return Some(value.clone());
+                }
             }
             None
         });
@@ -5839,13 +6263,21 @@ mod tests {
         let mut doc = DocState::new(PeerId(40_030));
         for (counter, val) in [(1u64, "v1"), (2, "v2")] {
             doc.apply(Op {
-                id: OpId { peer: PeerId(40_030), counter },
-                kind: OpKind::SetMeta { key: "status".to_string(), value: val.to_string() },
+                id: OpId {
+                    peer: PeerId(40_030),
+                    counter,
+                },
+                kind: OpKind::SetMeta {
+                    key: "status".to_string(),
+                    value: val.to_string(),
+                },
             });
         }
         let latest = doc.op_log().iter().rev().find_map(|op| {
             if let OpKind::SetMeta { key, value } = &op.kind {
-                if key == "status" { return Some(value.clone()); }
+                if key == "status" {
+                    return Some(value.clone());
+                }
             }
             None
         });
@@ -5858,14 +6290,21 @@ mod tests {
         let mut doc = DocState::new(PeerId(40_040));
         for (key, val) in [("a", "1"), ("b", "2"), ("c", "3")] {
             doc.apply(Op {
-                id: OpId { peer: PeerId(40_040), counter: doc.op_log().len() as u64 + 1 },
-                kind: OpKind::SetMeta { key: key.to_string(), value: val.to_string() },
+                id: OpId {
+                    peer: PeerId(40_040),
+                    counter: doc.op_log().len() as u64 + 1,
+                },
+                kind: OpKind::SetMeta {
+                    key: key.to_string(),
+                    value: val.to_string(),
+                },
             });
         }
         for key in ["a", "b", "c"] {
-            let found = doc.op_log().iter().any(|op| {
-                matches!(&op.kind, OpKind::SetMeta { key: k, .. } if k == key)
-            });
+            let found = doc
+                .op_log()
+                .iter()
+                .any(|op| matches!(&op.kind, OpKind::SetMeta { key: k, .. } if k == key));
             assert!(found, "key {key} must be in op_log");
         }
     }
@@ -5879,7 +6318,10 @@ mod tests {
         assert_eq!(doc.text(), "");
         // Re-applying a delete at the same target does not "un-delete" anything.
         doc.apply(Op {
-            id: OpId { peer: PeerId(40_050), counter: 99 },
+            id: OpId {
+                peer: PeerId(40_050),
+                counter: 99,
+            },
             kind: OpKind::Delete { target: op.id },
         });
         assert_eq!(doc.text(), "", "tombstoned text must not revive");
@@ -5894,7 +6336,10 @@ mod tests {
         // Insert emoji at Head; it occupies one unicode scalar value.
         doc.local_insert(RgaPos::Head, "\u{1F600}");
         let text = doc.text();
-        assert!(text.contains('\u{1F600}'), "emoji must be preserved in doc text");
+        assert!(
+            text.contains('\u{1F600}'),
+            "emoji must be preserved in doc text"
+        );
     }
 
     #[test]
@@ -5911,7 +6356,11 @@ mod tests {
         pa.apply(ins);
         pb.apply(del);
 
-        assert_eq!(pa.text(), pb.text(), "delete+insert must converge deterministically");
+        assert_eq!(
+            pa.text(),
+            pb.text(),
+            "delete+insert must converge deterministically"
+        );
         assert!(!pa.text().contains("base"), "deleted node must be gone");
         assert!(pa.text().contains("after"), "inserted node must survive");
     }
@@ -5941,7 +6390,11 @@ mod tests {
         for &id in &ids[..10] {
             doc.local_delete(id);
         }
-        assert_eq!(doc.text().chars().count(), 90, "90 chars must remain after deleting 10");
+        assert_eq!(
+            doc.text().chars().count(),
+            90,
+            "90 chars must remain after deleting 10"
+        );
     }
 
     #[test]
@@ -5988,7 +6441,10 @@ mod tests {
         let op2 = doc.local_insert(RgaPos::After(op1.id), "_mid");
         doc.local_insert(RgaPos::After(op2.id), "_end");
         assert_eq!(doc.text(), "start_mid_end");
-        assert!(doc.text().ends_with("_end"), "last insert must appear at the end");
+        assert!(
+            doc.text().ends_with("_end"),
+            "last insert must appear at the end"
+        );
     }
 
     #[test]
@@ -6060,7 +6516,11 @@ mod tests {
 
         pb.merge(&pa); // idempotent
         assert_eq!(pb.text(), text1, "text must not change after second merge");
-        assert_eq!(pb.op_log().len(), len1, "op_log len must not grow after second merge");
+        assert_eq!(
+            pb.op_log().len(),
+            len1,
+            "op_log len must not grow after second merge"
+        );
     }
 
     #[test]
@@ -6129,16 +6589,26 @@ mod tests {
         doc_rl.apply(op2);
         doc_rl.apply(op1);
 
-        assert_eq!(doc_lr.text(), doc_rl.text(), "two inserts at same pos must be deterministic");
+        assert_eq!(
+            doc_lr.text(),
+            doc_rl.text(),
+            "two inserts at same pos must be deterministic"
+        );
     }
 
     #[test]
     fn collab_delete_nonexistent_pos_safe() {
         // Applying a delete for an op that was never inserted must not panic.
         let mut doc = DocState::new(PeerId(50_140));
-        let ghost_id = OpId { peer: PeerId(9999), counter: 1 };
+        let ghost_id = OpId {
+            peer: PeerId(9999),
+            counter: 1,
+        };
         let del = Op {
-            id: OpId { peer: PeerId(50_140), counter: 1 },
+            id: OpId {
+                peer: PeerId(50_140),
+                counter: 1,
+            },
             kind: OpKind::Delete { target: ghost_id },
         };
         doc.apply(del); // must not panic
@@ -6167,9 +6637,18 @@ mod tests {
                     None => RgaPos::Head,
                     Some(id) => RgaPos::After(id),
                 };
-                let id = OpId { peer: PeerId(99), counter };
+                let id = OpId {
+                    peer: PeerId(99),
+                    counter,
+                };
                 *prev = Some(id);
-                Some(Op { id, kind: OpKind::Insert { pos, text: counter.to_string() } })
+                Some(Op {
+                    id,
+                    kind: OpKind::Insert {
+                        pos,
+                        text: counter.to_string(),
+                    },
+                })
             })
             .collect();
         for op in remote_ops {
@@ -6283,7 +6762,10 @@ mod tests {
         assert!(doc.text().contains("world"), "must find 'world'");
         // Delete "world"; search returns false.
         doc.local_delete(op2.id);
-        assert!(!doc.text().contains("world"), "'world' must not be found after delete");
+        assert!(
+            !doc.text().contains("world"),
+            "'world' must not be found after delete"
+        );
         assert!(doc.text().contains("hello"), "'hello' must still be found");
     }
 
@@ -6297,8 +6779,14 @@ mod tests {
         doc.local_insert(RgaPos::After(op1.id), "b");
         assert_eq!(doc.op_log().len(), 2);
         doc.apply(Op {
-            id: OpId { peer: PeerId(50_230), counter: 100 },
-            kind: OpKind::SetMeta { key: "x".to_string(), value: "y".to_string() },
+            id: OpId {
+                peer: PeerId(50_230),
+                counter: 100,
+            },
+            kind: OpKind::SetMeta {
+                key: "x".to_string(),
+                value: "y".to_string(),
+            },
         });
         assert_eq!(doc.op_log().len(), 3);
     }
@@ -6332,7 +6820,11 @@ mod tests {
         for op in ops {
             reverted.apply(op);
         }
-        assert_eq!(reverted.text(), "", "undo after insert must revert to empty");
+        assert_eq!(
+            reverted.text(),
+            "",
+            "undo after insert must revert to empty"
+        );
     }
 
     #[test]
@@ -6382,7 +6874,11 @@ mod tests {
             let op = doc.local_insert(RgaPos::After(prev), i.to_string());
             prev = op.id;
         }
-        assert_eq!(doc.op_log().len(), 100, "op_log must contain exactly 100 ops");
+        assert_eq!(
+            doc.op_log().len(),
+            100,
+            "op_log must contain exactly 100 ops"
+        );
     }
 
     // Snapshot diffing
@@ -6399,7 +6895,11 @@ mod tests {
         for op in snapshot {
             restored.apply(op);
         }
-        assert_eq!(restored.text(), doc.text(), "snapshot must equal current state");
+        assert_eq!(
+            restored.text(),
+            doc.text(),
+            "snapshot must equal current state"
+        );
         assert_eq!(restored.op_log().len(), doc.op_log().len());
     }
 
@@ -6414,7 +6914,10 @@ mod tests {
         doc.local_insert(RgaPos::After(op1.id), "_after");
         let new_len = doc.op_log().len();
 
-        assert!(new_len > snap_len, "op_log must grow after insert (non-empty diff)");
+        assert!(
+            new_len > snap_len,
+            "op_log must grow after insert (non-empty diff)"
+        );
         assert_eq!(new_len - snap_len, 1, "diff must have exactly 1 op");
     }
 
@@ -6436,7 +6939,11 @@ mod tests {
         }
         snap_doc.apply(diff_op);
 
-        assert_eq!(snap_doc.text(), live.text(), "snapshot + diff must equal live state");
+        assert_eq!(
+            snap_doc.text(),
+            live.text(),
+            "snapshot + diff must equal live state"
+        );
     }
 
     #[test]
@@ -6451,7 +6958,10 @@ mod tests {
 
         // Delta = ops in snap2 not in snap1.
         let snap1_ids: std::collections::HashSet<OpId> = snap1.iter().map(|o| o.id).collect();
-        let delta: Vec<&Op> = snap2.iter().filter(|o| !snap1_ids.contains(&o.id)).collect();
+        let delta: Vec<&Op> = snap2
+            .iter()
+            .filter(|o| !snap1_ids.contains(&o.id))
+            .collect();
 
         assert_eq!(delta.len(), 1, "delta must contain exactly 1 op");
         assert_eq!(delta[0].id, op2.id, "delta op must be op2");
@@ -6470,9 +6980,12 @@ mod tests {
         let opc = pc.local_insert(RgaPos::Head, "R");
 
         // Full mesh cross-apply.
-        pa.apply(opb.clone()); pa.apply(opc.clone());
-        pb.apply(opa.clone()); pb.apply(opc.clone());
-        pc.apply(opa.clone()); pc.apply(opb.clone());
+        pa.apply(opb.clone());
+        pa.apply(opc.clone());
+        pb.apply(opa.clone());
+        pb.apply(opc.clone());
+        pc.apply(opa.clone());
+        pc.apply(opb.clone());
 
         assert_eq!(pa.text(), pb.text());
         assert_eq!(pb.text(), pc.text());
@@ -6496,7 +7009,11 @@ mod tests {
         // "Undo" the delete: rebuild from just the insert op.
         let mut restored = DocState::new(PeerId(70_030));
         restored.apply(op_insert);
-        assert_eq!(restored.text(), "hello", "undo delete must restore the inserted text");
+        assert_eq!(
+            restored.text(),
+            "hello",
+            "undo delete must restore the inserted text"
+        );
     }
 
     // Large concurrent test (10 peers)
@@ -6531,7 +7048,11 @@ mod tests {
             }
         }
 
-        assert_eq!(merged.text().chars().count(), 100, "10 peers × 10 chars = 100 total");
+        assert_eq!(
+            merged.text().chars().count(),
+            100,
+            "10 peers × 10 chars = 100 total"
+        );
     }
 
     #[test]
@@ -6543,10 +7064,18 @@ mod tests {
 
         let mut doc_fwd = DocState::new(PeerId(70_050));
         let mut doc_rev = DocState::new(PeerId(70_050));
-        for op in &ops { doc_fwd.apply(op.clone()); }
-        for op in ops.iter().rev() { doc_rev.apply(op.clone()); }
+        for op in &ops {
+            doc_fwd.apply(op.clone());
+        }
+        for op in ops.iter().rev() {
+            doc_rev.apply(op.clone());
+        }
 
-        assert_eq!(doc_fwd.text(), doc_rev.text(), "concurrent insert order must be deterministic");
+        assert_eq!(
+            doc_fwd.text(),
+            doc_rev.text(),
+            "concurrent insert order must be deterministic"
+        );
     }
 
     // CRDT tombstone rule
@@ -6563,10 +7092,18 @@ mod tests {
         // model the delete is already in the log. We rebuild from scratch (just insert).
         let mut rebuilt = DocState::new(PeerId(70_060));
         rebuilt.apply(op.clone());
-        assert_eq!(rebuilt.text(), "ghost", "separate rebuilt doc has the insert");
+        assert_eq!(
+            rebuilt.text(),
+            "ghost",
+            "separate rebuilt doc has the insert"
+        );
 
         // But the original doc with the tombstone still shows empty.
-        assert_eq!(doc.text(), "", "tombstoned node must not be restored in original doc");
+        assert_eq!(
+            doc.text(),
+            "",
+            "tombstoned node must not be restored in original doc"
+        );
     }
 
     // Causal delivery: out-of-order ops still converge
@@ -6575,7 +7112,15 @@ mod tests {
     fn collab_causal_delivery_reordered_ops() {
         // Ops with lower counters arriving after higher-counter ops still converge.
         let op_low = make_insert(1, 1, RgaPos::Head, "early");
-        let op_high = make_insert(1, 5, RgaPos::After(OpId { peer: PeerId(1), counter: 1 }), "_late");
+        let op_high = make_insert(
+            1,
+            5,
+            RgaPos::After(OpId {
+                peer: PeerId(1),
+                counter: 1,
+            }),
+            "_late",
+        );
 
         // Apply high-counter op first, then low-counter op.
         let mut doc_reordered = DocState::new(PeerId(70_070));
@@ -6604,7 +7149,10 @@ mod tests {
 
         doc.local_insert(RgaPos::Head, "start");
         let editing = !doc.op_log().is_empty();
-        assert!(editing, "after insert doc must be in editing state (op_log non-empty)");
+        assert!(
+            editing,
+            "after insert doc must be in editing state (op_log non-empty)"
+        );
     }
 
     #[test]
@@ -6621,7 +7169,10 @@ mod tests {
         pa.merge(&pb);
         let synced_log_len = pa.op_log().len();
 
-        assert!(synced_log_len > local_log_len, "syncing must grow the op_log beyond local edits");
+        assert!(
+            synced_log_len > local_log_len,
+            "syncing must grow the op_log beyond local edits"
+        );
     }
 
     // Awareness: cursor position tracked via SetMeta
@@ -6631,16 +7182,24 @@ mod tests {
         // Applying a SetMeta cursor op is recorded in op_log (simulates "event fired").
         let mut doc = DocState::new(PeerId(70_090));
         doc.apply(Op {
-            id: OpId { peer: PeerId(70_090), counter: 1 },
+            id: OpId {
+                peer: PeerId(70_090),
+                counter: 1,
+            },
             kind: OpKind::SetMeta {
                 key: "cursor:70090".to_string(),
                 value: "5".to_string(),
             },
         });
-        assert_eq!(doc.op_log().len(), 1, "cursor update must be recorded in op_log");
-        let recorded = doc.op_log().iter().any(|op| {
-            matches!(&op.kind, OpKind::SetMeta { key, .. } if key == "cursor:70090")
-        });
+        assert_eq!(
+            doc.op_log().len(),
+            1,
+            "cursor update must be recorded in op_log"
+        );
+        let recorded = doc
+            .op_log()
+            .iter()
+            .any(|op| matches!(&op.kind, OpKind::SetMeta { key, .. } if key == "cursor:70090"));
         assert!(recorded, "cursor:70090 SetMeta event must be in op_log");
     }
 
@@ -6659,7 +7218,11 @@ mod tests {
         // B "disconnects" — no more merges from B.
 
         // A's doc is unaffected by B's post-disconnect edits.
-        assert_eq!(pa.text(), "A_content", "A's doc must not change when B disconnects");
+        assert_eq!(
+            pa.text(),
+            "A_content",
+            "A's doc must not change when B disconnects"
+        );
         assert_eq!(pa.op_log().len(), 1, "A's op_log must only have its own op");
     }
 
@@ -6672,8 +7235,14 @@ mod tests {
         let op1 = doc.local_insert(RgaPos::Head, "enc");
         doc.local_insert(RgaPos::After(op1.id), "_dec");
         doc.apply(Op {
-            id: OpId { peer: PeerId(70_110), counter: 99 },
-            kind: OpKind::SetMeta { key: "k".to_string(), value: "v".to_string() },
+            id: OpId {
+                peer: PeerId(70_110),
+                counter: 99,
+            },
+            kind: OpKind::SetMeta {
+                key: "k".to_string(),
+                value: "v".to_string(),
+            },
         });
 
         let encoded: Vec<Op> = doc.op_log().to_vec();
@@ -6681,7 +7250,11 @@ mod tests {
         for op in encoded {
             decoded.apply(op);
         }
-        assert_eq!(decoded.op_log().len(), doc.op_log().len(), "encode/decode must preserve op count");
+        assert_eq!(
+            decoded.op_log().len(),
+            doc.op_log().len(),
+            "encode/decode must preserve op count"
+        );
         assert_eq!(decoded.text(), doc.text());
     }
 
@@ -6698,8 +7271,16 @@ mod tests {
         let empty = DocState::new(PeerId(70_121));
         doc.merge(&empty);
 
-        assert_eq!(doc.text(), text_before, "merge of empty update must not change text");
-        assert_eq!(doc.op_log().len(), len_before, "merge of empty update must not grow op_log");
+        assert_eq!(
+            doc.text(),
+            text_before,
+            "merge of empty update must not change text"
+        );
+        assert_eq!(
+            doc.op_log().len(),
+            len_before,
+            "merge of empty update must not grow op_log"
+        );
         let _ = op;
     }
 
@@ -6735,7 +7316,11 @@ mod tests {
 
         // Insert after the dead anchor — must succeed.
         doc.local_insert(RgaPos::After(op_dead.id), "alive");
-        assert_eq!(doc.text(), "alive", "insert after deleted position must produce live node");
+        assert_eq!(
+            doc.text(),
+            "alive",
+            "insert after deleted position must produce live node"
+        );
     }
 
     // Large document 1000 chars stability
@@ -6749,7 +7334,11 @@ mod tests {
             let op = doc.local_insert(RgaPos::After(prev), "x");
             prev = op.id;
         }
-        assert_eq!(doc.text().chars().count(), 1000, "1000-char doc must be stable");
+        assert_eq!(
+            doc.text().chars().count(),
+            1000,
+            "1000-char doc must be stable"
+        );
         assert_eq!(doc.op_log().len(), 1000);
     }
 
@@ -6760,8 +7349,24 @@ mod tests {
         // Applying a "batch" (list of ops in one pass) yields same result as applying individually.
         let mut doc_a = DocState::new(PeerId(70_160));
         let op1 = make_insert(70_160, 1, RgaPos::Head, "A");
-        let op2 = make_insert(70_160, 2, RgaPos::After(OpId { peer: PeerId(70_160), counter: 1 }), "B");
-        let op3 = make_insert(70_160, 3, RgaPos::After(OpId { peer: PeerId(70_160), counter: 2 }), "C");
+        let op2 = make_insert(
+            70_160,
+            2,
+            RgaPos::After(OpId {
+                peer: PeerId(70_160),
+                counter: 1,
+            }),
+            "B",
+        );
+        let op3 = make_insert(
+            70_160,
+            3,
+            RgaPos::After(OpId {
+                peer: PeerId(70_160),
+                counter: 2,
+            }),
+            "C",
+        );
 
         // Individual apply.
         doc_a.apply(op1.clone());
@@ -6775,7 +7380,11 @@ mod tests {
             doc_b.apply(op.clone());
         }
 
-        assert_eq!(doc_a.text(), doc_b.text(), "batch must equal individual apply");
+        assert_eq!(
+            doc_a.text(),
+            doc_b.text(),
+            "batch must equal individual apply"
+        );
         assert_eq!(doc_a.op_log().len(), doc_b.op_log().len());
     }
 
@@ -6785,10 +7394,18 @@ mod tests {
     fn collab_vector_clock_total_order() {
         // OpIds with strictly increasing counters form a total order.
         let ids: Vec<OpId> = (1u64..=5)
-            .map(|c| OpId { peer: PeerId(1), counter: c })
+            .map(|c| OpId {
+                peer: PeerId(1),
+                counter: c,
+            })
             .collect();
         for w in ids.windows(2) {
-            assert!(w[0] < w[1], "op id with counter {} must be less than {}", w[0].counter, w[1].counter);
+            assert!(
+                w[0] < w[1],
+                "op id with counter {} must be less than {}",
+                w[0].counter,
+                w[1].counter
+            );
         }
     }
 
@@ -6800,10 +7417,16 @@ mod tests {
         let mut doc = DocState::new(PeerId(70_180));
         let op1 = doc.local_insert(RgaPos::Head, "1");
         let op2 = doc.local_insert(RgaPos::After(op1.id), "2");
-        let op3 = doc.local_insert(RgaPos::After(op2.id), "3");
+        doc.local_insert(RgaPos::After(op2.id), "3");
         let log = doc.op_log();
-        assert!(log[0].id.counter < log[1].id.counter, "op1 counter < op2 counter");
-        assert!(log[1].id.counter < log[2].id.counter, "op2 counter < op3 counter");
+        assert!(
+            log[0].id.counter < log[1].id.counter,
+            "op1 counter < op2 counter"
+        );
+        assert!(
+            log[1].id.counter < log[2].id.counter,
+            "op2 counter < op3 counter"
+        );
     }
 
     // Op IDs unique
@@ -6845,8 +7468,16 @@ mod tests {
         helper.apply(dup_op);
         doc.merge(&helper);
 
-        assert_eq!(doc.text(), text_before, "re-merge of same op must not change text");
-        assert_eq!(doc.op_log().len(), len_before, "re-merge of same op must not grow op_log");
+        assert_eq!(
+            doc.text(),
+            text_before,
+            "re-merge of same op must not change text"
+        );
+        assert_eq!(
+            doc.op_log().len(),
+            len_before,
+            "re-merge of same op must not grow op_log"
+        );
     }
 
     // Observe count matches ops
@@ -6859,17 +7490,24 @@ mod tests {
         let op_b = doc.local_insert(RgaPos::After(op_a.id), "B");
         doc.local_insert(RgaPos::After(op_b.id), "C");
 
-        let insert_count = doc.op_log().iter()
+        let insert_count = doc
+            .op_log()
+            .iter()
             .filter(|o| matches!(o.kind, OpKind::Insert { .. }))
             .count();
         assert_eq!(insert_count, 3, "3 inserts must appear in op_log");
 
         // Delete one; insert count unchanged (delete is a separate op kind).
         doc.local_delete(op_a.id);
-        let insert_count2 = doc.op_log().iter()
+        let insert_count2 = doc
+            .op_log()
+            .iter()
             .filter(|o| matches!(o.kind, OpKind::Insert { .. }))
             .count();
-        assert_eq!(insert_count2, 3, "insert count must not change after a delete");
+        assert_eq!(
+            insert_count2, 3,
+            "insert count must not change after a delete"
+        );
     }
 
     // Sync protocol request/response simulation
@@ -6890,7 +7528,11 @@ mod tests {
             pb.apply(op);
         }
 
-        assert_eq!(pb.text(), pa.text(), "sync response must produce same state as sender");
+        assert_eq!(
+            pb.text(),
+            pa.text(),
+            "sync response must produce same state as sender"
+        );
         assert_eq!(pb.op_log().len(), pa.op_log().len());
         let _ = (op1, op2);
     }
@@ -6906,10 +7548,20 @@ mod tests {
         doc.local_delete(op_a.id);
 
         // GC simulation: rebuild keeping only ops that are either live inserts or SetMeta.
-        let deleted_ids: std::collections::HashSet<OpId> = doc.op_log().iter()
-            .filter_map(|o| if let OpKind::Delete { target } = &o.kind { Some(*target) } else { None })
+        let deleted_ids: std::collections::HashSet<OpId> = doc
+            .op_log()
+            .iter()
+            .filter_map(|o| {
+                if let OpKind::Delete { target } = &o.kind {
+                    Some(*target)
+                } else {
+                    None
+                }
+            })
             .collect();
-        let gc_ops: Vec<Op> = doc.op_log().iter()
+        let gc_ops: Vec<Op> = doc
+            .op_log()
+            .iter()
             .filter(|o| match &o.kind {
                 OpKind::Insert { .. } => !deleted_ids.contains(&o.id),
                 OpKind::Delete { .. } => false,
@@ -6948,7 +7600,10 @@ mod tests {
         // "A" from peer 70_241 (higher peer id) goes left of "Z" from peer 70_240.
         let pos_a = text.find('A').unwrap();
         let pos_z = text.find('Z').unwrap();
-        assert!(pos_a < pos_z, "remote insert must shift Z's visual position right");
+        assert!(
+            pos_a < pos_z,
+            "remote insert must shift Z's visual position right"
+        );
     }
 
     // Position shifts after remote delete
@@ -6972,7 +7627,11 @@ mod tests {
 
         // X gone; Y is now at index 0 (shifted left).
         let text = pa.text();
-        assert_eq!(text.chars().next().unwrap(), 'Y', "Y must shift left after X is deleted");
+        assert_eq!(
+            text.chars().next().unwrap(),
+            'Y',
+            "Y must shift left after X is deleted"
+        );
         assert_eq!(text, "YZ");
     }
 
@@ -6984,7 +7643,10 @@ mod tests {
         let mut doc = DocState::new(PeerId(70_260));
         for (peer_id, pos) in [(70_261u64, "3"), (70_262, "7")] {
             doc.apply(Op {
-                id: OpId { peer: PeerId(peer_id), counter: 1 },
+                id: OpId {
+                    peer: PeerId(peer_id),
+                    counter: 1,
+                },
                 kind: OpKind::SetMeta {
                     key: format!("cursor:{peer_id}"),
                     value: pos.to_string(),
@@ -6995,20 +7657,32 @@ mod tests {
         // Retrieve cursor for peer 70_261.
         let pos_261 = doc.op_log().iter().find_map(|op| {
             if let OpKind::SetMeta { key, value } = &op.kind {
-                if key == "cursor:70261" { return Some(value.as_str()); }
+                if key == "cursor:70261" {
+                    return Some(value.as_str());
+                }
             }
             None
         });
         // Retrieve cursor for peer 70_262.
         let pos_262 = doc.op_log().iter().find_map(|op| {
             if let OpKind::SetMeta { key, value } = &op.kind {
-                if key == "cursor:70262" { return Some(value.as_str()); }
+                if key == "cursor:70262" {
+                    return Some(value.as_str());
+                }
             }
             None
         });
 
-        assert_eq!(pos_261, Some("3"), "cursor position for peer 70261 must be 3");
-        assert_eq!(pos_262, Some("7"), "cursor position for peer 70262 must be 7");
+        assert_eq!(
+            pos_261,
+            Some("3"),
+            "cursor position for peer 70261 must be 3"
+        );
+        assert_eq!(
+            pos_262,
+            Some("7"),
+            "cursor position for peer 70262 must be 7"
+        );
         assert_eq!(doc.text(), "", "awareness SetMeta must not affect text");
     }
 
@@ -7019,12 +7693,24 @@ mod tests {
         let mut doc = DocState::new(PeerId(70_270));
         let op_content = doc.local_insert(RgaPos::Head, "hello");
         doc.apply(Op {
-            id: OpId { peer: PeerId(70_270), counter: 10 },
-            kind: OpKind::SetMeta { key: "bold:70270:1".to_string(), value: "true".to_string() },
+            id: OpId {
+                peer: PeerId(70_270),
+                counter: 10,
+            },
+            kind: OpKind::SetMeta {
+                key: "bold:70270:1".to_string(),
+                value: "true".to_string(),
+            },
         });
         doc.apply(Op {
-            id: OpId { peer: PeerId(70_270), counter: 11 },
-            kind: OpKind::SetMeta { key: "italic:70270:1".to_string(), value: "false".to_string() },
+            id: OpId {
+                peer: PeerId(70_270),
+                counter: 11,
+            },
+            kind: OpKind::SetMeta {
+                key: "italic:70270:1".to_string(),
+                value: "false".to_string(),
+            },
         });
         assert_eq!(doc.text(), "hello");
 
@@ -7035,12 +7721,13 @@ mod tests {
             restored.apply(op);
         }
         assert_eq!(restored.text(), "hello", "content must survive round-trip");
-        let has_bold = restored.op_log().iter().any(|op| {
-            matches!(&op.kind, OpKind::SetMeta { key, .. } if key.starts_with("bold:"))
-        });
-        let has_italic = restored.op_log().iter().any(|op| {
-            matches!(&op.kind, OpKind::SetMeta { key, .. } if key.starts_with("italic:"))
-        });
+        let has_bold = restored
+            .op_log()
+            .iter()
+            .any(|op| matches!(&op.kind, OpKind::SetMeta { key, .. } if key.starts_with("bold:")));
+        let has_italic = restored.op_log().iter().any(
+            |op| matches!(&op.kind, OpKind::SetMeta { key, .. } if key.starts_with("italic:")),
+        );
         assert!(has_bold, "bold format marker must survive round-trip");
         assert!(has_italic, "italic format marker must survive round-trip");
         let _ = op_content;
@@ -7056,7 +7743,10 @@ mod tests {
         let mut doc = DocState::new(PeerId(80_000));
         let op_text = doc.local_insert(RgaPos::Head, "hello");
         doc.apply(Op {
-            id: OpId { peer: PeerId(80_000), counter: 10 },
+            id: OpId {
+                peer: PeerId(80_000),
+                counter: 10,
+            },
             kind: OpKind::SetMeta {
                 key: format!("bold:{}:{}", op_text.id.peer.0, op_text.id.counter),
                 value: "true".to_string(),
@@ -7080,7 +7770,10 @@ mod tests {
         let mut doc = DocState::new(PeerId(80_001));
         let op_text = doc.local_insert(RgaPos::Head, "world");
         doc.apply(Op {
-            id: OpId { peer: PeerId(80_001), counter: 10 },
+            id: OpId {
+                peer: PeerId(80_001),
+                counter: 10,
+            },
             kind: OpKind::SetMeta {
                 key: format!("italic:{}:{}", op_text.id.peer.0, op_text.id.counter),
                 value: "true".to_string(),
@@ -7105,7 +7798,10 @@ mod tests {
         let base_key = format!("{}:{}", op_text.id.peer.0, op_text.id.counter);
         for (ctr, mark) in [(10u64, "bold"), (11, "italic")] {
             doc.apply(Op {
-                id: OpId { peer: PeerId(80_002), counter: ctr },
+                id: OpId {
+                    peer: PeerId(80_002),
+                    counter: ctr,
+                },
                 kind: OpKind::SetMeta {
                     key: format!("{mark}:{base_key}"),
                     value: "true".to_string(),
@@ -7118,12 +7814,13 @@ mod tests {
             restored.apply(op);
         }
         assert_eq!(restored.text(), "styled");
-        let has_bold = restored.op_log().iter().any(|op| {
-            matches!(&op.kind, OpKind::SetMeta { key, .. } if key.starts_with("bold:"))
-        });
-        let has_italic = restored.op_log().iter().any(|op| {
-            matches!(&op.kind, OpKind::SetMeta { key, .. } if key.starts_with("italic:"))
-        });
+        let has_bold = restored
+            .op_log()
+            .iter()
+            .any(|op| matches!(&op.kind, OpKind::SetMeta { key, .. } if key.starts_with("bold:")));
+        let has_italic = restored.op_log().iter().any(
+            |op| matches!(&op.kind, OpKind::SetMeta { key, .. } if key.starts_with("italic:")),
+        );
         assert!(has_bold && has_italic, "both marks must survive");
     }
 
@@ -7133,7 +7830,10 @@ mod tests {
         let mut doc = DocState::new(PeerId(80_003));
         let op_text = doc.local_insert(RgaPos::Head, "click me");
         doc.apply(Op {
-            id: OpId { peer: PeerId(80_003), counter: 10 },
+            id: OpId {
+                peer: PeerId(80_003),
+                counter: 10,
+            },
             kind: OpKind::SetMeta {
                 key: format!("link:{}:{}", op_text.id.peer.0, op_text.id.counter),
                 value: "https://nom.dev".to_string(),
@@ -7146,11 +7846,17 @@ mod tests {
         }
         let link_value = restored.op_log().iter().find_map(|op| {
             if let OpKind::SetMeta { key, value } = &op.kind {
-                if key.starts_with("link:") { return Some(value.as_str()); }
+                if key.starts_with("link:") {
+                    return Some(value.as_str());
+                }
             }
             None
         });
-        assert_eq!(link_value, Some("https://nom.dev"), "link mark must be preserved");
+        assert_eq!(
+            link_value,
+            Some("https://nom.dev"),
+            "link mark must be preserved"
+        );
     }
 
     #[test]
@@ -7160,7 +7866,10 @@ mod tests {
         doc.local_insert(RgaPos::Head, "abcdefgh");
         // Simulate a range mark "bold" covering chars 2..5 via a range SetMeta entry.
         doc.apply(Op {
-            id: OpId { peer: PeerId(80_004), counter: 10 },
+            id: OpId {
+                peer: PeerId(80_004),
+                counter: 10,
+            },
             kind: OpKind::SetMeta {
                 key: "bold:range".to_string(),
                 value: "2..5".to_string(),
@@ -7168,7 +7877,9 @@ mod tests {
         });
         let range_mark = doc.op_log().iter().find_map(|op| {
             if let OpKind::SetMeta { key, value } = &op.kind {
-                if key == "bold:range" { return Some(value.as_str()); }
+                if key == "bold:range" {
+                    return Some(value.as_str());
+                }
             }
             None
         });
@@ -7184,22 +7895,40 @@ mod tests {
         let key = format!("bold:{}:{}", op_text.id.peer.0, op_text.id.counter);
         // Apply bold mark.
         doc.apply(Op {
-            id: OpId { peer: PeerId(80_005), counter: 10 },
-            kind: OpKind::SetMeta { key: key.clone(), value: "true".to_string() },
+            id: OpId {
+                peer: PeerId(80_005),
+                counter: 10,
+            },
+            kind: OpKind::SetMeta {
+                key: key.clone(),
+                value: "true".to_string(),
+            },
         });
         // Remove bold mark (set to false).
         doc.apply(Op {
-            id: OpId { peer: PeerId(80_005), counter: 11 },
-            kind: OpKind::SetMeta { key: key.clone(), value: "false".to_string() },
+            id: OpId {
+                peer: PeerId(80_005),
+                counter: 11,
+            },
+            kind: OpKind::SetMeta {
+                key: key.clone(),
+                value: "false".to_string(),
+            },
         });
         // Latest value for that key should be "false".
         let latest = doc.op_log().iter().rev().find_map(|op| {
             if let OpKind::SetMeta { key: k, value } = &op.kind {
-                if k == &key { return Some(value.as_str()); }
+                if k == &key {
+                    return Some(value.as_str());
+                }
             }
             None
         });
-        assert_eq!(latest, Some("false"), "bold mark must be removed (set to false)");
+        assert_eq!(
+            latest,
+            Some("false"),
+            "bold mark must be removed (set to false)"
+        );
     }
 
     // State vector: empty doc, after inserts, minimal sync
@@ -7208,15 +7937,20 @@ mod tests {
     fn collab_state_vector_empty_doc() {
         // An empty doc has no ops — state vector (max counter per peer) is empty.
         let doc = DocState::new(PeerId(81_000));
-        let state_vec: std::collections::HashMap<u64, u64> = doc
-            .op_log()
-            .iter()
-            .fold(std::collections::HashMap::new(), |mut acc, op| {
-                let entry = acc.entry(op.id.peer.0).or_insert(0);
-                if op.id.counter > *entry { *entry = op.id.counter; }
-                acc
-            });
-        assert!(state_vec.is_empty(), "empty doc must have empty state vector");
+        let state_vec: std::collections::HashMap<u64, u64> =
+            doc.op_log()
+                .iter()
+                .fold(std::collections::HashMap::new(), |mut acc, op| {
+                    let entry = acc.entry(op.id.peer.0).or_insert(0);
+                    if op.id.counter > *entry {
+                        *entry = op.id.counter;
+                    }
+                    acc
+                });
+        assert!(
+            state_vec.is_empty(),
+            "empty doc must have empty state vector"
+        );
     }
 
     #[test]
@@ -7233,7 +7967,10 @@ mod tests {
             .map(|op| op.id.counter)
             .max()
             .unwrap_or(0);
-        assert_eq!(max_counter, 3, "state vector counter must be 3 after 3 inserts");
+        assert_eq!(
+            max_counter, 3,
+            "state vector counter must be 3 after 3 inserts"
+        );
     }
 
     #[test]
@@ -7249,7 +7986,8 @@ mod tests {
         pb.apply(pa.op_log()[0].clone());
 
         // B's state vector: peer 81_002 → counter 1.
-        let b_max_for_a: u64 = pb.op_log()
+        let b_max_for_a: u64 = pb
+            .op_log()
             .iter()
             .filter(|op| op.id.peer == PeerId(81_002))
             .map(|op| op.id.counter)
@@ -7257,7 +7995,8 @@ mod tests {
             .unwrap_or(0);
 
         // Diff: A's ops with counter > b_max_for_a are the ones B needs.
-        let needed: Vec<&Op> = pa.op_log()
+        let needed: Vec<&Op> = pa
+            .op_log()
             .iter()
             .filter(|op| op.id.peer == PeerId(81_002) && op.id.counter > b_max_for_a)
             .collect();
@@ -7280,7 +8019,10 @@ mod tests {
         for (ctr, text) in [(1u64, "a"), (2, "b"), (3, "c")] {
             queue.push(Op {
                 id: OpId { peer, counter: ctr },
-                kind: OpKind::Insert { pos: RgaPos::Head, text: text.to_string() },
+                kind: OpKind::Insert {
+                    pos: RgaPos::Head,
+                    text: text.to_string(),
+                },
             });
         }
         assert_eq!(queue.len(), 3, "offline queue must accumulate 3 ops");
@@ -7293,11 +8035,17 @@ mod tests {
         let peer = PeerId(82_001);
         let op1 = Op {
             id: OpId { peer, counter: 1 },
-            kind: OpKind::Insert { pos: RgaPos::Head, text: "x".to_string() },
+            kind: OpKind::Insert {
+                pos: RgaPos::Head,
+                text: "x".to_string(),
+            },
         };
         let op2 = Op {
             id: OpId { peer, counter: 2 },
-            kind: OpKind::Insert { pos: RgaPos::After(op1.id), text: "y".to_string() },
+            kind: OpKind::Insert {
+                pos: RgaPos::After(op1.id),
+                text: "y".to_string(),
+            },
         };
         queue.push(op1);
         queue.push(op2);
@@ -7318,15 +8066,24 @@ mod tests {
         let mut queue: Vec<Op> = Vec::new();
         let op_a = Op {
             id: OpId { peer, counter: 1 },
-            kind: OpKind::Insert { pos: RgaPos::Head, text: "A".to_string() },
+            kind: OpKind::Insert {
+                pos: RgaPos::Head,
+                text: "A".to_string(),
+            },
         };
         let op_b = Op {
             id: OpId { peer, counter: 2 },
-            kind: OpKind::Insert { pos: RgaPos::After(op_a.id), text: "B".to_string() },
+            kind: OpKind::Insert {
+                pos: RgaPos::After(op_a.id),
+                text: "B".to_string(),
+            },
         };
         let op_c = Op {
             id: OpId { peer, counter: 3 },
-            kind: OpKind::Insert { pos: RgaPos::After(op_b.id), text: "C".to_string() },
+            kind: OpKind::Insert {
+                pos: RgaPos::After(op_b.id),
+                text: "C".to_string(),
+            },
         };
         queue.push(op_a);
         queue.push(op_b);
@@ -7336,7 +8093,11 @@ mod tests {
         for op in &queue {
             doc.apply(op.clone());
         }
-        assert_eq!(doc.text(), "ABC", "offline queue order must be preserved on flush");
+        assert_eq!(
+            doc.text(),
+            "ABC",
+            "offline queue order must be preserved on flush"
+        );
     }
 
     // Concurrent marks: two peers mark different ranges
@@ -7348,19 +8109,33 @@ mod tests {
         let mut doc = DocState::new(PeerId(83_000));
         doc.local_insert(RgaPos::Head, "hello world");
         doc.apply(Op {
-            id: OpId { peer: PeerId(83_001), counter: 1 },
-            kind: OpKind::SetMeta { key: "bold:range".to_string(), value: "0..3".to_string() },
+            id: OpId {
+                peer: PeerId(83_001),
+                counter: 1,
+            },
+            kind: OpKind::SetMeta {
+                key: "bold:range".to_string(),
+                value: "0..3".to_string(),
+            },
         });
         doc.apply(Op {
-            id: OpId { peer: PeerId(83_002), counter: 1 },
-            kind: OpKind::SetMeta { key: "italic:range".to_string(), value: "5..8".to_string() },
+            id: OpId {
+                peer: PeerId(83_002),
+                counter: 1,
+            },
+            kind: OpKind::SetMeta {
+                key: "italic:range".to_string(),
+                value: "5..8".to_string(),
+            },
         });
-        let bold = doc.op_log().iter().any(|op| {
-            matches!(&op.kind, OpKind::SetMeta { key, .. } if key == "bold:range")
-        });
-        let italic = doc.op_log().iter().any(|op| {
-            matches!(&op.kind, OpKind::SetMeta { key, .. } if key == "italic:range")
-        });
+        let bold = doc
+            .op_log()
+            .iter()
+            .any(|op| matches!(&op.kind, OpKind::SetMeta { key, .. } if key == "bold:range"));
+        let italic = doc
+            .op_log()
+            .iter()
+            .any(|op| matches!(&op.kind, OpKind::SetMeta { key, .. } if key == "italic:range"));
         assert!(bold && italic, "concurrent marks must both be present");
     }
 
@@ -7372,26 +8147,46 @@ mod tests {
         let op_text = doc.local_insert(RgaPos::Head, "abcde");
         // Bold marks range 0..5.
         doc.apply(Op {
-            id: OpId { peer: PeerId(83_010), counter: 10 },
-            kind: OpKind::SetMeta { key: "bold:range".to_string(), value: "0..5".to_string() },
+            id: OpId {
+                peer: PeerId(83_010),
+                counter: 10,
+            },
+            kind: OpKind::SetMeta {
+                key: "bold:range".to_string(),
+                value: "0..5".to_string(),
+            },
         });
         // Insert "X" in the middle (after "ab"), splitting the mark → 0..2, 3..6.
         let op_ins = doc.local_insert(RgaPos::After(op_text.id), "X");
         // Record split marks.
         doc.apply(Op {
-            id: OpId { peer: PeerId(83_010), counter: 11 },
-            kind: OpKind::SetMeta { key: "bold:left".to_string(), value: "0..2".to_string() },
+            id: OpId {
+                peer: PeerId(83_010),
+                counter: 12,
+            },
+            kind: OpKind::SetMeta {
+                key: "bold:left".to_string(),
+                value: "0..2".to_string(),
+            },
         });
         doc.apply(Op {
-            id: OpId { peer: PeerId(83_010), counter: 12 },
-            kind: OpKind::SetMeta { key: "bold:right".to_string(), value: "3..6".to_string() },
+            id: OpId {
+                peer: PeerId(83_010),
+                counter: 13,
+            },
+            kind: OpKind::SetMeta {
+                key: "bold:right".to_string(),
+                value: "3..6".to_string(),
+            },
         });
-        let has_left = doc.op_log().iter().any(|op| {
-            matches!(&op.kind, OpKind::SetMeta { key, .. } if key == "bold:left")
-        });
-        let has_right = doc.op_log().iter().any(|op| {
-            matches!(&op.kind, OpKind::SetMeta { key, .. } if key == "bold:right")
-        });
+        let has_left = doc
+            .op_log()
+            .iter()
+            .any(|op| matches!(&op.kind, OpKind::SetMeta { key, .. } if key == "bold:left"));
+        let has_right = doc
+            .op_log()
+            .iter()
+            .any(|op| matches!(&op.kind, OpKind::SetMeta { key, .. } if key == "bold:right"));
         assert!(has_left && has_right, "mark must be split after insert");
         let _ = op_ins;
     }
@@ -7403,21 +8198,41 @@ mod tests {
         doc.local_insert(RgaPos::Head, "abcdef");
         // Two adjacent bold marks: 0..3 and 3..6.
         doc.apply(Op {
-            id: OpId { peer: PeerId(83_020), counter: 10 },
-            kind: OpKind::SetMeta { key: "bold:seg1".to_string(), value: "0..3".to_string() },
+            id: OpId {
+                peer: PeerId(83_020),
+                counter: 10,
+            },
+            kind: OpKind::SetMeta {
+                key: "bold:seg1".to_string(),
+                value: "0..3".to_string(),
+            },
         });
         doc.apply(Op {
-            id: OpId { peer: PeerId(83_020), counter: 11 },
-            kind: OpKind::SetMeta { key: "bold:seg2".to_string(), value: "3..6".to_string() },
+            id: OpId {
+                peer: PeerId(83_020),
+                counter: 11,
+            },
+            kind: OpKind::SetMeta {
+                key: "bold:seg2".to_string(),
+                value: "3..6".to_string(),
+            },
         });
         // Merge: store unified range.
         doc.apply(Op {
-            id: OpId { peer: PeerId(83_020), counter: 12 },
-            kind: OpKind::SetMeta { key: "bold:merged".to_string(), value: "0..6".to_string() },
+            id: OpId {
+                peer: PeerId(83_020),
+                counter: 12,
+            },
+            kind: OpKind::SetMeta {
+                key: "bold:merged".to_string(),
+                value: "0..6".to_string(),
+            },
         });
         let merged = doc.op_log().iter().find_map(|op| {
             if let OpKind::SetMeta { key, value } = &op.kind {
-                if key == "bold:merged" { return Some(value.as_str()); }
+                if key == "bold:merged" {
+                    return Some(value.as_str());
+                }
             }
             None
         });
@@ -7432,11 +8247,17 @@ mod tests {
         let mut doc = DocState::new(PeerId(84_000));
         let op = doc.local_insert(RgaPos::Head, "serialized");
         // "Serialize": extract (peer, counter, text) from each insert op.
-        let serialized: Vec<(u64, u64, String)> = doc.op_log().iter().filter_map(|o| {
-            if let OpKind::Insert { text, .. } = &o.kind {
-                Some((o.id.peer.0, o.id.counter, text.clone()))
-            } else { None }
-        }).collect();
+        let serialized: Vec<(u64, u64, String)> = doc
+            .op_log()
+            .iter()
+            .filter_map(|o| {
+                if let OpKind::Insert { text, .. } = &o.kind {
+                    Some((o.id.peer.0, o.id.counter, text.clone()))
+                } else {
+                    None
+                }
+            })
+            .collect();
         assert_eq!(serialized.len(), 1);
         assert_eq!(serialized[0].0, 84_000);
         assert_eq!(serialized[0].2, "serialized");
@@ -7450,8 +8271,14 @@ mod tests {
         let mut doc = DocState::new(PeerId(84_001));
         for (peer, counter, text) in raw {
             doc.apply(Op {
-                id: OpId { peer: PeerId(peer), counter },
-                kind: OpKind::Insert { pos: RgaPos::Head, text: text.to_string() },
+                id: OpId {
+                    peer: PeerId(peer),
+                    counter,
+                },
+                kind: OpKind::Insert {
+                    pos: RgaPos::Head,
+                    text: text.to_string(),
+                },
             });
         }
         assert_eq!(doc.text(), "deserialized");
@@ -7470,7 +8297,11 @@ mod tests {
         for op in snapshot {
             restored.apply(op);
         }
-        assert_eq!(restored.text(), original.text(), "JSON round-trip must preserve state");
+        assert_eq!(
+            restored.text(),
+            original.text(),
+            "JSON round-trip must preserve state"
+        );
         assert_eq!(restored.op_log().len(), original.op_log().len());
     }
 
@@ -7496,10 +8327,14 @@ mod tests {
         let op = doc.local_insert(RgaPos::Head, "ydoc_delete_me");
         doc.local_delete(op.id);
         assert_eq!(doc.text(), "");
-        let has_delete = doc.op_log().iter().any(|o| {
-            matches!(&o.kind, OpKind::Delete { target } if *target == op.id)
-        });
-        assert!(has_delete, "ydoc-style delete must tombstone the target node");
+        let has_delete = doc
+            .op_log()
+            .iter()
+            .any(|o| matches!(&o.kind, OpKind::Delete { target } if *target == op.id));
+        assert!(
+            has_delete,
+            "ydoc-style delete must tombstone the target node"
+        );
     }
 
     // Cursor awareness
@@ -7508,7 +8343,10 @@ mod tests {
     fn collab_cursor_awareness_shared() {
         // Peer A sets a cursor via SetMeta; Peer B applies that op and can read it.
         let cursor_op = Op {
-            id: OpId { peer: PeerId(86_000), counter: 1 },
+            id: OpId {
+                peer: PeerId(86_000),
+                counter: 1,
+            },
             kind: OpKind::SetMeta {
                 key: "cursor:86000".to_string(),
                 value: "7".to_string(),
@@ -7518,11 +8356,17 @@ mod tests {
         doc_b.apply(cursor_op);
         let cursor = doc_b.op_log().iter().find_map(|op| {
             if let OpKind::SetMeta { key, value } = &op.kind {
-                if key == "cursor:86000" { return Some(value.as_str()); }
+                if key == "cursor:86000" {
+                    return Some(value.as_str());
+                }
             }
             None
         });
-        assert_eq!(cursor, Some("7"), "peer B must see peer A's cursor position");
+        assert_eq!(
+            cursor,
+            Some("7"),
+            "peer B must see peer A's cursor position"
+        );
     }
 
     #[test]
@@ -7531,22 +8375,40 @@ mod tests {
         let mut doc = DocState::new(PeerId(86_010));
         // Connect: set cursor.
         doc.apply(Op {
-            id: OpId { peer: PeerId(86_010), counter: 1 },
-            kind: OpKind::SetMeta { key: "cursor:86010".to_string(), value: "5".to_string() },
+            id: OpId {
+                peer: PeerId(86_010),
+                counter: 1,
+            },
+            kind: OpKind::SetMeta {
+                key: "cursor:86010".to_string(),
+                value: "5".to_string(),
+            },
         });
         // Disconnect: clear cursor (value = "").
         doc.apply(Op {
-            id: OpId { peer: PeerId(86_010), counter: 2 },
-            kind: OpKind::SetMeta { key: "cursor:86010".to_string(), value: "".to_string() },
+            id: OpId {
+                peer: PeerId(86_010),
+                counter: 2,
+            },
+            kind: OpKind::SetMeta {
+                key: "cursor:86010".to_string(),
+                value: "".to_string(),
+            },
         });
         // Latest value for cursor:86010 is "".
         let latest = doc.op_log().iter().rev().find_map(|op| {
             if let OpKind::SetMeta { key, value } = &op.kind {
-                if key == "cursor:86010" { return Some(value.as_str()); }
+                if key == "cursor:86010" {
+                    return Some(value.as_str());
+                }
             }
             None
         });
-        assert_eq!(latest, Some(""), "cursor must be cleared (empty) on disconnect");
+        assert_eq!(
+            latest,
+            Some(""),
+            "cursor must be cleared (empty) on disconnect"
+        );
     }
 
     #[test]
@@ -7554,16 +8416,28 @@ mod tests {
         // User name broadcast via SetMeta "user:name" is readable from op_log.
         let mut doc = DocState::new(PeerId(86_020));
         doc.apply(Op {
-            id: OpId { peer: PeerId(86_020), counter: 1 },
-            kind: OpKind::SetMeta { key: "user:name".to_string(), value: "Alice".to_string() },
+            id: OpId {
+                peer: PeerId(86_020),
+                counter: 1,
+            },
+            kind: OpKind::SetMeta {
+                key: "user:name".to_string(),
+                value: "Alice".to_string(),
+            },
         });
         let name = doc.op_log().iter().find_map(|op| {
             if let OpKind::SetMeta { key, value } = &op.kind {
-                if key == "user:name" { return Some(value.as_str()); }
+                if key == "user:name" {
+                    return Some(value.as_str());
+                }
             }
             None
         });
-        assert_eq!(name, Some("Alice"), "user name must be readable from awareness op_log");
+        assert_eq!(
+            name,
+            Some("Alice"),
+            "user name must be readable from awareness op_log"
+        );
     }
 
     #[test]
@@ -7571,22 +8445,46 @@ mod tests {
         // Two users each set a cursor at different positions; both are readable.
         let mut doc = DocState::new(PeerId(86_030));
         doc.apply(Op {
-            id: OpId { peer: PeerId(86_031), counter: 1 },
-            kind: OpKind::SetMeta { key: "cursor:86031".to_string(), value: "3".to_string() },
+            id: OpId {
+                peer: PeerId(86_031),
+                counter: 1,
+            },
+            kind: OpKind::SetMeta {
+                key: "cursor:86031".to_string(),
+                value: "3".to_string(),
+            },
         });
         doc.apply(Op {
-            id: OpId { peer: PeerId(86_032), counter: 1 },
-            kind: OpKind::SetMeta { key: "cursor:86032".to_string(), value: "9".to_string() },
+            id: OpId {
+                peer: PeerId(86_032),
+                counter: 1,
+            },
+            kind: OpKind::SetMeta {
+                key: "cursor:86032".to_string(),
+                value: "9".to_string(),
+            },
         });
-        let cursors: Vec<(&str, &str)> = doc.op_log().iter().filter_map(|op| {
-            if let OpKind::SetMeta { key, value } = &op.kind {
-                if key.starts_with("cursor:") { return Some((key.as_str(), value.as_str())); }
-            }
-            None
-        }).collect();
+        let cursors: Vec<(&str, &str)> = doc
+            .op_log()
+            .iter()
+            .filter_map(|op| {
+                if let OpKind::SetMeta { key, value } = &op.kind {
+                    if key.starts_with("cursor:") {
+                        return Some((key.as_str(), value.as_str()));
+                    }
+                }
+                None
+            })
+            .collect();
         assert_eq!(cursors.len(), 2);
-        let pos_31 = cursors.iter().find(|(k, _)| k.ends_with("86031")).map(|(_, v)| *v);
-        let pos_32 = cursors.iter().find(|(k, _)| k.ends_with("86032")).map(|(_, v)| *v);
+        let pos_31 = cursors
+            .iter()
+            .find(|(k, _)| k.ends_with("86031"))
+            .map(|(_, v)| *v);
+        let pos_32 = cursors
+            .iter()
+            .find(|(k, _)| k.ends_with("86032"))
+            .map(|(_, v)| *v);
         assert_eq!(pos_31, Some("3"));
         assert_eq!(pos_32, Some("9"));
     }
@@ -7596,17 +8494,33 @@ mod tests {
         // Two peers send concurrent awareness updates; both land in the log without conflict.
         let mut doc = DocState::new(PeerId(86_040));
         let update_a = Op {
-            id: OpId { peer: PeerId(86_041), counter: 1 },
-            kind: OpKind::SetMeta { key: "cursor:86041".to_string(), value: "0".to_string() },
+            id: OpId {
+                peer: PeerId(86_041),
+                counter: 1,
+            },
+            kind: OpKind::SetMeta {
+                key: "cursor:86041".to_string(),
+                value: "0".to_string(),
+            },
         };
         let update_b = Op {
-            id: OpId { peer: PeerId(86_042), counter: 1 },
-            kind: OpKind::SetMeta { key: "cursor:86042".to_string(), value: "10".to_string() },
+            id: OpId {
+                peer: PeerId(86_042),
+                counter: 1,
+            },
+            kind: OpKind::SetMeta {
+                key: "cursor:86042".to_string(),
+                value: "10".to_string(),
+            },
         };
         // Apply in one order.
         doc.apply(update_a);
         doc.apply(update_b);
-        assert_eq!(doc.op_log().len(), 2, "both concurrent awareness updates must be recorded");
+        assert_eq!(
+            doc.op_log().len(),
+            2,
+            "both concurrent awareness updates must be recorded"
+        );
         assert_eq!(doc.text(), "");
     }
 
@@ -7618,7 +8532,10 @@ mod tests {
         let peer = PeerId(87_000);
         let op1 = Op {
             id: OpId { peer, counter: 1 },
-            kind: OpKind::Insert { pos: RgaPos::Head, text: "tx_".to_string() },
+            kind: OpKind::Insert {
+                pos: RgaPos::Head,
+                text: "tx_".to_string(),
+            },
         };
         let op2 = Op {
             id: OpId { peer, counter: 2 },
@@ -7634,7 +8551,11 @@ mod tests {
         for op in &batch {
             doc.apply(op.clone());
         }
-        assert_eq!(doc.text(), "tx_commit", "batch transaction must apply all ops atomically");
+        assert_eq!(
+            doc.text(),
+            "tx_commit",
+            "batch transaction must apply all ops atomically"
+        );
         assert_eq!(doc.op_log().len(), batch.len());
     }
 
@@ -7649,8 +8570,14 @@ mod tests {
 
         // Staging: collect candidate ops.
         let candidate = Op {
-            id: OpId { peer: PeerId(87_001), counter: 99 },
-            kind: OpKind::Insert { pos: RgaPos::Head, text: "unstable".to_string() },
+            id: OpId {
+                peer: PeerId(87_001),
+                counter: 99,
+            },
+            kind: OpKind::Insert {
+                pos: RgaPos::Head,
+                text: "unstable".to_string(),
+            },
         };
         let mut staging = DocState::new(PeerId(87_001));
         // Replay original into staging.
@@ -7660,7 +8587,11 @@ mod tests {
         staging.apply(candidate);
         // "Rollback": do NOT commit staging ops to original.
         // Original must remain unchanged.
-        assert_eq!(original.text(), text_before, "rollback: original doc must be unchanged");
+        assert_eq!(
+            original.text(),
+            text_before,
+            "rollback: original doc must be unchanged"
+        );
         assert_eq!(original.op_log().len(), log_len_before);
     }
 
@@ -7672,13 +8603,23 @@ mod tests {
         let mut doc = DocState::new(PeerId(88_000));
         for i in 0u64..10 {
             doc.apply(Op {
-                id: OpId { peer: PeerId(88_000), counter: i + 1 },
-                kind: OpKind::Insert { pos: RgaPos::Head, text: format!("{i}") },
+                id: OpId {
+                    peer: PeerId(88_000),
+                    counter: i + 1,
+                },
+                kind: OpKind::Insert {
+                    pos: RgaPos::Head,
+                    text: format!("{i}"),
+                },
             });
         }
         // Simulate bounded history: keep only the last 5 ops.
         let history: Vec<&Op> = doc.op_log().iter().rev().take(5).collect();
-        assert_eq!(history.len(), 5, "bounded history must have at most 5 entries");
+        assert_eq!(
+            history.len(),
+            5,
+            "bounded history must have at most 5 entries"
+        );
     }
 
     #[test]
@@ -7687,12 +8628,20 @@ mod tests {
         let mut doc = DocState::new(PeerId(88_001));
         doc.local_insert(RgaPos::Head, "v1");
         doc.apply(Op {
-            id: OpId { peer: PeerId(88_001), counter: 10 },
-            kind: OpKind::SetMeta { key: "ts:1".to_string(), value: "2026-04-18T00:00:00Z".to_string() },
+            id: OpId {
+                peer: PeerId(88_001),
+                counter: 10,
+            },
+            kind: OpKind::SetMeta {
+                key: "ts:1".to_string(),
+                value: "2026-04-18T00:00:00Z".to_string(),
+            },
         });
         let ts = doc.op_log().iter().find_map(|op| {
             if let OpKind::SetMeta { key, value } = &op.kind {
-                if key.starts_with("ts:") { return Some(value.as_str()); }
+                if key.starts_with("ts:") {
+                    return Some(value.as_str());
+                }
             }
             None
         });
@@ -7706,12 +8655,20 @@ mod tests {
         let mut doc = DocState::new(PeerId(88_002));
         doc.local_insert(RgaPos::Head, "authored_content");
         doc.apply(Op {
-            id: OpId { peer: PeerId(88_002), counter: 10 },
-            kind: OpKind::SetMeta { key: "author:1".to_string(), value: "bob".to_string() },
+            id: OpId {
+                peer: PeerId(88_002),
+                counter: 10,
+            },
+            kind: OpKind::SetMeta {
+                key: "author:1".to_string(),
+                value: "bob".to_string(),
+            },
         });
         let author = doc.op_log().iter().find_map(|op| {
             if let OpKind::SetMeta { key, value } = &op.kind {
-                if key.starts_with("author:") { return Some(value.as_str()); }
+                if key.starts_with("author:") {
+                    return Some(value.as_str());
+                }
             }
             None
         });
@@ -7728,7 +8685,11 @@ mod tests {
         // "Revert to v1": replay only the first op into a new doc.
         let mut reverted = DocState::new(PeerId(88_003));
         reverted.apply(doc.op_log()[0].clone());
-        assert_eq!(reverted.text(), "v1", "revert must restore doc to version 1 state");
+        assert_eq!(
+            reverted.text(),
+            "v1",
+            "revert must restore doc to version 1 state"
+        );
     }
 
     // Snapshots: newer vs older, delta comparison
@@ -7760,9 +8721,10 @@ mod tests {
         let snap_new: Vec<Op> = doc.op_log().to_vec();
 
         // Delta: ops in snap_new not in snap_old.
-        let delta: Vec<&Op> = snap_new.iter().filter(|op| {
-            !snap_old.iter().any(|o| o.id == op.id)
-        }).collect();
+        let delta: Vec<&Op> = snap_new
+            .iter()
+            .filter(|op| !snap_old.iter().any(|o| o.id == op.id))
+            .collect();
         assert_eq!(delta.len(), 1, "delta must contain exactly 1 new op");
         match &delta[0].kind {
             OpKind::Insert { text, .. } => assert_eq!(text, "extra"),
@@ -7778,12 +8740,20 @@ mod tests {
         let mut doc = DocState::new(PeerId(90_000));
         doc.local_insert(RgaPos::Head, "encoded_content");
         doc.apply(Op {
-            id: OpId { peer: PeerId(90_000), counter: 10 },
-            kind: OpKind::SetMeta { key: "encoding:version".to_string(), value: "v1".to_string() },
+            id: OpId {
+                peer: PeerId(90_000),
+                counter: 10,
+            },
+            kind: OpKind::SetMeta {
+                key: "encoding:version".to_string(),
+                value: "v1".to_string(),
+            },
         });
         let version = doc.op_log().iter().find_map(|op| {
             if let OpKind::SetMeta { key, value } = &op.kind {
-                if key == "encoding:version" { return Some(value.as_str()); }
+                if key == "encoding:version" {
+                    return Some(value.as_str());
+                }
             }
             None
         });
@@ -7795,12 +8765,20 @@ mod tests {
         // Simulate detecting an unknown version and returning an error result.
         let mut doc = DocState::new(PeerId(90_001));
         doc.apply(Op {
-            id: OpId { peer: PeerId(90_001), counter: 1 },
-            kind: OpKind::SetMeta { key: "encoding:version".to_string(), value: "v99".to_string() },
+            id: OpId {
+                peer: PeerId(90_001),
+                counter: 1,
+            },
+            kind: OpKind::SetMeta {
+                key: "encoding:version".to_string(),
+                value: "v99".to_string(),
+            },
         });
         let version = doc.op_log().iter().find_map(|op| {
             if let OpKind::SetMeta { key, value } = &op.kind {
-                if key == "encoding:version" { return Some(value.as_str()); }
+                if key == "encoding:version" {
+                    return Some(value.as_str());
+                }
             }
             None
         });
@@ -7811,7 +8789,10 @@ mod tests {
         } else {
             Err("unknown encoding version")
         };
-        assert!(result.is_err(), "unknown encoding version must produce an error");
+        assert!(
+            result.is_err(),
+            "unknown encoding version must produce an error"
+        );
         assert_eq!(result.unwrap_err(), "unknown encoding version");
     }
 
@@ -7845,32 +8826,59 @@ mod tests {
         let mut doc = DocState::new(PeerId(95_002));
         doc.apply(make_insert(95_999, 80, RgaPos::Head, "remote"));
         let next = doc.local_insert(RgaPos::Head, "local");
-        assert!(next.id.counter > 80, "local clock must exceed max remote counter");
+        assert!(
+            next.id.counter > 80,
+            "local clock must exceed max remote counter"
+        );
     }
 
     #[test]
     fn version_vector_compare_equal() {
         // Two OpIds with identical peer and counter are equal.
-        let id_a = OpId { peer: PeerId(95_003), counter: 7 };
-        let id_b = OpId { peer: PeerId(95_003), counter: 7 };
+        let id_a = OpId {
+            peer: PeerId(95_003),
+            counter: 7,
+        };
+        let id_b = OpId {
+            peer: PeerId(95_003),
+            counter: 7,
+        };
         assert_eq!(id_a, id_b, "identical peer+counter must be equal");
     }
 
     #[test]
     fn version_vector_compare_concurrent() {
         // Same counter, different peers — neither dominates; they are distinct.
-        let op_p1 = OpId { peer: PeerId(95_004), counter: 10 };
-        let op_p2 = OpId { peer: PeerId(95_005), counter: 10 };
-        assert_ne!(op_p1, op_p2, "different peers at same counter are not equal");
+        let op_p1 = OpId {
+            peer: PeerId(95_004),
+            counter: 10,
+        };
+        let op_p2 = OpId {
+            peer: PeerId(95_005),
+            counter: 10,
+        };
+        assert_ne!(
+            op_p1, op_p2,
+            "different peers at same counter are not equal"
+        );
         // The tiebreak is deterministic (peer.0 ascending).
-        assert!(op_p1 < op_p2 || op_p2 < op_p1, "one must be less under total order");
+        assert!(
+            op_p1 < op_p2 || op_p2 < op_p1,
+            "one must be less under total order"
+        );
     }
 
     #[test]
     fn version_vector_compare_happened_before() {
         // Lower counter on the same peer means happened-before.
-        let early = OpId { peer: PeerId(95_006), counter: 3 };
-        let later = OpId { peer: PeerId(95_006), counter: 8 };
+        let early = OpId {
+            peer: PeerId(95_006),
+            counter: 3,
+        };
+        let later = OpId {
+            peer: PeerId(95_006),
+            counter: 8,
+        };
         assert!(early < later, "earlier op must compare less");
         assert!(later > early, "later op must compare greater");
     }
@@ -7891,14 +8899,23 @@ mod tests {
         let deleted_ids: std::collections::HashSet<OpId> = doc
             .op_log()
             .iter()
-            .filter_map(|o| if let OpKind::Delete { target } = &o.kind { Some(*target) } else { None })
+            .filter_map(|o| {
+                if let OpKind::Delete { target } = &o.kind {
+                    Some(*target)
+                } else {
+                    None
+                }
+            })
             .collect();
         let live_count = doc
             .op_log()
             .iter()
             .filter(|o| matches!(&o.kind, OpKind::Insert { .. }) && !deleted_ids.contains(&o.id))
             .count();
-        assert!(live_count < doc.op_log().len(), "compacted log must be shorter");
+        assert!(
+            live_count < doc.op_log().len(),
+            "compacted log must be shorter"
+        );
         assert_eq!(live_count, 1);
     }
 
@@ -7914,7 +8931,11 @@ mod tests {
         for op in log {
             restored.apply(op);
         }
-        assert_eq!(restored.text(), original.text(), "round-trip must preserve text");
+        assert_eq!(
+            restored.text(),
+            original.text(),
+            "round-trip must preserve text"
+        );
         assert_eq!(restored.op_log().len(), original.op_log().len());
     }
 
@@ -7963,7 +8984,11 @@ mod tests {
 
         // Second merge must add no ops.
         pb.merge(&pa);
-        assert_eq!(pb.op_log().len(), len_after_first_merge, "second merge must be no-op");
+        assert_eq!(
+            pb.op_log().len(),
+            len_after_first_merge,
+            "second merge must be no-op"
+        );
     }
 
     #[test]
@@ -7981,9 +9006,20 @@ mod tests {
         // Collect all op ids and verify uniqueness.
         let ids_a: std::collections::HashSet<OpId> = pa.op_log().iter().map(|o| o.id).collect();
         let ids_b: std::collections::HashSet<OpId> = pb.op_log().iter().map(|o| o.id).collect();
-        assert_eq!(ids_a.len(), pa.op_log().len(), "pa must have no duplicate op ids");
-        assert_eq!(ids_b.len(), pb.op_log().len(), "pb must have no duplicate op ids");
-        assert_eq!(ids_a, ids_b, "after sync both peers must have the same op ids");
+        assert_eq!(
+            ids_a.len(),
+            pa.op_log().len(),
+            "pa must have no duplicate op ids"
+        );
+        assert_eq!(
+            ids_b.len(),
+            pb.op_log().len(),
+            "pb must have no duplicate op ids"
+        );
+        assert_eq!(
+            ids_a, ids_b,
+            "after sync both peers must have the same op ids"
+        );
     }
 
     #[test]
@@ -7998,9 +9034,12 @@ mod tests {
         let mut pc = DocState::new(PeerId(97_022));
         pc.local_insert(RgaPos::Head, "PC");
 
-        pa.merge(&pb); pa.merge(&pc);
-        pb.merge(&pa); pb.merge(&pc);
-        pc.merge(&pa); pc.merge(&pb);
+        pa.merge(&pb);
+        pa.merge(&pc);
+        pb.merge(&pa);
+        pb.merge(&pc);
+        pc.merge(&pa);
+        pc.merge(&pb);
 
         assert_eq!(pa.text(), pb.text(), "PA and PB must converge");
         assert_eq!(pb.text(), pc.text(), "PB and PC must converge");
@@ -8061,7 +9100,11 @@ mod tests {
         pa.apply(ins.clone());
         pb.apply(del.clone());
 
-        assert_eq!(pa.text(), pb.text(), "concurrent insert+delete must converge");
+        assert_eq!(
+            pa.text(),
+            pb.text(),
+            "concurrent insert+delete must converge"
+        );
         assert!(!pa.text().contains("shared"));
         assert!(pa.text().contains("extra"));
     }
@@ -8074,16 +9117,28 @@ mod tests {
         let op_b = doc.local_insert(RgaPos::After(op_a.id), "B");
         let op_c = doc.local_insert(RgaPos::After(op_b.id), "C");
 
-        let count_before = doc.op_log().iter().filter(|o| matches!(&o.kind, OpKind::Delete { .. })).count();
+        let count_before = doc
+            .op_log()
+            .iter()
+            .filter(|o| matches!(&o.kind, OpKind::Delete { .. }))
+            .count();
         assert_eq!(count_before, 0);
 
         doc.local_delete(op_a.id);
-        let after_1 = doc.op_log().iter().filter(|o| matches!(&o.kind, OpKind::Delete { .. })).count();
+        let after_1 = doc
+            .op_log()
+            .iter()
+            .filter(|o| matches!(&o.kind, OpKind::Delete { .. }))
+            .count();
         assert_eq!(after_1, 1);
 
         doc.local_delete(op_b.id);
         doc.local_delete(op_c.id);
-        let after_3 = doc.op_log().iter().filter(|o| matches!(&o.kind, OpKind::Delete { .. })).count();
+        let after_3 = doc
+            .op_log()
+            .iter()
+            .filter(|o| matches!(&o.kind, OpKind::Delete { .. }))
+            .count();
         assert_eq!(after_3, 3, "tombstone count must equal number of deletes");
     }
 
@@ -8101,7 +9156,13 @@ mod tests {
         let deleted_ids: std::collections::HashSet<OpId> = doc
             .op_log()
             .iter()
-            .filter_map(|o| if let OpKind::Delete { target } = &o.kind { Some(*target) } else { None })
+            .filter_map(|o| {
+                if let OpKind::Delete { target } = &o.kind {
+                    Some(*target)
+                } else {
+                    None
+                }
+            })
             .collect();
         let gc_ops: Vec<Op> = doc
             .op_log()
@@ -8115,7 +9176,11 @@ mod tests {
             gc_doc.apply(op);
         }
 
-        let tombstones_after_gc = gc_doc.op_log().iter().filter(|o| matches!(&o.kind, OpKind::Delete { .. })).count();
+        let tombstones_after_gc = gc_doc
+            .op_log()
+            .iter()
+            .filter(|o| matches!(&o.kind, OpKind::Delete { .. }))
+            .count();
         assert_eq!(tombstones_after_gc, 0, "GC must remove all tombstone ops");
         assert_eq!(gc_doc.text(), "C", "GC must preserve live text");
     }
@@ -8163,7 +9228,10 @@ mod tests {
         // Peer 99_001 is "old" (counter 1); peer 99_002 is "fresh" (counter 1000).
         for (peer, ctr) in [(99_001u64, 1u64), (99_002, 1000)] {
             doc.apply(Op {
-                id: OpId { peer: PeerId(peer), counter: ctr },
+                id: OpId {
+                    peer: PeerId(peer),
+                    counter: ctr,
+                },
                 kind: OpKind::SetMeta {
                     key: format!("cursor:{peer}"),
                     value: "0".to_string(),
@@ -8171,14 +9239,22 @@ mod tests {
             });
         }
         let ttl_threshold = 500u64;
-        let expired: Vec<_> = doc.op_log().iter().filter(|op| {
-            matches!(&op.kind, OpKind::SetMeta { key, .. } if key.starts_with("cursor:"))
-                && op.id.counter < ttl_threshold
-        }).collect();
-        let active: Vec<_> = doc.op_log().iter().filter(|op| {
-            matches!(&op.kind, OpKind::SetMeta { key, .. } if key.starts_with("cursor:"))
-                && op.id.counter >= ttl_threshold
-        }).collect();
+        let expired: Vec<_> = doc
+            .op_log()
+            .iter()
+            .filter(|op| {
+                matches!(&op.kind, OpKind::SetMeta { key, .. } if key.starts_with("cursor:"))
+                    && op.id.counter < ttl_threshold
+            })
+            .collect();
+        let active: Vec<_> = doc
+            .op_log()
+            .iter()
+            .filter(|op| {
+                matches!(&op.kind, OpKind::SetMeta { key, .. } if key.starts_with("cursor:"))
+                    && op.id.counter >= ttl_threshold
+            })
+            .collect();
         assert_eq!(expired.len(), 1, "one cursor must be expired");
         assert_eq!(active.len(), 1, "one cursor must be active");
     }
@@ -8189,19 +9265,28 @@ mod tests {
         let mut doc = DocState::new(PeerId(99_010));
         for i in 0u64..4 {
             doc.apply(Op {
-                id: OpId { peer: PeerId(99_011 + i), counter: i + 1 },
+                id: OpId {
+                    peer: PeerId(99_011 + i),
+                    counter: i + 1,
+                },
                 kind: OpKind::SetMeta {
                     key: format!("cursor:{}", 99_011 + i),
                     value: format!("{}", i * 2),
                 },
             });
         }
-        let cursor_keys: std::collections::HashSet<String> = doc.op_log().iter().filter_map(|op| {
-            if let OpKind::SetMeta { key, .. } = &op.kind {
-                if key.starts_with("cursor:") { return Some(key.clone()); }
-            }
-            None
-        }).collect();
+        let cursor_keys: std::collections::HashSet<String> = doc
+            .op_log()
+            .iter()
+            .filter_map(|op| {
+                if let OpKind::SetMeta { key, .. } = &op.kind {
+                    if key.starts_with("cursor:") {
+                        return Some(key.clone());
+                    }
+                }
+                None
+            })
+            .collect();
         assert_eq!(cursor_keys.len(), 4, "all 4 cursors must be distinct");
     }
 
@@ -8212,14 +9297,28 @@ mod tests {
         doc.local_insert(RgaPos::Head, "hi");
         // Cursor position 9999 is beyond the 2-char doc; stored as-is (clamping is app-layer).
         doc.apply(Op {
-            id: OpId { peer: PeerId(99_021), counter: 1 },
-            kind: OpKind::SetMeta { key: "cursor:99021".to_string(), value: "9999".to_string() },
+            id: OpId {
+                peer: PeerId(99_021),
+                counter: 1,
+            },
+            kind: OpKind::SetMeta {
+                key: "cursor:99021".to_string(),
+                value: "9999".to_string(),
+            },
         });
         let val = doc.op_log().iter().find_map(|op| {
-            if let OpKind::SetMeta { key, value } = &op.kind { if key == "cursor:99021" { return Some(value.as_str()); } }
+            if let OpKind::SetMeta { key, value } = &op.kind {
+                if key == "cursor:99021" {
+                    return Some(value.as_str());
+                }
+            }
             None
         });
-        assert_eq!(val, Some("9999"), "out-of-bounds cursor value must be stored faithfully");
+        assert_eq!(
+            val,
+            Some("9999"),
+            "out-of-bounds cursor value must be stored faithfully"
+        );
     }
 
     // ── Doc stats (derived from op_log / text()) ──────────────────────────────
@@ -8269,7 +9368,11 @@ mod tests {
         }
         let max_depth = 10usize;
         let recent_ops: Vec<&Op> = doc.op_log().iter().rev().take(max_depth).collect();
-        assert_eq!(recent_ops.len(), max_depth, "history depth must be configurable via take()");
+        assert_eq!(
+            recent_ops.len(),
+            max_depth,
+            "history depth must be configurable via take()"
+        );
     }
 
     #[test]
@@ -8287,7 +9390,10 @@ mod tests {
         let pruned: Vec<&Op> = doc.op_log().iter().rev().take(max_depth).collect();
         // The first op (oldest) must not appear in the pruned slice.
         let pruned_ids: std::collections::HashSet<OpId> = pruned.iter().map(|o| o.id).collect();
-        assert!(!pruned_ids.contains(&first_op.id), "oldest op must be pruned at max depth");
+        assert!(
+            !pruned_ids.contains(&first_op.id),
+            "oldest op must be pruned at max depth"
+        );
     }
 
     // ── Doc export / import ───────────────────────────────────────────────────
@@ -8308,8 +9414,14 @@ mod tests {
         let mut doc = DocState::new(PeerId(102_010));
         let op1 = doc.local_insert(RgaPos::Head, "content");
         doc.apply(Op {
-            id: OpId { peer: PeerId(102_010), counter: 99 },
-            kind: OpKind::SetMeta { key: "mark:bold".into(), value: "true".into() },
+            id: OpId {
+                peer: PeerId(102_010),
+                counter: 99,
+            },
+            kind: OpKind::SetMeta {
+                key: "mark:bold".into(),
+                value: "true".into(),
+            },
         });
         // Simulate "JSON export" as a tuple of (text, op_count).
         let export_text = doc.text();
@@ -8335,13 +9447,25 @@ mod tests {
         // Simulate JSON import: replay a sequence of ops from an "external" log.
         let source_ops = vec![
             make_insert(102_031, 1, RgaPos::Head, "json"),
-            make_insert(102_031, 2, RgaPos::After(OpId { peer: PeerId(102_031), counter: 1 }), "_data"),
+            make_insert(
+                102_031,
+                2,
+                RgaPos::After(OpId {
+                    peer: PeerId(102_031),
+                    counter: 1,
+                }),
+                "_data",
+            ),
         ];
         let mut doc = DocState::new(PeerId(102_030));
         for op in &source_ops {
             doc.apply(op.clone());
         }
-        assert_eq!(doc.text(), "json_data", "imported JSON ops must reconstruct text");
+        assert_eq!(
+            doc.text(),
+            "json_data",
+            "imported JSON ops must reconstruct text"
+        );
         assert_eq!(doc.op_log().len(), 2);
     }
 
@@ -8362,7 +9486,11 @@ mod tests {
 
         // Modify copy — original must be unaffected.
         copy.local_insert(RgaPos::After(op1.id), "_copy");
-        assert_eq!(original.text(), "original", "original must be unaffected by copy mutations");
+        assert_eq!(
+            original.text(),
+            "original",
+            "original must be unaffected by copy mutations"
+        );
         assert_eq!(copy.text(), "original_copy");
     }
 
@@ -8383,7 +9511,11 @@ mod tests {
         fork_b.local_insert(RgaPos::After(root.id), "_branch_b");
 
         // The two forks diverge and do not share their branch-specific ops.
-        assert_ne!(fork_a.text(), fork_b.text(), "forks must have different text");
+        assert_ne!(
+            fork_a.text(),
+            fork_b.text(),
+            "forks must have different text"
+        );
         assert!(fork_a.text().contains("_branch_a") && !fork_a.text().contains("_branch_b"));
         assert!(fork_b.text().contains("_branch_b") && !fork_b.text().contains("_branch_a"));
     }
@@ -8399,14 +9531,26 @@ mod tests {
         // other's key. After merge the union is present: both keys are in the log.
         let mut pa = DocState::new(PeerId(110_000));
         pa.apply(Op {
-            id: OpId { peer: PeerId(110_000), counter: 1 },
-            kind: OpKind::SetMeta { key: "title".into(), value: "My Doc".into() },
+            id: OpId {
+                peer: PeerId(110_000),
+                counter: 1,
+            },
+            kind: OpKind::SetMeta {
+                key: "title".into(),
+                value: "My Doc".into(),
+            },
         });
 
         let mut pb = DocState::new(PeerId(110_001));
         pb.apply(Op {
-            id: OpId { peer: PeerId(110_001), counter: 1 },
-            kind: OpKind::SetMeta { key: "author".into(), value: "Alice".into() },
+            id: OpId {
+                peer: PeerId(110_001),
+                counter: 1,
+            },
+            kind: OpKind::SetMeta {
+                key: "author".into(),
+                value: "Alice".into(),
+            },
         });
 
         // Merge: A receives B's op, B receives A's op.
@@ -8415,12 +9559,14 @@ mod tests {
 
         // Both docs must contain both keys.
         for doc in [&pa, &pb] {
-            let has_title = doc.op_log().iter().any(|o| {
-                matches!(&o.kind, OpKind::SetMeta { key, .. } if key == "title")
-            });
-            let has_author = doc.op_log().iter().any(|o| {
-                matches!(&o.kind, OpKind::SetMeta { key, .. } if key == "author")
-            });
+            let has_title = doc
+                .op_log()
+                .iter()
+                .any(|o| matches!(&o.kind, OpKind::SetMeta { key, .. } if key == "title"));
+            let has_author = doc
+                .op_log()
+                .iter()
+                .any(|o| matches!(&o.kind, OpKind::SetMeta { key, .. } if key == "author"));
             assert!(has_title, "merged doc must contain 'title' key");
             assert!(has_author, "merged doc must contain 'author' key");
         }
@@ -8433,14 +9579,26 @@ mod tests {
         // After merge the highest-counter op should be the last entry for that key.
         let mut pa = DocState::new(PeerId(110_010));
         pa.apply(Op {
-            id: OpId { peer: PeerId(110_010), counter: 1 },
-            kind: OpKind::SetMeta { key: "status".into(), value: "draft".into() },
+            id: OpId {
+                peer: PeerId(110_010),
+                counter: 1,
+            },
+            kind: OpKind::SetMeta {
+                key: "status".into(),
+                value: "draft".into(),
+            },
         });
 
         let mut pb = DocState::new(PeerId(110_011));
         pb.apply(Op {
-            id: OpId { peer: PeerId(110_011), counter: 5 },
-            kind: OpKind::SetMeta { key: "status".into(), value: "final".into() },
+            id: OpId {
+                peer: PeerId(110_011),
+                counter: 5,
+            },
+            kind: OpKind::SetMeta {
+                key: "status".into(),
+                value: "final".into(),
+            },
         });
 
         // Merge.
@@ -8450,11 +9608,17 @@ mod tests {
         // the most recent; scanning the log in reverse yields "final".
         let latest = pa.op_log().iter().rev().find_map(|o| {
             if let OpKind::SetMeta { key, value } = &o.kind {
-                if key == "status" { return Some(value.as_str()); }
+                if key == "status" {
+                    return Some(value.as_str());
+                }
             }
             None
         });
-        assert_eq!(latest, Some("final"), "higher Lamport counter wins for same field");
+        assert_eq!(
+            latest,
+            Some("final"),
+            "higher Lamport counter wins for same field"
+        );
     }
 
     #[test]
@@ -8479,9 +9643,19 @@ mod tests {
         pb.apply(del.clone());
 
         // Both converge; "shared" is deleted (tombstone wins), "_update" survives.
-        assert_eq!(pa.text(), pb.text(), "tombstone + concurrent update must converge");
-        assert!(!pa.text().contains("shared"), "tombstoned node must be absent");
-        assert!(pa.text().contains("_update"), "insert after dead anchor must survive");
+        assert_eq!(
+            pa.text(),
+            pb.text(),
+            "tombstone + concurrent update must converge"
+        );
+        assert!(
+            !pa.text().contains("shared"),
+            "tombstoned node must be absent"
+        );
+        assert!(
+            pa.text().contains("_update"),
+            "insert after dead anchor must survive"
+        );
     }
 
     // ── Conflict resolution policy ───────────────────────────────────────────
@@ -8492,25 +9666,45 @@ mod tests {
         // the higher Lamport counter is the authoritative value.
         let mut doc = DocState::new(PeerId(110_030));
         doc.apply(Op {
-            id: OpId { peer: PeerId(110_030), counter: 3 },
-            kind: OpKind::SetMeta { key: "color".into(), value: "red".into() },
+            id: OpId {
+                peer: PeerId(110_030),
+                counter: 3,
+            },
+            kind: OpKind::SetMeta {
+                key: "color".into(),
+                value: "red".into(),
+            },
         });
         doc.apply(Op {
-            id: OpId { peer: PeerId(110_030), counter: 7 },
-            kind: OpKind::SetMeta { key: "color".into(), value: "blue".into() },
+            id: OpId {
+                peer: PeerId(110_030),
+                counter: 7,
+            },
+            kind: OpKind::SetMeta {
+                key: "color".into(),
+                value: "blue".into(),
+            },
         });
 
         // LWW: highest counter wins.
-        let resolved = doc.op_log().iter()
+        let resolved = doc
+            .op_log()
+            .iter()
             .filter_map(|o| {
                 if let OpKind::SetMeta { key, value } = &o.kind {
-                    if key == "color" { return Some((o.id.counter, value.as_str())); }
+                    if key == "color" {
+                        return Some((o.id.counter, value.as_str()));
+                    }
                 }
                 None
             })
             .max_by_key(|(ctr, _)| *ctr)
             .map(|(_, v)| v);
-        assert_eq!(resolved, Some("blue"), "LWW: counter 7 must resolve to 'blue'");
+        assert_eq!(
+            resolved,
+            Some("blue"),
+            "LWW: counter 7 must resolve to 'blue'"
+        );
     }
 
     #[test]
@@ -8519,25 +9713,45 @@ mod tests {
         // with the LOWEST counter is the authoritative value (first writer wins).
         let mut doc = DocState::new(PeerId(110_040));
         doc.apply(Op {
-            id: OpId { peer: PeerId(110_040), counter: 10 },
-            kind: OpKind::SetMeta { key: "lang".into(), value: "rust".into() },
+            id: OpId {
+                peer: PeerId(110_040),
+                counter: 10,
+            },
+            kind: OpKind::SetMeta {
+                key: "lang".into(),
+                value: "rust".into(),
+            },
         });
         doc.apply(Op {
-            id: OpId { peer: PeerId(110_040), counter: 2 },
-            kind: OpKind::SetMeta { key: "lang".into(), value: "nom".into() },
+            id: OpId {
+                peer: PeerId(110_040),
+                counter: 2,
+            },
+            kind: OpKind::SetMeta {
+                key: "lang".into(),
+                value: "nom".into(),
+            },
         });
 
         // FWW: lowest counter wins.
-        let resolved = doc.op_log().iter()
+        let resolved = doc
+            .op_log()
+            .iter()
             .filter_map(|o| {
                 if let OpKind::SetMeta { key, value } = &o.kind {
-                    if key == "lang" { return Some((o.id.counter, value.as_str())); }
+                    if key == "lang" {
+                        return Some((o.id.counter, value.as_str()));
+                    }
                 }
                 None
             })
             .min_by_key(|(ctr, _)| *ctr)
             .map(|(_, v)| v);
-        assert_eq!(resolved, Some("nom"), "FWW: counter 2 must resolve to 'nom'");
+        assert_eq!(
+            resolved,
+            Some("nom"),
+            "FWW: counter 2 must resolve to 'nom'"
+        );
     }
 
     #[test]
@@ -8546,24 +9760,45 @@ mod tests {
         // given key. This models arbitrary merge policies above the CRDT layer.
         let mut doc = DocState::new(PeerId(110_050));
         doc.apply(Op {
-            id: OpId { peer: PeerId(110_050), counter: 1 },
-            kind: OpKind::SetMeta { key: "tags".into(), value: "foo".into() },
+            id: OpId {
+                peer: PeerId(110_050),
+                counter: 1,
+            },
+            kind: OpKind::SetMeta {
+                key: "tags".into(),
+                value: "foo".into(),
+            },
         });
         doc.apply(Op {
-            id: OpId { peer: PeerId(110_050), counter: 2 },
-            kind: OpKind::SetMeta { key: "tags".into(), value: "bar".into() },
+            id: OpId {
+                peer: PeerId(110_050),
+                counter: 2,
+            },
+            kind: OpKind::SetMeta {
+                key: "tags".into(),
+                value: "bar".into(),
+            },
         });
 
         // Custom resolver: collect all values for "tags", sort and join with ','.
-        let mut values: Vec<&str> = doc.op_log().iter().filter_map(|o| {
-            if let OpKind::SetMeta { key, value } = &o.kind {
-                if key == "tags" { return Some(value.as_str()); }
-            }
-            None
-        }).collect();
+        let mut values: Vec<&str> = doc
+            .op_log()
+            .iter()
+            .filter_map(|o| {
+                if let OpKind::SetMeta { key, value } = &o.kind {
+                    if key == "tags" {
+                        return Some(value.as_str());
+                    }
+                }
+                None
+            })
+            .collect();
         values.sort_unstable();
         let merged = values.join(",");
-        assert_eq!(merged, "bar,foo", "custom resolver must concatenate all values");
+        assert_eq!(
+            merged, "bar,foo",
+            "custom resolver must concatenate all values"
+        );
     }
 
     #[test]
@@ -8572,30 +9807,50 @@ mod tests {
         // LWW by (counter, peer) descending picks the higher-OpId one.
         let mut pa = DocState::new(PeerId(110_060));
         pa.apply(Op {
-            id: OpId { peer: PeerId(110_060), counter: 5 },
-            kind: OpKind::SetMeta { key: "theme".into(), value: "dark".into() },
+            id: OpId {
+                peer: PeerId(110_060),
+                counter: 5,
+            },
+            kind: OpKind::SetMeta {
+                key: "theme".into(),
+                value: "dark".into(),
+            },
         });
 
         let mut pb = DocState::new(PeerId(110_061));
         pb.apply(Op {
-            id: OpId { peer: PeerId(110_061), counter: 5 },
-            kind: OpKind::SetMeta { key: "theme".into(), value: "light".into() },
+            id: OpId {
+                peer: PeerId(110_061),
+                counter: 5,
+            },
+            kind: OpKind::SetMeta {
+                key: "theme".into(),
+                value: "light".into(),
+            },
         });
 
         pa.merge(&pb);
 
         // LWW: among (counter=5,peer=110_060) and (counter=5,peer=110_061),
         // peer 110_061 has higher peer.0 → higher OpId → its value wins.
-        let resolved = pa.op_log().iter()
+        let resolved = pa
+            .op_log()
+            .iter()
             .filter_map(|o| {
                 if let OpKind::SetMeta { key, value } = &o.kind {
-                    if key == "theme" { return Some((o.id, value.as_str())); }
+                    if key == "theme" {
+                        return Some((o.id, value.as_str()));
+                    }
                 }
                 None
             })
             .max_by_key(|(id, _)| *id)
             .map(|(_, v)| v);
-        assert_eq!(resolved, Some("light"), "LWW: higher OpId (peer 110_061) must win");
+        assert_eq!(
+            resolved,
+            Some("light"),
+            "LWW: higher OpId (peer 110_061) must win"
+        );
     }
 
     // ── Snapshot and restore ─────────────────────────────────────────────────
@@ -8637,8 +9892,16 @@ mod tests {
             restored.apply(op);
         }
 
-        assert_eq!(restored.text(), original.text(), "restore must produce identical text");
-        assert_eq!(restored.op_log().len(), original.op_log().len(), "log lengths must match");
+        assert_eq!(
+            restored.text(),
+            original.text(),
+            "restore must produce identical text"
+        );
+        assert_eq!(
+            restored.op_log().len(),
+            original.op_log().len(),
+            "log lengths must match"
+        );
     }
 
     #[test]
@@ -8663,10 +9926,20 @@ mod tests {
         let full_len = doc.op_log().len(); // 20 inserts + 10 deletes = 30
 
         // Compacted snapshot: only live inserts.
-        let deleted_ids: std::collections::HashSet<OpId> = doc.op_log().iter()
-            .filter_map(|o| if let OpKind::Delete { target } = &o.kind { Some(*target) } else { None })
+        let deleted_ids: std::collections::HashSet<OpId> = doc
+            .op_log()
+            .iter()
+            .filter_map(|o| {
+                if let OpKind::Delete { target } = &o.kind {
+                    Some(*target)
+                } else {
+                    None
+                }
+            })
             .collect();
-        let compacted: Vec<Op> = doc.op_log().iter()
+        let compacted: Vec<Op> = doc
+            .op_log()
+            .iter()
             .filter(|o| matches!(&o.kind, OpKind::Insert { .. }) && !deleted_ids.contains(&o.id))
             .cloned()
             .collect();
@@ -8674,7 +9947,8 @@ mod tests {
         assert!(
             compacted.len() < full_len,
             "compacted snapshot ({}) must be shorter than full op log ({})",
-            compacted.len(), full_len
+            compacted.len(),
+            full_len
         );
         // Replaying compacted snapshot must produce the same text.
         let original_text = doc.text();
@@ -8682,7 +9956,11 @@ mod tests {
         for op in compacted {
             snap_doc.apply(op);
         }
-        assert_eq!(snap_doc.text(), original_text, "compacted snapshot must preserve text");
+        assert_eq!(
+            snap_doc.text(),
+            original_text,
+            "compacted snapshot must preserve text"
+        );
     }
 
     // ── Session resilience ───────────────────────────────────────────────────
@@ -8703,7 +9981,11 @@ mod tests {
         let op3 = peer.local_insert(RgaPos::After(last2), "_msg3");
         offline_queue.push(op3);
 
-        assert_eq!(offline_queue.len(), 3, "offline queue must accumulate 3 ops");
+        assert_eq!(
+            offline_queue.len(),
+            3,
+            "offline queue must accumulate 3 ops"
+        );
         assert_eq!(peer.text(), "msg1_msg2_msg3");
     }
 
@@ -8728,7 +10010,11 @@ mod tests {
         }
 
         // Host must see all three ops in logical order.
-        assert_eq!(host.text(), "abc", "host must replay offline queue correctly");
+        assert_eq!(
+            host.text(),
+            "abc",
+            "host must replay offline queue correctly"
+        );
         assert_eq!(host.op_log().len(), 3);
         // Verify order: op1 applied before op2 before op3 in the host log.
         assert_eq!(host.op_log()[0].id, op1.id, "first op must be op1");
@@ -8754,8 +10040,16 @@ mod tests {
         src.apply(dup_op);
         doc.merge(&src); // merge must skip the duplicate
 
-        assert_eq!(doc.text(), text_after_first, "duplicate op must not change text");
-        assert_eq!(doc.op_log().len(), len_after_first, "duplicate op must not grow log");
+        assert_eq!(
+            doc.text(),
+            text_after_first,
+            "duplicate op must not change text"
+        );
+        assert_eq!(
+            doc.op_log().len(),
+            len_after_first,
+            "duplicate op must not grow log"
+        );
     }
 
     #[test]
@@ -8771,9 +10065,16 @@ mod tests {
         host.apply(first_op.clone());
         host.apply(second_op.clone());
 
-        assert_eq!(host.text(), "first_second", "causal op ordering must be preserved");
+        assert_eq!(
+            host.text(),
+            "first_second",
+            "causal op ordering must be preserved"
+        );
         // Counters must be strictly increasing.
-        assert!(first_op.id.counter < second_op.id.counter, "offline ops must have monotonic counters");
+        assert!(
+            first_op.id.counter < second_op.id.counter,
+            "offline ops must have monotonic counters"
+        );
     }
 
     #[test]
@@ -8793,7 +10094,11 @@ mod tests {
         host_b.apply(op2.clone());
         host_b.apply(op1.clone());
 
-        assert_eq!(host_a.text(), host_b.text(), "out-of-order delivery must converge");
+        assert_eq!(
+            host_a.text(),
+            host_b.text(),
+            "out-of-order delivery must converge"
+        );
     }
 
     // ── Version vector edge cases ────────────────────────────────────────────
@@ -8801,15 +10106,31 @@ mod tests {
     #[test]
     fn version_vector_two_sites_equal_clocks_concurrent() {
         // Two sites with the same counter value are concurrent: neither dominates.
-        let id_a = OpId { peer: PeerId(113_000), counter: 10 };
-        let id_b = OpId { peer: PeerId(113_001), counter: 10 };
+        let id_a = OpId {
+            peer: PeerId(113_000),
+            counter: 10,
+        };
+        let id_b = OpId {
+            peer: PeerId(113_001),
+            counter: 10,
+        };
 
         // Neither is less than the other in the causal sense; the Ord tiebreak by
         // peer.0 makes one deterministically "greater", but they are logically concurrent.
-        assert_ne!(id_a, id_b, "equal-counter ops on different sites must be distinct");
+        assert_ne!(
+            id_a, id_b,
+            "equal-counter ops on different sites must be distinct"
+        );
         // One must sort before the other (deterministic), but both counters equal → concurrent.
-        let (lo, hi) = if id_a < id_b { (id_a, id_b) } else { (id_b, id_a) };
-        assert_eq!(lo.counter, hi.counter, "concurrent ops share the same logical clock");
+        let (lo, hi) = if id_a < id_b {
+            (id_a, id_b)
+        } else {
+            (id_b, id_a)
+        };
+        assert_eq!(
+            lo.counter, hi.counter,
+            "concurrent ops share the same logical clock"
+        );
         assert!(lo < hi, "tiebreak by peer.0 must be deterministic");
     }
 
@@ -8817,8 +10138,14 @@ mod tests {
     fn version_vector_site_a_ahead_of_b_a_dominates() {
         // Site A has counter 20, site B has counter 5.
         // A's op happened-after B's op → A dominates B.
-        let id_a = OpId { peer: PeerId(113_010), counter: 20 };
-        let id_b = OpId { peer: PeerId(113_011), counter: 5 };
+        let id_a = OpId {
+            peer: PeerId(113_010),
+            counter: 20,
+        };
+        let id_b = OpId {
+            peer: PeerId(113_011),
+            counter: 5,
+        };
 
         // In Lamport terms: higher counter means "later".
         assert!(id_a > id_b, "A (counter=20) must dominate B (counter=5)");
@@ -8830,9 +10157,9 @@ mod tests {
         // After applying ops from sites with counters 3, 15, 7, the effective clock
         // is max(3,15,7)=15. The next local op must exceed 15.
         let mut doc = DocState::new(PeerId(113_020));
-        doc.apply(make_insert(113_021, 3,  RgaPos::Head, "c1"));
+        doc.apply(make_insert(113_021, 3, RgaPos::Head, "c1"));
         doc.apply(make_insert(113_022, 15, RgaPos::Head, "c2"));
-        doc.apply(make_insert(113_023, 7,  RgaPos::Head, "c3"));
+        doc.apply(make_insert(113_023, 7, RgaPos::Head, "c3"));
 
         let next = doc.local_insert(RgaPos::Head, "local");
         assert!(
@@ -8852,8 +10179,14 @@ mod tests {
         doc.apply(op_p1.clone());
         doc.apply(op_p2.clone());
 
-        assert!(doc.text().contains("site1"), "site1 must be visible after merge");
-        assert!(doc.text().contains("site2"), "site2 must be visible after merge");
+        assert!(
+            doc.text().contains("site1"),
+            "site1 must be visible after merge"
+        );
+        assert!(
+            doc.text().contains("site2"),
+            "site2 must be visible after merge"
+        );
         assert_eq!(doc.text().chars().count(), "site1site2".chars().count());
     }
 
@@ -8878,23 +10211,40 @@ mod tests {
 
         let mut doc_fwd = DocState::new(PeerId(113_060));
         let mut doc_rev = DocState::new(PeerId(113_060));
-        for op in &ops { doc_fwd.apply(op.clone()); }
-        for op in ops.iter().rev() { doc_rev.apply(op.clone()); }
+        for op in &ops {
+            doc_fwd.apply(op.clone());
+        }
+        for op in ops.iter().rev() {
+            doc_rev.apply(op.clone());
+        }
 
-        assert_eq!(doc_fwd.text(), doc_rev.text(), "concurrent equal-clock ops must converge");
+        assert_eq!(
+            doc_fwd.text(),
+            doc_rev.text(),
+            "concurrent equal-clock ops must converge"
+        );
         for i in 0..3 {
-            assert!(doc_fwd.text().contains(&format!("s{i}")), "all 3 concurrent ops must appear");
+            assert!(
+                doc_fwd.text().contains(&format!("s{i}")),
+                "all 3 concurrent ops must appear"
+            );
         }
     }
 
     #[test]
     fn version_vector_dominated_op_is_causally_before() {
         // Verify that an op with counter 1 is causally before counter 100 on the same peer.
-        let early = OpId { peer: PeerId(113_070), counter: 1 };
-        let late  = OpId { peer: PeerId(113_070), counter: 100 };
+        let early = OpId {
+            peer: PeerId(113_070),
+            counter: 1,
+        };
+        let late = OpId {
+            peer: PeerId(113_070),
+            counter: 100,
+        };
 
-        assert!(early < late,  "early must be causally before late");
-        assert!(late  > early, "late must be causally after early");
+        assert!(early < late, "early must be causally before late");
+        assert!(late > early, "late must be causally after early");
         assert_ne!(early, late);
     }
 
@@ -8903,7 +10253,7 @@ mod tests {
         // Three independent docs with counters 8, 22, 14; merge all into one;
         // next local counter must exceed 22 (the max).
         let mut doc = DocState::new(PeerId(113_080));
-        doc.apply(make_insert(113_081, 8,  RgaPos::Head, "eight"));
+        doc.apply(make_insert(113_081, 8, RgaPos::Head, "eight"));
         doc.apply(make_insert(113_082, 22, RgaPos::Head, "twenty_two"));
         doc.apply(make_insert(113_083, 14, RgaPos::Head, "fourteen"));
 
@@ -8921,8 +10271,14 @@ mod tests {
 
         let mut pb = DocState::new(PeerId(114_001));
         pb.apply(Op {
-            id: OpId { peer: PeerId(114_001), counter: 1 },
-            kind: OpKind::SetMeta { key: "lang".into(), value: "nom".into() },
+            id: OpId {
+                peer: PeerId(114_001),
+                counter: 1,
+            },
+            kind: OpKind::SetMeta {
+                key: "lang".into(),
+                value: "nom".into(),
+            },
         });
 
         let mut pc = DocState::new(PeerId(114_002));
@@ -8930,9 +10286,10 @@ mod tests {
         pc.merge(&pb);
 
         assert_eq!(pc.text(), "hello", "text must come from A");
-        let has_lang = pc.op_log().iter().any(|o| {
-            matches!(&o.kind, OpKind::SetMeta { key, .. } if key == "lang")
-        });
+        let has_lang = pc
+            .op_log()
+            .iter()
+            .any(|o| matches!(&o.kind, OpKind::SetMeta { key, .. } if key == "lang"));
         assert!(has_lang, "meta from B must be present after merge");
     }
 
@@ -8942,24 +10299,44 @@ mod tests {
         let mut doc = DocState::new(PeerId(114_010));
         // Apply lower peer op first, then higher peer op.
         doc.apply(Op {
-            id: OpId { peer: PeerId(1), counter: 5 },
-            kind: OpKind::SetMeta { key: "font".into(), value: "serif".into() },
+            id: OpId {
+                peer: PeerId(1),
+                counter: 5,
+            },
+            kind: OpKind::SetMeta {
+                key: "font".into(),
+                value: "serif".into(),
+            },
         });
         doc.apply(Op {
-            id: OpId { peer: PeerId(9), counter: 5 },
-            kind: OpKind::SetMeta { key: "font".into(), value: "mono".into() },
+            id: OpId {
+                peer: PeerId(9),
+                counter: 5,
+            },
+            kind: OpKind::SetMeta {
+                key: "font".into(),
+                value: "mono".into(),
+            },
         });
 
-        let resolved = doc.op_log().iter()
+        let resolved = doc
+            .op_log()
+            .iter()
             .filter_map(|o| {
                 if let OpKind::SetMeta { key, value } = &o.kind {
-                    if key == "font" { return Some((o.id, value.as_str())); }
+                    if key == "font" {
+                        return Some((o.id, value.as_str()));
+                    }
                 }
                 None
             })
             .max_by_key(|(id, _)| *id)
             .map(|(_, v)| v);
-        assert_eq!(resolved, Some("mono"), "higher peer id at same counter must win LWW");
+        assert_eq!(
+            resolved,
+            Some("mono"),
+            "higher peer id at same counter must win LWW"
+        );
     }
 
     #[test]
@@ -9040,7 +10417,11 @@ mod tests {
         doc.merge(&dup_src); // must be no-op
 
         assert_eq!(doc.text(), "once");
-        assert_eq!(doc.op_log().len(), 1, "duplicate delivery via merge must be idempotent");
+        assert_eq!(
+            doc.op_log().len(),
+            1,
+            "duplicate delivery via merge must be idempotent"
+        );
     }
 
     #[test]
@@ -9054,7 +10435,10 @@ mod tests {
 
         da.merge(&db);
         let next = da.local_insert(RgaPos::Head, "local");
-        assert!(next.id.counter > 12, "merged clock must exceed max input (12)");
+        assert!(
+            next.id.counter > 12,
+            "merged clock must exceed max input (12)"
+        );
     }
 
     #[test]
@@ -9089,9 +10473,12 @@ mod tests {
         let del_c = pc.local_delete(shared.id);
 
         // Cross-merge all three.
-        pa.apply(del_b.clone()); pa.apply(del_c.clone());
-        pb.apply(del_a.clone()); pb.apply(del_c.clone());
-        pc.apply(del_a.clone()); pc.apply(del_b.clone());
+        pa.apply(del_b.clone());
+        pa.apply(del_c.clone());
+        pb.apply(del_a.clone());
+        pb.apply(del_c.clone());
+        pc.apply(del_a.clone());
+        pc.apply(del_b.clone());
 
         assert_eq!(pa.text(), "");
         assert_eq!(pb.text(), "");
@@ -9105,14 +10492,24 @@ mod tests {
         let mut doc = DocState::new(PeerId(114_100));
         for (ctr, val) in [(10u64, "c10"), (1, "c1"), (5, "c5")] {
             doc.apply(Op {
-                id: OpId { peer: PeerId(114_100), counter: ctr },
-                kind: OpKind::SetMeta { key: "cfg".into(), value: val.into() },
+                id: OpId {
+                    peer: PeerId(114_100),
+                    counter: ctr,
+                },
+                kind: OpKind::SetMeta {
+                    key: "cfg".into(),
+                    value: val.into(),
+                },
             });
         }
-        let fww = doc.op_log().iter()
+        let fww = doc
+            .op_log()
+            .iter()
             .filter_map(|o| {
                 if let OpKind::SetMeta { key, value } = &o.kind {
-                    if key == "cfg" { return Some((o.id.counter, value.as_str())); }
+                    if key == "cfg" {
+                        return Some((o.id.counter, value.as_str()));
+                    }
                 }
                 None
             })
@@ -9138,7 +10535,11 @@ mod tests {
         pa.apply(op_b.clone());
         pb.apply(op_a.clone());
 
-        assert_eq!(pa.text(), pb.text(), "concurrent equal-counter ops must converge");
+        assert_eq!(
+            pa.text(),
+            pb.text(),
+            "concurrent equal-counter ops must converge"
+        );
         assert!(pa.text().contains("PA") && pa.text().contains("PB"));
     }
 
@@ -9164,7 +10565,11 @@ mod tests {
         let op_b = doc.local_insert(RgaPos::After(op_a.id), "B");
         doc.local_insert(RgaPos::After(op_b.id), "C");
         assert_eq!(doc.text(), "ABC");
-        assert_eq!(doc.text().chars().last().unwrap(), 'C', "tail insert must be last char");
+        assert_eq!(
+            doc.text().chars().last().unwrap(),
+            'C',
+            "tail insert must be last char"
+        );
     }
 
     #[test]
@@ -9192,7 +10597,11 @@ mod tests {
         pa.apply(op_b.clone());
         pb.apply(op_a.clone());
 
-        assert_eq!(pa.text(), pb.text(), "concurrent head inserts must converge");
+        assert_eq!(
+            pa.text(),
+            pb.text(),
+            "concurrent head inserts must converge"
+        );
         assert!(pa.text().contains('M'), "M must appear");
         assert!(pa.text().contains('N'), "N must appear");
         assert_eq!(pa.text().chars().count(), 2, "exactly 2 chars after merge");
@@ -9213,7 +10622,11 @@ mod tests {
         doc_rev.apply(op_lo.clone());
 
         // Both orders must produce the same text.
-        assert_eq!(doc_fwd.text(), doc_rev.text(), "order must be deterministic by peer id");
+        assert_eq!(
+            doc_fwd.text(),
+            doc_rev.text(),
+            "order must be deterministic by peer id"
+        );
         // Higher peer (200_021) wins left.
         let text = doc_fwd.text();
         assert!(
@@ -9232,7 +10645,11 @@ mod tests {
 
         // Insert After the now-dead anchor.
         doc.local_insert(RgaPos::After(op_dead.id), "ALIVE");
-        assert_eq!(doc.text(), "ALIVE", "insert after deleted anchor must produce live text");
+        assert_eq!(
+            doc.text(),
+            "ALIVE",
+            "insert after deleted anchor must produce live text"
+        );
     }
 
     #[test]
@@ -9289,7 +10706,10 @@ mod tests {
             .op_log()
             .iter()
             .find(|o| matches!(&o.kind, OpKind::Delete { target } if *target == op.id));
-        assert!(delete_op.is_some(), "delete entry (tombstone flag) must exist in op_log");
+        assert!(
+            delete_op.is_some(),
+            "delete entry (tombstone flag) must exist in op_log"
+        );
     }
 
     #[test]
@@ -9329,8 +10749,15 @@ mod tests {
             })
             .collect();
 
-        assert!(!gc_eligible.is_empty(), "GC must find tombstoned entries to sweep");
-        assert_eq!(gc_eligible.len(), 2, "two tombstoned ops must be GC-eligible");
+        assert!(
+            !gc_eligible.is_empty(),
+            "GC must find tombstoned entries to sweep"
+        );
+        assert_eq!(
+            gc_eligible.len(),
+            2,
+            "two tombstoned ops must be GC-eligible"
+        );
     }
 
     #[test]
@@ -9497,7 +10924,10 @@ mod tests {
         // Awareness state is modelled as SetMeta ops; cloning op_log is the serialization.
         let mut doc = DocState::new(PeerId(202_001));
         doc.apply(Op {
-            id: OpId { peer: PeerId(202_001), counter: 1 },
+            id: OpId {
+                peer: PeerId(202_001),
+                counter: 1,
+            },
             kind: OpKind::SetMeta {
                 key: "awareness:202001".to_string(),
                 value: "{\"cursor\":5,\"color\":\"#ff0000\"}".to_string(),
@@ -9513,7 +10943,10 @@ mod tests {
         // Replay the serialized awareness op_log into a fresh doc; values match.
         let mut original = DocState::new(PeerId(202_010));
         original.apply(Op {
-            id: OpId { peer: PeerId(202_010), counter: 1 },
+            id: OpId {
+                peer: PeerId(202_010),
+                counter: 1,
+            },
             kind: OpKind::SetMeta {
                 key: "awareness:202010".to_string(),
                 value: "cursor=7".to_string(),
@@ -9528,17 +10961,24 @@ mod tests {
 
         let orig_val = original.op_log().iter().find_map(|o| {
             if let OpKind::SetMeta { key, value } = &o.kind {
-                if key == "awareness:202010" { return Some(value.clone()); }
+                if key == "awareness:202010" {
+                    return Some(value.clone());
+                }
             }
             None
         });
         let rest_val = restored.op_log().iter().find_map(|o| {
             if let OpKind::SetMeta { key, value } = &o.kind {
-                if key == "awareness:202010" { return Some(value.clone()); }
+                if key == "awareness:202010" {
+                    return Some(value.clone());
+                }
             }
             None
         });
-        assert_eq!(orig_val, rest_val, "deserialized awareness must equal original");
+        assert_eq!(
+            orig_val, rest_val,
+            "deserialized awareness must equal original"
+        );
     }
 
     #[test]
@@ -9546,7 +10986,10 @@ mod tests {
         // SetMeta with cursor position survives op_log roundtrip.
         let mut doc = DocState::new(PeerId(202_020));
         doc.apply(Op {
-            id: OpId { peer: PeerId(202_020), counter: 1 },
+            id: OpId {
+                peer: PeerId(202_020),
+                counter: 1,
+            },
             kind: OpKind::SetMeta {
                 key: "cursor:202020".to_string(),
                 value: "42".to_string(),
@@ -9554,7 +10997,9 @@ mod tests {
         });
         let cursor = doc.op_log().iter().find_map(|o| {
             if let OpKind::SetMeta { key, value } = &o.kind {
-                if key == "cursor:202020" { return Some(value.as_str()); }
+                if key == "cursor:202020" {
+                    return Some(value.as_str());
+                }
             }
             None
         });
@@ -9566,7 +11011,10 @@ mod tests {
         // SetMeta with color field survives op_log retrieval.
         let mut doc = DocState::new(PeerId(202_030));
         doc.apply(Op {
-            id: OpId { peer: PeerId(202_030), counter: 1 },
+            id: OpId {
+                peer: PeerId(202_030),
+                counter: 1,
+            },
             kind: OpKind::SetMeta {
                 key: "color:202030".to_string(),
                 value: "#00ff00".to_string(),
@@ -9574,7 +11022,9 @@ mod tests {
         });
         let color = doc.op_log().iter().find_map(|o| {
             if let OpKind::SetMeta { key, value } = &o.kind {
-                if key == "color:202030" { return Some(value.as_str()); }
+                if key == "color:202030" {
+                    return Some(value.as_str());
+                }
             }
             None
         });
@@ -9586,7 +11036,10 @@ mod tests {
         // Each site has its own SetMeta awareness op; after merge both are in the log.
         let mut doc_a = DocState::new(PeerId(202_040));
         doc_a.apply(Op {
-            id: OpId { peer: PeerId(202_041), counter: 1 },
+            id: OpId {
+                peer: PeerId(202_041),
+                counter: 1,
+            },
             kind: OpKind::SetMeta {
                 key: "awareness:202041".to_string(),
                 value: "site_a".to_string(),
@@ -9595,7 +11048,10 @@ mod tests {
 
         let mut doc_b = DocState::new(PeerId(202_042));
         doc_b.apply(Op {
-            id: OpId { peer: PeerId(202_042), counter: 1 },
+            id: OpId {
+                peer: PeerId(202_042),
+                counter: 1,
+            },
             kind: OpKind::SetMeta {
                 key: "awareness:202042".to_string(),
                 value: "site_b".to_string(),
@@ -9610,7 +11066,9 @@ mod tests {
             .iter()
             .filter_map(|o| {
                 if let OpKind::SetMeta { key, .. } = &o.kind {
-                    if key.starts_with("awareness:") { return Some(key.as_str()); }
+                    if key.starts_with("awareness:") {
+                        return Some(key.as_str());
+                    }
                 }
                 None
             })
@@ -9654,8 +11112,16 @@ mod tests {
         let empty_offline = DocState::new(PeerId(203_002));
         live.merge(&empty_offline);
 
-        assert_eq!(live.text(), text_before, "empty offline merge must not change text");
-        assert_eq!(live.op_log().len(), log_len_before, "empty offline merge must not grow log");
+        assert_eq!(
+            live.text(),
+            text_before,
+            "empty offline merge must not change text"
+        );
+        assert_eq!(
+            live.op_log().len(),
+            log_len_before,
+            "empty offline merge must not grow log"
+        );
     }
 
     #[test]
@@ -9664,7 +11130,10 @@ mod tests {
         // offline queue, applying A then B must still produce correct text.
         let op_a = make_insert(203_010, 1, RgaPos::Head, "first");
         let op_b = Op {
-            id: OpId { peer: PeerId(203_011), counter: 2 },
+            id: OpId {
+                peer: PeerId(203_011),
+                counter: 2,
+            },
             kind: OpKind::Insert {
                 pos: RgaPos::After(op_a.id),
                 text: "second".to_string(),
@@ -9678,12 +11147,20 @@ mod tests {
 
         // The RGA implementation records both ops; text depends on whether B re-anchors.
         // At minimum both ops must be in the log.
-        assert_eq!(doc.op_log().len(), 2, "both ops must be recorded regardless of order");
+        assert_eq!(
+            doc.op_log().len(),
+            2,
+            "both ops must be recorded regardless of order"
+        );
         // Applying A then B in causal order must produce correct text.
         let mut doc_causal = DocState::new(PeerId(203_013));
         doc_causal.apply(op_a.clone());
         doc_causal.apply(op_b.clone());
-        assert_eq!(doc_causal.text(), "firstsecond", "causal order must produce correct text");
+        assert_eq!(
+            doc_causal.text(),
+            "firstsecond",
+            "causal order must produce correct text"
+        );
     }
 
     #[test]
@@ -9719,7 +11196,10 @@ mod tests {
         // When A is applied afterwards, the document must still be consistent.
         let op_a = make_insert(203_030, 1, RgaPos::Head, "dep");
         let op_b = Op {
-            id: OpId { peer: PeerId(203_031), counter: 5 },
+            id: OpId {
+                peer: PeerId(203_031),
+                counter: 5,
+            },
             kind: OpKind::Insert {
                 pos: RgaPos::After(op_a.id),
                 text: "_late".to_string(),
@@ -9732,13 +11212,23 @@ mod tests {
         // At this point A's anchor is unresolved — text might only contain B's text
         // or be empty depending on implementation, but no panic must occur.
         let len_after_b = doc.op_log().len();
-        assert_eq!(len_after_b, 1, "B must be recorded even without its causal dep");
+        assert_eq!(
+            len_after_b, 1,
+            "B must be recorded even without its causal dep"
+        );
 
         // Now the causal dependency arrives.
         doc.apply(op_a.clone());
-        assert_eq!(doc.op_log().len(), 2, "A must be recorded after late arrival");
+        assert_eq!(
+            doc.op_log().len(),
+            2,
+            "A must be recorded after late arrival"
+        );
         // The doc must have both texts present.
-        assert!(doc.text().contains("dep"), "dep text from A must be present");
+        assert!(
+            doc.text().contains("dep"),
+            "dep text from A must be present"
+        );
     }
 
     // ── additional wave AJ tests ──────────────────────────────────────────────
@@ -9804,7 +11294,10 @@ mod tests {
             .iter()
             .filter(|o| matches!(o.kind, OpKind::Delete { .. }))
             .count();
-        assert_eq!(delete_count, 2, "must have exactly 2 tombstone (Delete) ops");
+        assert_eq!(
+            delete_count, 2,
+            "must have exactly 2 tombstone (Delete) ops"
+        );
     }
 
     #[test]
@@ -9822,7 +11315,11 @@ mod tests {
             .op_log()
             .iter()
             .filter_map(|o| {
-                if let OpKind::Delete { target } = &o.kind { Some(*target) } else { None }
+                if let OpKind::Delete { target } = &o.kind {
+                    Some(*target)
+                } else {
+                    None
+                }
             })
             .collect();
         let live: Vec<&Op> = doc
@@ -9842,23 +11339,39 @@ mod tests {
         // Same peer broadcasts both cursor and color awareness; both retrievable.
         let mut doc = DocState::new(PeerId(206_001));
         doc.apply(Op {
-            id: OpId { peer: PeerId(206_001), counter: 1 },
-            kind: OpKind::SetMeta { key: "cursor:206001".to_string(), value: "10".to_string() },
+            id: OpId {
+                peer: PeerId(206_001),
+                counter: 1,
+            },
+            kind: OpKind::SetMeta {
+                key: "cursor:206001".to_string(),
+                value: "10".to_string(),
+            },
         });
         doc.apply(Op {
-            id: OpId { peer: PeerId(206_001), counter: 2 },
-            kind: OpKind::SetMeta { key: "color:206001".to_string(), value: "#abc".to_string() },
+            id: OpId {
+                peer: PeerId(206_001),
+                counter: 2,
+            },
+            kind: OpKind::SetMeta {
+                key: "color:206001".to_string(),
+                value: "#abc".to_string(),
+            },
         });
 
         let cursor = doc.op_log().iter().find_map(|o| {
             if let OpKind::SetMeta { key, value } = &o.kind {
-                if key == "cursor:206001" { return Some(value.as_str()); }
+                if key == "cursor:206001" {
+                    return Some(value.as_str());
+                }
             }
             None
         });
         let color = doc.op_log().iter().find_map(|o| {
             if let OpKind::SetMeta { key, value } = &o.kind {
-                if key == "color:206001" { return Some(value.as_str()); }
+                if key == "color:206001" {
+                    return Some(value.as_str());
+                }
             }
             None
         });
@@ -9869,10 +11382,15 @@ mod tests {
     #[test]
     fn awareness_merge_three_sites_union_of_all() {
         // Three sites each apply their own awareness op; after 3-way merge all 3 appear.
-        let mut docs: Vec<DocState> = (0u64..3).map(|i| DocState::new(PeerId(206_010 + i))).collect();
+        let mut docs: Vec<DocState> = (0u64..3)
+            .map(|i| DocState::new(PeerId(206_010 + i)))
+            .collect();
         for (i, doc) in docs.iter_mut().enumerate() {
             doc.apply(Op {
-                id: OpId { peer: PeerId(206_010 + i as u64), counter: 1 },
+                id: OpId {
+                    peer: PeerId(206_010 + i as u64),
+                    counter: 1,
+                },
                 kind: OpKind::SetMeta {
                     key: format!("awareness:{}", 206_010 + i),
                     value: format!("site{i}"),
@@ -9883,15 +11401,24 @@ mod tests {
         // Site 0 merges sites 1 and 2.
         let snap1: Vec<Op> = docs[1].op_log().to_vec();
         let snap2: Vec<Op> = docs[2].op_log().to_vec();
-        for op in snap1 { docs[0].apply(op); }
-        for op in snap2 { docs[0].apply(op); }
+        for op in snap1 {
+            docs[0].apply(op);
+        }
+        for op in snap2 {
+            docs[0].apply(op);
+        }
 
         let awareness_count = docs[0]
             .op_log()
             .iter()
-            .filter(|o| matches!(&o.kind, OpKind::SetMeta { key, .. } if key.starts_with("awareness:")))
+            .filter(
+                |o| matches!(&o.kind, OpKind::SetMeta { key, .. } if key.starts_with("awareness:")),
+            )
             .count();
-        assert_eq!(awareness_count, 3, "union of 3 sites must have 3 awareness entries");
+        assert_eq!(
+            awareness_count, 3,
+            "union of 3 sites must have 3 awareness entries"
+        );
     }
 
     #[test]
@@ -9940,10 +11467,19 @@ mod tests {
     #[test]
     fn offline_op_with_nonexistent_anchor_does_not_panic() {
         // An offline op anchored After an id that was never seen must not panic.
-        let ghost_anchor = OpId { peer: PeerId(207_020), counter: 999 };
+        let ghost_anchor = OpId {
+            peer: PeerId(207_020),
+            counter: 999,
+        };
         let op = Op {
-            id: OpId { peer: PeerId(207_021), counter: 1 },
-            kind: OpKind::Insert { pos: RgaPos::After(ghost_anchor), text: "orphan".to_string() },
+            id: OpId {
+                peer: PeerId(207_021),
+                counter: 1,
+            },
+            kind: OpKind::Insert {
+                pos: RgaPos::After(ghost_anchor),
+                text: "orphan".to_string(),
+            },
         };
         let mut doc = DocState::new(PeerId(207_022));
         doc.apply(op); // must not panic
@@ -9984,7 +11520,11 @@ mod tests {
         let doc_b = DocState::new(PeerId(300_002));
         let doc_c = DocState::new(PeerId(300_003));
         let session: Vec<&DocState> = vec![&doc_a, &doc_b, &doc_c];
-        assert_eq!(session.len(), 3, "session must hold 3 documents simultaneously");
+        assert_eq!(
+            session.len(),
+            3,
+            "session must hold 3 documents simultaneously"
+        );
     }
 
     #[test]
@@ -9994,10 +11534,18 @@ mod tests {
         let mut doc_b = DocState::new(PeerId(300_011));
         doc_a.local_insert(RgaPos::Head, "only in A");
         assert_eq!(doc_a.op_log().len(), 1, "doc_a must have 1 op");
-        assert_eq!(doc_b.op_log().len(), 0, "doc_b must have 0 ops — independent");
+        assert_eq!(
+            doc_b.op_log().len(),
+            0,
+            "doc_b must have 0 ops — independent"
+        );
         doc_b.local_insert(RgaPos::Head, "only in B");
         assert_eq!(doc_b.op_log().len(), 1);
-        assert_eq!(doc_a.op_log().len(), 1, "doc_a unchanged after doc_b insert");
+        assert_eq!(
+            doc_a.op_log().len(),
+            1,
+            "doc_a unchanged after doc_b insert"
+        );
     }
 
     #[test]
@@ -10008,12 +11556,18 @@ mod tests {
         let op = doc_a.local_insert(RgaPos::Head, "secret");
 
         // doc_b has NOT merged from doc_a — must not see "secret".
-        assert!(!doc_b.text().contains("secret"), "op must not bleed from doc_a to doc_b");
+        assert!(
+            !doc_b.text().contains("secret"),
+            "op must not bleed from doc_a to doc_b"
+        );
         assert_eq!(doc_b.op_log().len(), 0);
 
         // Explicit merge propagates it.
         doc_b.apply(op);
-        assert!(doc_b.text().contains("secret"), "after explicit apply, op must be in doc_b");
+        assert!(
+            doc_b.text().contains("secret"),
+            "after explicit apply, op must be in doc_b"
+        );
     }
 
     #[test]
@@ -10029,7 +11583,10 @@ mod tests {
         assert_eq!(snap_a.len(), 1);
         assert_eq!(snap_b.len(), 1);
         // Snapshots must not share op ids.
-        assert_ne!(snap_a[0].id, snap_b[0].id, "independent docs must have distinct op ids");
+        assert_ne!(
+            snap_a[0].id, snap_b[0].id,
+            "independent docs must have distinct op ids"
+        );
     }
 
     #[test]
@@ -10045,7 +11602,11 @@ mod tests {
         } // doc_b dropped here
 
         // doc_a must still be intact.
-        assert_eq!(doc_a.text(), "persistent", "closing doc_b must not affect doc_a");
+        assert_eq!(
+            doc_a.text(),
+            "persistent",
+            "closing doc_b must not affect doc_a"
+        );
         assert_eq!(doc_a.op_log().len(), 1);
     }
 
@@ -10058,9 +11619,14 @@ mod tests {
         let presence: Vec<&Op> = doc
             .op_log()
             .iter()
-            .filter(|o| matches!(&o.kind, OpKind::SetMeta { key, .. } if key.starts_with("cursor:")))
+            .filter(
+                |o| matches!(&o.kind, OpKind::SetMeta { key, .. } if key.starts_with("cursor:")),
+            )
             .collect();
-        assert!(presence.is_empty(), "new session must have empty presence list");
+        assert!(
+            presence.is_empty(),
+            "new session must have empty presence list"
+        );
     }
 
     #[test]
@@ -10068,7 +11634,10 @@ mod tests {
         // After a peer applies a cursor SetMeta, their presence is visible.
         let mut doc = DocState::new(PeerId(301_010));
         doc.apply(Op {
-            id: OpId { peer: PeerId(301_010), counter: 1 },
+            id: OpId {
+                peer: PeerId(301_010),
+                counter: 1,
+            },
             kind: OpKind::SetMeta {
                 key: "cursor:301010".to_string(),
                 value: "5".to_string(),
@@ -10079,7 +11648,10 @@ mod tests {
             .iter()
             .filter(|o| matches!(&o.kind, OpKind::SetMeta { key, .. } if key == "cursor:301010"))
             .count();
-        assert_eq!(count, 1, "peer must appear in presence list after adding cursor");
+        assert_eq!(
+            count, 1,
+            "peer must appear in presence list after adding cursor"
+        );
     }
 
     #[test]
@@ -10087,7 +11659,10 @@ mod tests {
         // Simulate removal: filter out the peer's cursor entry from the visible presence list.
         let mut doc = DocState::new(PeerId(301_020));
         doc.apply(Op {
-            id: OpId { peer: PeerId(301_020), counter: 1 },
+            id: OpId {
+                peer: PeerId(301_020),
+                counter: 1,
+            },
             kind: OpKind::SetMeta {
                 key: "cursor:301020".to_string(),
                 value: "10".to_string(),
@@ -10096,7 +11671,10 @@ mod tests {
 
         // Simulate removal: apply a tombstone value "" to indicate disconnection.
         doc.apply(Op {
-            id: OpId { peer: PeerId(301_020), counter: 2 },
+            id: OpId {
+                peer: PeerId(301_020),
+                counter: 2,
+            },
             kind: OpKind::SetMeta {
                 key: "cursor:301020".to_string(),
                 value: "".to_string(),
@@ -10104,16 +11682,24 @@ mod tests {
         });
 
         // After removal, the live presence entry for this peer has an empty value.
-        let latest = doc.op_log().iter()
+        let latest = doc
+            .op_log()
+            .iter()
             .filter_map(|o| {
                 if let OpKind::SetMeta { key, value } = &o.kind {
-                    if key == "cursor:301020" { return Some((o.id.counter, value.as_str())); }
+                    if key == "cursor:301020" {
+                        return Some((o.id.counter, value.as_str()));
+                    }
                 }
                 None
             })
             .max_by_key(|(ctr, _)| *ctr)
             .map(|(_, v)| v);
-        assert_eq!(latest, Some(""), "removed peer must have empty presence value");
+        assert_eq!(
+            latest,
+            Some(""),
+            "removed peer must have empty presence value"
+        );
     }
 
     #[test]
@@ -10121,25 +11707,45 @@ mod tests {
         // Two cursor updates from the same peer; only the latest counter matters.
         let mut doc = DocState::new(PeerId(301_030));
         doc.apply(Op {
-            id: OpId { peer: PeerId(301_030), counter: 1 },
-            kind: OpKind::SetMeta { key: "cursor:301030".to_string(), value: "3".to_string() },
+            id: OpId {
+                peer: PeerId(301_030),
+                counter: 1,
+            },
+            kind: OpKind::SetMeta {
+                key: "cursor:301030".to_string(),
+                value: "3".to_string(),
+            },
         });
         doc.apply(Op {
-            id: OpId { peer: PeerId(301_030), counter: 2 },
-            kind: OpKind::SetMeta { key: "cursor:301030".to_string(), value: "7".to_string() },
+            id: OpId {
+                peer: PeerId(301_030),
+                counter: 2,
+            },
+            kind: OpKind::SetMeta {
+                key: "cursor:301030".to_string(),
+                value: "7".to_string(),
+            },
         });
 
         // Both entries exist in the log, but the "active" value is from the latest counter.
-        let latest_val = doc.op_log().iter()
+        let latest_val = doc
+            .op_log()
+            .iter()
             .filter_map(|o| {
                 if let OpKind::SetMeta { key, value } = &o.kind {
-                    if key == "cursor:301030" { return Some((o.id.counter, value.as_str())); }
+                    if key == "cursor:301030" {
+                        return Some((o.id.counter, value.as_str()));
+                    }
                 }
                 None
             })
             .max_by_key(|(ctr, _)| *ctr)
             .map(|(_, v)| v);
-        assert_eq!(latest_val, Some("7"), "latest cursor update must win (LWW dedup)");
+        assert_eq!(
+            latest_val,
+            Some("7"),
+            "latest cursor update must win (LWW dedup)"
+        );
     }
 
     #[test]
@@ -10148,7 +11754,10 @@ mod tests {
         let peer_id: u64 = 301_040;
         let mut doc = DocState::new(PeerId(peer_id));
         doc.apply(Op {
-            id: OpId { peer: PeerId(peer_id), counter: 5 },
+            id: OpId {
+                peer: PeerId(peer_id),
+                counter: 5,
+            },
             kind: OpKind::SetMeta {
                 key: format!("cursor:{peer_id}"),
                 value: "12".to_string(),
@@ -10173,23 +11782,41 @@ mod tests {
         let mut doc = DocState::new(PeerId(301_050));
         // Two peers: one stale (counter=1), one active (counter=10).
         doc.apply(Op {
-            id: OpId { peer: PeerId(301_051), counter: 1 },
-            kind: OpKind::SetMeta { key: "cursor:301051".to_string(), value: "0".to_string() },
+            id: OpId {
+                peer: PeerId(301_051),
+                counter: 1,
+            },
+            kind: OpKind::SetMeta {
+                key: "cursor:301051".to_string(),
+                value: "0".to_string(),
+            },
         });
         doc.apply(Op {
-            id: OpId { peer: PeerId(301_052), counter: 10 },
-            kind: OpKind::SetMeta { key: "cursor:301052".to_string(), value: "5".to_string() },
+            id: OpId {
+                peer: PeerId(301_052),
+                counter: 10,
+            },
+            kind: OpKind::SetMeta {
+                key: "cursor:301052".to_string(),
+                value: "5".to_string(),
+            },
         });
 
         let gc_threshold: u64 = 5;
-        let active_presence: Vec<&Op> = doc.op_log().iter()
+        let active_presence: Vec<&Op> = doc
+            .op_log()
+            .iter()
             .filter(|o| {
                 matches!(&o.kind, OpKind::SetMeta { key, .. } if key.starts_with("cursor:"))
                     && o.id.counter >= gc_threshold
             })
             .collect();
 
-        assert_eq!(active_presence.len(), 1, "only 1 active presence entry must survive GC");
+        assert_eq!(
+            active_presence.len(),
+            1,
+            "only 1 active presence entry must survive GC"
+        );
         if let OpKind::SetMeta { key, .. } = &active_presence[0].kind {
             assert_eq!(key, "cursor:301052");
         }
@@ -10203,22 +11830,36 @@ mod tests {
         let mut doc = DocState::new(PeerId(302_001));
         // Stale entry: counter=1
         doc.apply(Op {
-            id: OpId { peer: PeerId(302_001), counter: 1 },
-            kind: OpKind::SetMeta { key: "awareness:302001".to_string(), value: "old".to_string() },
+            id: OpId {
+                peer: PeerId(302_001),
+                counter: 1,
+            },
+            kind: OpKind::SetMeta {
+                key: "awareness:302001".to_string(),
+                value: "old".to_string(),
+            },
         });
         // Active entry: counter=100
         doc.apply(Op {
-            id: OpId { peer: PeerId(302_001), counter: 100 },
-            kind: OpKind::SetMeta { key: "awareness:302001_b".to_string(), value: "new".to_string() },
+            id: OpId {
+                peer: PeerId(302_001),
+                counter: 100,
+            },
+            kind: OpKind::SetMeta {
+                key: "awareness:302001_b".to_string(),
+                value: "new".to_string(),
+            },
         });
 
         let stale_threshold: u64 = 50; // entries with counter < 50 are stale
-        let stale: Vec<&Op> = doc.op_log().iter()
-            .filter(|o| {
-                matches!(&o.kind, OpKind::SetMeta { .. }) && o.id.counter < stale_threshold
-            })
+        let stale: Vec<&Op> = doc
+            .op_log()
+            .iter()
+            .filter(|o| matches!(&o.kind, OpKind::SetMeta { .. }) && o.id.counter < stale_threshold)
             .collect();
-        let active: Vec<&Op> = doc.op_log().iter()
+        let active: Vec<&Op> = doc
+            .op_log()
+            .iter()
             .filter(|o| {
                 matches!(&o.kind, OpKind::SetMeta { .. }) && o.id.counter >= stale_threshold
             })
@@ -10235,7 +11876,10 @@ mod tests {
         // Apply 3 active entries at counters 200, 201, 202.
         for i in 0u64..3 {
             doc.apply(Op {
-                id: OpId { peer: PeerId(302_010 + i), counter: 200 + i },
+                id: OpId {
+                    peer: PeerId(302_010 + i),
+                    counter: 200 + i,
+                },
                 kind: OpKind::SetMeta {
                     key: format!("awareness:{}", 302_010 + i),
                     value: "active".to_string(),
@@ -10244,10 +11888,10 @@ mod tests {
         }
 
         let gc_threshold: u64 = 100; // all 3 have counter >= 200, well above threshold
-        let survivors: Vec<&Op> = doc.op_log().iter()
-            .filter(|o| {
-                matches!(&o.kind, OpKind::SetMeta { .. }) && o.id.counter >= gc_threshold
-            })
+        let survivors: Vec<&Op> = doc
+            .op_log()
+            .iter()
+            .filter(|o| matches!(&o.kind, OpKind::SetMeta { .. }) && o.id.counter >= gc_threshold)
             .collect();
         assert_eq!(survivors.len(), 3, "all 3 active peers must survive GC");
     }
@@ -10259,7 +11903,10 @@ mod tests {
         // 2 stale at counter=2, 2 active at counter=50.
         for i in 0u64..2 {
             doc.apply(Op {
-                id: OpId { peer: PeerId(302_021 + i), counter: 2 },
+                id: OpId {
+                    peer: PeerId(302_021 + i),
+                    counter: 2,
+                },
                 kind: OpKind::SetMeta {
                     key: format!("awareness:stale{i}"),
                     value: "stale".to_string(),
@@ -10268,7 +11915,10 @@ mod tests {
         }
         for i in 0u64..2 {
             doc.apply(Op {
-                id: OpId { peer: PeerId(302_023 + i), counter: 50 },
+                id: OpId {
+                    peer: PeerId(302_023 + i),
+                    counter: 50,
+                },
                 kind: OpKind::SetMeta {
                     key: format!("awareness:active{i}"),
                     value: "active".to_string(),
@@ -10277,10 +11927,14 @@ mod tests {
         }
 
         let gc_threshold: u64 = 10;
-        let stale_count = doc.op_log().iter()
+        let stale_count = doc
+            .op_log()
+            .iter()
             .filter(|o| matches!(&o.kind, OpKind::SetMeta { .. }) && o.id.counter < gc_threshold)
             .count();
-        let active_count = doc.op_log().iter()
+        let active_count = doc
+            .op_log()
+            .iter()
             .filter(|o| matches!(&o.kind, OpKind::SetMeta { .. }) && o.id.counter >= gc_threshold)
             .count();
         assert_eq!(stale_count, 2, "2 stale entries must be GC eligible");
@@ -10291,10 +11945,15 @@ mod tests {
     fn awareness_gc_on_empty_is_noop() {
         // GC on a doc with no SetMeta ops must yield 0 stale, 0 active.
         let doc = DocState::new(PeerId(302_030));
-        let stale_count = doc.op_log().iter()
+        let stale_count = doc
+            .op_log()
+            .iter()
             .filter(|o| matches!(&o.kind, OpKind::SetMeta { .. }) && o.id.counter < 999)
             .count();
-        assert_eq!(stale_count, 0, "GC on empty awareness must find 0 stale entries");
+        assert_eq!(
+            stale_count, 0,
+            "GC on empty awareness must find 0 stale entries"
+        );
     }
 
     #[test]
@@ -10302,20 +11961,35 @@ mod tests {
         // Running GC filter twice produces the same active set.
         let mut doc = DocState::new(PeerId(302_040));
         doc.apply(Op {
-            id: OpId { peer: PeerId(302_040), counter: 5 },
-            kind: OpKind::SetMeta { key: "awareness:stale".to_string(), value: "old".to_string() },
+            id: OpId {
+                peer: PeerId(302_040),
+                counter: 5,
+            },
+            kind: OpKind::SetMeta {
+                key: "awareness:stale".to_string(),
+                value: "old".to_string(),
+            },
         });
         doc.apply(Op {
-            id: OpId { peer: PeerId(302_040), counter: 50 },
-            kind: OpKind::SetMeta { key: "awareness:active".to_string(), value: "live".to_string() },
+            id: OpId {
+                peer: PeerId(302_040),
+                counter: 50,
+            },
+            kind: OpKind::SetMeta {
+                key: "awareness:active".to_string(),
+                value: "live".to_string(),
+            },
         });
 
         let gc_threshold: u64 = 20;
-        let pass1: Vec<Op> = doc.op_log().iter()
+        let pass1: Vec<Op> = doc
+            .op_log()
+            .iter()
             .filter(|o| !matches!(&o.kind, OpKind::SetMeta { .. }) || o.id.counter >= gc_threshold)
             .cloned()
             .collect();
-        let pass2: Vec<Op> = pass1.iter()
+        let pass2: Vec<Op> = pass1
+            .iter()
             .filter(|o| !matches!(&o.kind, OpKind::SetMeta { .. }) || o.id.counter >= gc_threshold)
             .cloned()
             .collect();
@@ -10336,9 +12010,19 @@ mod tests {
         pa.apply(op_b.clone());
         pb.apply(op_a.clone());
 
-        assert!(pa.text().contains("from_A"), "A's insert must survive in A after merge");
-        assert!(pa.text().contains("from_B"), "B's insert must survive in A after merge");
-        assert_eq!(pa.text(), pb.text(), "both sites must converge to same text");
+        assert!(
+            pa.text().contains("from_A"),
+            "A's insert must survive in A after merge"
+        );
+        assert!(
+            pa.text().contains("from_B"),
+            "B's insert must survive in A after merge"
+        );
+        assert_eq!(
+            pa.text(),
+            pb.text(),
+            "both sites must converge to same text"
+        );
     }
 
     #[test]
@@ -10359,10 +12043,15 @@ mod tests {
         assert_eq!(pa.text(), "", "element deleted by both must be gone");
         assert_eq!(pb.text(), "", "element deleted by both must be gone on B");
         // Tombstone count must be 2 (one per site) but text is empty (single logical deletion).
-        let tombstone_count = pa.op_log().iter()
+        let tombstone_count = pa
+            .op_log()
+            .iter()
             .filter(|o| matches!(&o.kind, OpKind::Delete { target } if *target == shared.id))
             .count();
-        assert_eq!(tombstone_count, 2, "two Delete ops but one logical deletion");
+        assert_eq!(
+            tombstone_count, 2,
+            "two Delete ops but one logical deletion"
+        );
     }
 
     #[test]
@@ -10409,7 +12098,11 @@ mod tests {
         doc_rev.apply(op2.clone());
         doc_rev.apply(op1.clone());
 
-        assert_eq!(doc_fwd.text(), doc_rev.text(), "CRDT: ops in any order must converge");
+        assert_eq!(
+            doc_fwd.text(),
+            doc_rev.text(),
+            "CRDT: ops in any order must converge"
+        );
     }
 
     #[test]
@@ -10420,18 +12113,37 @@ mod tests {
         let op_b = doc.local_insert(RgaPos::After(op_a.id), "B");
         let op_c = doc.local_insert(RgaPos::After(op_b.id), "C");
 
-        let t0 = doc.op_log().iter().filter(|o| matches!(o.kind, OpKind::Delete { .. })).count();
+        let t0 = doc
+            .op_log()
+            .iter()
+            .filter(|o| matches!(o.kind, OpKind::Delete { .. }))
+            .count();
         doc.local_delete(op_a.id);
-        let t1 = doc.op_log().iter().filter(|o| matches!(o.kind, OpKind::Delete { .. })).count();
+        let t1 = doc
+            .op_log()
+            .iter()
+            .filter(|o| matches!(o.kind, OpKind::Delete { .. }))
+            .count();
         doc.local_delete(op_b.id);
-        let t2 = doc.op_log().iter().filter(|o| matches!(o.kind, OpKind::Delete { .. })).count();
+        let t2 = doc
+            .op_log()
+            .iter()
+            .filter(|o| matches!(o.kind, OpKind::Delete { .. }))
+            .count();
         doc.local_delete(op_c.id);
-        let t3 = doc.op_log().iter().filter(|o| matches!(o.kind, OpKind::Delete { .. })).count();
+        let t3 = doc
+            .op_log()
+            .iter()
+            .filter(|o| matches!(o.kind, OpKind::Delete { .. }))
+            .count();
 
         assert_eq!(t0, 0, "no tombstones before any deletion");
         assert_eq!(t1, 1, "1 tombstone after first deletion");
         assert_eq!(t2, 2, "2 tombstones after second deletion");
-        assert_eq!(t3, 3, "3 tombstones after third deletion — grows with each deletion");
+        assert_eq!(
+            t3, 3,
+            "3 tombstones after third deletion — grows with each deletion"
+        );
     }
 
     // ── 5. Session lifecycle ─────────────────────────────────────────────────────
@@ -10451,7 +12163,11 @@ mod tests {
         session.push(DocState::new(PeerId(304_001)));
         session[0].local_insert(RgaPos::Head, "content");
         assert_eq!(session.len(), 1, "one document in session after open");
-        assert_eq!(session[0].op_log().len(), 1, "opened doc must have 1 op after first insert");
+        assert_eq!(
+            session[0].op_log().len(),
+            1,
+            "opened doc must have 1 op after first insert"
+        );
         assert_eq!(session[0].text(), "content");
     }
 
@@ -10466,10 +12182,18 @@ mod tests {
 
         assert_eq!(session.len(), 2);
         session.clear(); // close all documents
-        assert_eq!(session.len(), 0, "session must be empty after closing all documents");
+        assert_eq!(
+            session.len(),
+            0,
+            "session must be empty after closing all documents"
+        );
         // Session itself is still valid (can push again).
         session.push(DocState::new(PeerId(304_012)));
-        assert_eq!(session.len(), 1, "session remains valid after re-opening a document");
+        assert_eq!(
+            session.len(),
+            1,
+            "session remains valid after re-opening a document"
+        );
     }
 
     // ── wave AO: AL-CRDT-OVERFLOW fixes + new utility methods ────────────────
@@ -10553,13 +12277,10 @@ mod tests {
         assert_eq!(doc.text(), "hello");
         let text_after_first = doc.text();
 
-        // Direct double-apply (raw apply bypasses idempotency — both land in log,
-        // but merge() is idempotent). Document the raw apply behavior.
+        // Direct double-apply is idempotent by OpId.
         doc.apply(op.clone());
-        // Both copies are in the log (raw apply has no dedup).
-        assert_eq!(doc.op_log().len(), 2, "raw apply twice grows log by 2");
-        // Text still contains the content (second node may duplicate).
-        assert!(doc.text().contains("hello"));
+        assert_eq!(doc.op_log().len(), 1, "raw apply twice stays idempotent");
+        assert_eq!(doc.text(), text_after_first);
         let _ = text_after_first;
     }
 
@@ -10576,7 +12297,11 @@ mod tests {
 
         target.merge(&source); // second merge — must be no-op
         assert_eq!(target.text(), text1, "second merge must not change text");
-        assert_eq!(target.op_log().len(), len1, "second merge must not grow log");
+        assert_eq!(
+            target.op_log().len(),
+            len1,
+            "second merge must not grow log"
+        );
     }
 
     #[test]
@@ -10699,8 +12424,14 @@ mod tests {
         let mut doc = DocState::new(PeerId(404_003));
         doc.local_insert(RgaPos::Head, "hello");
         doc.apply(Op {
-            id: OpId { peer: PeerId(404_003), counter: 99 },
-            kind: OpKind::SetMeta { key: "k".into(), value: "v".into() },
+            id: OpId {
+                peer: PeerId(404_003),
+                counter: 99,
+            },
+            kind: OpKind::SetMeta {
+                key: "k".into(),
+                value: "v".into(),
+            },
         });
         assert_eq!(doc.op_count(), 2);
     }
@@ -10724,7 +12455,10 @@ mod tests {
         let mut doc = DocState::new(PeerId(405_001));
         doc.local_insert(RgaPos::Head, "snap");
         let bytes = doc.snapshot();
-        assert!(bytes.is_empty() || !bytes.is_empty(), "snapshot must return a Vec<u8>");
+        assert!(
+            bytes.is_empty() || !bytes.is_empty(),
+            "snapshot must return a Vec<u8>"
+        );
         // Specifically, the stub returns empty.
         assert_eq!(bytes.len(), 0, "stub snapshot must return empty bytes");
     }
@@ -10751,7 +12485,11 @@ mod tests {
         let mut doc = DocState::new(PeerId(406_002));
         doc.local_insert(RgaPos::Head, "a");
         doc.local_insert(RgaPos::Head, "b");
-        assert_eq!(doc.peer_count(), 1, "single-peer doc must have peer_count == 1");
+        assert_eq!(
+            doc.peer_count(),
+            1,
+            "single-peer doc must have peer_count == 1"
+        );
     }
 
     #[test]
@@ -10764,7 +12502,11 @@ mod tests {
         let op_b = pb.local_insert(RgaPos::Head, "B");
 
         pa.apply(op_b);
-        assert_eq!(pa.peer_count(), 2, "after receiving B's op, peer_count must be 2");
+        assert_eq!(
+            pa.peer_count(),
+            2,
+            "after receiving B's op, peer_count must be 2"
+        );
     }
 
     #[test]
@@ -10793,12 +12535,24 @@ mod tests {
         // SetMeta ops from distinct peers contribute to peer_count.
         let mut doc = DocState::new(PeerId(406_040));
         doc.apply(Op {
-            id: OpId { peer: PeerId(406_041), counter: 1 },
-            kind: OpKind::SetMeta { key: "k1".into(), value: "v1".into() },
+            id: OpId {
+                peer: PeerId(406_041),
+                counter: 1,
+            },
+            kind: OpKind::SetMeta {
+                key: "k1".into(),
+                value: "v1".into(),
+            },
         });
         doc.apply(Op {
-            id: OpId { peer: PeerId(406_042), counter: 1 },
-            kind: OpKind::SetMeta { key: "k2".into(), value: "v2".into() },
+            id: OpId {
+                peer: PeerId(406_042),
+                counter: 1,
+            },
+            kind: OpKind::SetMeta {
+                key: "k2".into(),
+                value: "v2".into(),
+            },
         });
         assert_eq!(doc.peer_count(), 2, "SetMeta peers must be counted");
     }
@@ -10854,7 +12608,10 @@ mod tests {
         doc.apply(make_insert(408_002, u64::MAX - 10, RgaPos::Head, "x"));
         let op = doc.local_insert(RgaPos::Head, "y");
         // Counter must be at most u64::MAX - 1.
-        assert!(op.id.counter <= u64::MAX - 1, "counter must stay within bounds");
+        assert!(
+            op.id.counter <= u64::MAX - 1,
+            "counter must stay within bounds"
+        );
         assert_eq!(doc.op_log().len(), 2, "doc must have 2 ops");
     }
 
@@ -10876,7 +12633,11 @@ mod tests {
         merged.apply(op_b);
         merged.apply(op_c);
 
-        assert_eq!(merged.peer_count(), 3, "three-way merge must report 3 peers");
+        assert_eq!(
+            merged.peer_count(),
+            3,
+            "three-way merge must report 3 peers"
+        );
     }
 
     #[test]
@@ -10896,7 +12657,11 @@ mod tests {
         merged.merge(&pa);
         merged.merge(&pb);
 
-        assert_eq!(merged.op_count(), count_a + count_b, "merged op_count must be sum");
+        assert_eq!(
+            merged.op_count(),
+            count_a + count_b,
+            "merged op_count must be sum"
+        );
     }
 
     #[test]
@@ -10904,8 +12669,14 @@ mod tests {
         // A doc that only has SetMeta ops is not empty (has ops).
         let mut doc = DocState::new(PeerId(408_030));
         doc.apply(Op {
-            id: OpId { peer: PeerId(408_030), counter: 1 },
-            kind: OpKind::SetMeta { key: "k".into(), value: "v".into() },
+            id: OpId {
+                peer: PeerId(408_030),
+                counter: 1,
+            },
+            kind: OpKind::SetMeta {
+                key: "k".into(),
+                value: "v".into(),
+            },
         });
         assert!(!doc.is_empty(), "doc with SetMeta op must not be empty");
         assert_eq!(doc.text(), "", "but text is empty (no inserts)");
@@ -10961,7 +12732,11 @@ mod tests {
         let count_before = doc.op_count();
         let _bytes = doc.snapshot();
         assert_eq!(doc.text(), text_before, "snapshot must not alter text");
-        assert_eq!(doc.op_count(), count_before, "snapshot must not alter op_count");
+        assert_eq!(
+            doc.op_count(),
+            count_before,
+            "snapshot must not alter op_count"
+        );
         let _ = op1;
     }
 
@@ -10986,8 +12761,14 @@ mod tests {
         let mut doc = DocState::new(PeerId(408_090));
         for i in 1u64..=3 {
             doc.apply(Op {
-                id: OpId { peer: PeerId(408_090), counter: i },
-                kind: OpKind::SetMeta { key: format!("k{i}"), value: format!("v{i}") },
+                id: OpId {
+                    peer: PeerId(408_090),
+                    counter: i,
+                },
+                kind: OpKind::SetMeta {
+                    key: format!("k{i}"),
+                    value: format!("v{i}"),
+                },
             });
         }
         assert!(!doc.is_empty());
@@ -11008,6 +12789,10 @@ mod tests {
 
         let op_c = make_insert(408_102, 1, RgaPos::Head, "c");
         host.apply(op_c);
-        assert_eq!(host.peer_count(), 3, "after 3 distinct peers, peer_count must be 3");
+        assert_eq!(
+            host.peer_count(),
+            3,
+            "after 3 distinct peers, peer_count must be 3"
+        );
     }
 }

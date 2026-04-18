@@ -270,7 +270,10 @@ mod integration_tests {
         panel.finalize_last();
         let mut scene = Scene::new();
         panel.paint_scene(320.0, 400.0, &mut scene);
-        assert!(!scene.quads.is_empty(), "chat sidebar panel must emit quads");
+        assert!(
+            !scene.quads.is_empty(),
+            "chat sidebar panel must emit quads"
+        );
     }
 
     #[test]
@@ -286,7 +289,9 @@ mod integration_tests {
     #[test]
     fn command_palette_paints_without_panic() {
         let mut palette = CommandPalette::new();
-        palette.items.push(CommandPaletteItem::new("Test", "description"));
+        palette
+            .items
+            .push(CommandPaletteItem::new("Test", "description"));
         let mut scene = Scene::new();
         palette.paint_scene(800.0, 600.0, &mut scene);
         assert!(!scene.quads.is_empty(), "command palette must emit quads");
@@ -298,7 +303,10 @@ mod integration_tests {
     fn panel_size_state_fixed_effective_size() {
         let state = crate::dock::PanelSizeState::fixed(248.0);
         let effective = state.effective_size(1440.0);
-        assert!((effective - 248.0).abs() < 0.001, "fixed size must return its value");
+        assert!(
+            (effective - 248.0).abs() < 0.001,
+            "fixed size must return its value"
+        );
     }
 
     #[test]
@@ -325,9 +333,15 @@ mod integration_tests {
     #[test]
     fn panel_min_width_file_tree_is_positive() {
         let panel = FileTreePanel::new();
-        assert!(panel.default_size() > 0.0, "file tree default_size must be positive");
+        assert!(
+            panel.default_size() > 0.0,
+            "file tree default_size must be positive"
+        );
         // min_width is conventionally half of default_size (>=120px)
-        assert!(panel.default_size() >= 120.0, "file tree min width must be at least 120px");
+        assert!(
+            panel.default_size() >= 120.0,
+            "file tree min width must be at least 120px"
+        );
     }
 
     #[test]
@@ -384,7 +398,10 @@ mod integration_tests {
         dock.is_open = false;
         let mut scene = Scene::new();
         dock.paint_scene(1440.0, 900.0, &mut scene);
-        assert!(scene.quads.is_empty(), "closed dock must not emit any quads");
+        assert!(
+            scene.quads.is_empty(),
+            "closed dock must not emit any quads"
+        );
     }
 
     #[test]
@@ -457,7 +474,11 @@ mod integration_tests {
     #[test]
     fn panel_size_state_expanded_width_default() {
         let state = crate::dock::PanelSizeState::fixed(248.0);
-        assert_eq!(state.effective_size(1440.0), 248.0, "fixed state must return 248.0");
+        assert_eq!(
+            state.effective_size(1440.0),
+            248.0,
+            "fixed state must return 248.0"
+        );
     }
 
     #[test]
@@ -504,7 +525,10 @@ mod integration_tests {
         deep_think.push_step(ThinkingStep::new("step1", 0.8));
         deep_think.paint_scene(320.0, 400.0, &mut scene);
 
-        assert!(!scene.quads.is_empty(), "at least one quad must be produced");
+        assert!(
+            !scene.quads.is_empty(),
+            "at least one quad must be produced"
+        );
     }
 
     #[test]
@@ -512,7 +536,10 @@ mod integration_tests {
         let panel = FileTreePanel::new();
         let mut scene = Scene::new();
         panel.paint_scene(248.0, 600.0, &mut scene);
-        assert!(scene.quads.len() >= 1, "painting must return at least 1 quad");
+        assert!(
+            scene.quads.len() >= 1,
+            "painting must return at least 1 quad"
+        );
     }
 
     // ── ChatSidebarPanel: input and history ──────────────────────────────────
@@ -521,7 +548,11 @@ mod integration_tests {
     fn panel_chat_model_has_input_and_history() {
         let mut chat = ChatSidebarPanel::new();
         // Initially no messages.
-        assert_eq!(chat.message_count(), 0, "new chat panel starts with 0 messages");
+        assert_eq!(
+            chat.message_count(),
+            0,
+            "new chat panel starts with 0 messages"
+        );
 
         // Push a user message and an assistant message.
         chat.push_message(ChatMessage::user("u1", "hello"));
@@ -529,10 +560,17 @@ mod integration_tests {
         chat.append_to_last(" world");
         chat.finalize_last();
 
-        assert_eq!(chat.message_count(), 2, "chat must have 2 messages after two pushes");
+        assert_eq!(
+            chat.message_count(),
+            2,
+            "chat must have 2 messages after two pushes"
+        );
         assert_eq!(chat.messages[0].role, ChatRole::User);
         assert_eq!(chat.messages[1].role, ChatRole::Assistant);
-        assert!(!chat.messages[1].is_streaming, "finalized message must not be streaming");
+        assert!(
+            !chat.messages[1].is_streaming,
+            "finalized message must not be streaming"
+        );
         assert!(
             chat.messages[1].content.contains("world"),
             "appended delta must appear in content"
@@ -565,7 +603,11 @@ mod integration_tests {
         panel.push_step(ThinkingStep::new("check positions", 0.7));
         panel.push_step(ThinkingStep::new("verify constraints", 0.9));
 
-        assert_eq!(panel.steps.len(), 2, "panel must have 2 steps after two pushes");
+        assert_eq!(
+            panel.steps.len(),
+            2,
+            "panel must have 2 steps after two pushes"
+        );
         assert_eq!(panel.steps[0].hypothesis, "check positions");
         assert_eq!(panel.steps[1].hypothesis, "verify constraints");
     }
@@ -577,11 +619,17 @@ mod integration_tests {
         panel.push_step(ThinkingStep::new("hypothesis", 0.85));
         panel.complete();
         // After complete(), the panel must have steps and the state must be Complete.
-        assert!(!panel.steps.is_empty(), "panel must have steps after push_step");
+        assert!(
+            !panel.steps.is_empty(),
+            "panel must have steps after push_step"
+        );
         // Paint must still succeed after completion.
         let mut scene = Scene::new();
         panel.paint_scene(320.0, 400.0, &mut scene);
-        assert!(!scene.quads.is_empty(), "completed panel must still paint quads");
+        assert!(
+            !scene.quads.is_empty(),
+            "completed panel must still paint quads"
+        );
     }
 
     // ── FileNode/FileTree additional tests ───────────────────────────────────
@@ -598,9 +646,15 @@ mod integration_tests {
     #[test]
     fn file_tree_root_has_children() {
         let mut root = FileNode::dir("src", 0);
-        root.children.push(FileNode::file("main.nom", 1, FileNodeKind::NomFile));
-        root.children.push(FileNode::file("lib.nom", 1, FileNodeKind::NomFile));
-        assert_eq!(root.children.len(), 2, "root must have 2 children after pushing 2");
+        root.children
+            .push(FileNode::file("main.nom", 1, FileNodeKind::NomFile));
+        root.children
+            .push(FileNode::file("lib.nom", 1, FileNodeKind::NomFile));
+        assert_eq!(
+            root.children.len(),
+            2,
+            "root must have 2 children after pushing 2"
+        );
     }
 
     #[test]
@@ -613,14 +667,21 @@ mod integration_tests {
         // Must not panic when painting an empty tree.
         panel.paint_scene(248.0, 600.0, &mut scene);
         // An empty file tree emits only the background quad.
-        assert!(!scene.quads.is_empty(), "empty tree must still emit background quad");
+        assert!(
+            !scene.quads.is_empty(),
+            "empty tree must still emit background quad"
+        );
     }
 
     #[test]
     fn file_tree_node_count_correct() {
         let mut section = crate::left::file_tree::CollapsibleSection::new("ws", "Workspace");
         for i in 0..5 {
-            section.nodes.push(FileNode::file(format!("f{i}.nom"), 0, FileNodeKind::NomFile));
+            section.nodes.push(FileNode::file(
+                format!("f{i}.nom"),
+                0,
+                FileNodeKind::NomFile,
+            ));
         }
         assert_eq!(section.nodes.len(), 5, "section must have exactly 5 nodes");
     }
@@ -628,26 +689,45 @@ mod integration_tests {
     #[test]
     fn file_tree_selected_node_tracking() {
         let mut panel = FileTreePanel::new();
-        panel.sections[0].nodes.push(FileNode::file("alpha.nom", 0, FileNodeKind::NomFile));
-        panel.sections[0].nodes.push(FileNode::file("beta.nom", 0, FileNodeKind::NomFile));
+        panel.sections[0]
+            .nodes
+            .push(FileNode::file("alpha.nom", 0, FileNodeKind::NomFile));
+        panel.sections[0]
+            .nodes
+            .push(FileNode::file("beta.nom", 0, FileNodeKind::NomFile));
 
         panel.select("alpha.nom");
-        assert_eq!(panel.selected_id.as_deref(), Some("alpha.nom"), "first selection");
+        assert_eq!(
+            panel.selected_id.as_deref(),
+            Some("alpha.nom"),
+            "first selection"
+        );
 
         panel.select("beta.nom");
-        assert_eq!(panel.selected_id.as_deref(), Some("beta.nom"), "selection must update");
+        assert_eq!(
+            panel.selected_id.as_deref(),
+            Some("beta.nom"),
+            "selection must update"
+        );
     }
 
     #[test]
     fn file_tree_search_finds_file() {
         // Simple name-based search simulation.
         let mut panel = FileTreePanel::new();
-        panel.sections[0].nodes.push(FileNode::file("search_target.nom", 0, FileNodeKind::NomFile));
-        panel.sections[0].nodes.push(FileNode::file("other.nom", 0, FileNodeKind::NomFile));
+        panel.sections[0].nodes.push(FileNode::file(
+            "search_target.nom",
+            0,
+            FileNodeKind::NomFile,
+        ));
+        panel.sections[0]
+            .nodes
+            .push(FileNode::file("other.nom", 0, FileNodeKind::NomFile));
 
-        let found = panel.sections.iter().any(|sec| {
-            sec.nodes.iter().any(|n| n.name.contains("search_target"))
-        });
+        let found = panel
+            .sections
+            .iter()
+            .any(|sec| sec.nodes.iter().any(|n| n.name.contains("search_target")));
         assert!(found, "search must find the target file by name substring");
     }
 
@@ -689,7 +769,11 @@ mod integration_tests {
         assert_eq!(root.visible_nodes().len(), 1);
         // Expand root.
         root.is_expanded = true;
-        assert_eq!(root.visible_nodes().len(), 2, "after expand root, child must be visible");
+        assert_eq!(
+            root.visible_nodes().len(),
+            2,
+            "after expand root, child must be visible"
+        );
     }
 
     // ── Entity ref additional tests (PanelEntityRef / NomtuRef) ─────────────
@@ -715,7 +799,10 @@ mod integration_tests {
         use nom_blocks::NomtuRef;
         let e = PanelEntityRef::nomtu(NomtuRef::new("id", "myword", "kind"));
         let nomtu = e.as_nomtu().unwrap();
-        assert!(!nomtu.word.is_empty(), "word must be non-empty for a valid ref");
+        assert!(
+            !nomtu.word.is_empty(),
+            "word must be non-empty for a valid ref"
+        );
     }
 
     #[test]
@@ -795,7 +882,10 @@ mod integration_tests {
         dock.add_panel("file-tree", 248.0);
         let mut scene = Scene::new();
         dock.paint_scene(1440.0, 900.0, &mut scene);
-        assert!(!scene.quads.is_empty(), "left dock must emit quads when open");
+        assert!(
+            !scene.quads.is_empty(),
+            "left dock must emit quads when open"
+        );
     }
 
     #[test]
@@ -804,7 +894,10 @@ mod integration_tests {
         dock.add_panel("props", 320.0);
         let mut scene = Scene::new();
         dock.paint_scene(1440.0, 900.0, &mut scene);
-        assert!(!scene.quads.is_empty(), "right dock must emit quads when open");
+        assert!(
+            !scene.quads.is_empty(),
+            "right dock must emit quads when open"
+        );
     }
 
     #[test]
@@ -813,13 +906,19 @@ mod integration_tests {
         dock.add_panel("terminal", 200.0);
         let mut scene = Scene::new();
         dock.paint_scene(1440.0, 900.0, &mut scene);
-        assert!(!scene.quads.is_empty(), "bottom dock must emit quads when open");
+        assert!(
+            !scene.quads.is_empty(),
+            "bottom dock must emit quads when open"
+        );
     }
 
     #[test]
     fn chat_message_streaming_flag_initial_true() {
         let msg = ChatMessage::assistant_streaming("a-id");
-        assert!(msg.is_streaming, "new assistant_streaming message must have is_streaming=true");
+        assert!(
+            msg.is_streaming,
+            "new assistant_streaming message must have is_streaming=true"
+        );
     }
 
     #[test]
@@ -833,7 +932,10 @@ mod integration_tests {
         let mut msg = ChatMessage::assistant_streaming("a-id");
         msg.append_delta("hello");
         msg.append_delta(" world");
-        assert_eq!(msg.content, "hello world", "appended deltas must accumulate in content");
+        assert_eq!(
+            msg.content, "hello world",
+            "appended deltas must accumulate in content"
+        );
     }
 
     #[test]
@@ -841,7 +943,10 @@ mod integration_tests {
         let mut chat = ChatSidebarPanel::new();
         assert!(!chat.scroll_to_bottom, "starts without scroll request");
         chat.push_message(ChatMessage::user("u1", "text"));
-        assert!(chat.scroll_to_bottom, "scroll_to_bottom must be true after push");
+        assert!(
+            chat.scroll_to_bottom,
+            "scroll_to_bottom must be true after push"
+        );
     }
 
     // =========================================================================
@@ -913,8 +1018,14 @@ mod integration_tests {
     fn settings_open_on_ctrl_comma_key() {
         // The canonical settings-panel shortcut is Ctrl+,
         let shortcut = "ctrl+,";
-        assert!(!shortcut.is_empty(), "settings shortcut must be a non-empty string");
-        assert!(shortcut.contains("ctrl"), "settings shortcut must use Ctrl modifier");
+        assert!(
+            !shortcut.is_empty(),
+            "settings shortcut must be a non-empty string"
+        );
+        assert!(
+            shortcut.contains("ctrl"),
+            "settings shortcut must use Ctrl modifier"
+        );
     }
 
     #[test]
@@ -928,7 +1039,10 @@ mod integration_tests {
     fn settings_theme_light_persists() {
         let mut theme = "dark";
         theme = "light";
-        assert_eq!(theme, "light", "theme must persist as 'light' after setting");
+        assert_eq!(
+            theme, "light",
+            "theme must persist as 'light' after setting"
+        );
     }
 
     #[test]
@@ -946,7 +1060,10 @@ mod integration_tests {
         let bottom_h = nom_theme::tokens::PANEL_BOTTOM_HEIGHT;
         assert!(left_w > 0.0, "left panel default width must be positive");
         assert!(right_w > 0.0, "right panel default width must be positive");
-        assert!(bottom_h > 0.0, "bottom panel default height must be positive");
+        assert!(
+            bottom_h > 0.0,
+            "bottom panel default height must be positive"
+        );
     }
 
     #[test]
@@ -958,9 +1075,15 @@ mod integration_tests {
         map.insert("line_height", "1.5".to_string());
         assert_eq!(map["theme"], "dark");
         let font_size: f32 = map["font_size"].parse().unwrap();
-        assert!((font_size - 14.0).abs() < f32::EPSILON, "font_size round-trip failed");
+        assert!(
+            (font_size - 14.0).abs() < f32::EPSILON,
+            "font_size round-trip failed"
+        );
         let line_height: f32 = map["line_height"].parse().unwrap();
-        assert!((line_height - 1.5).abs() < f32::EPSILON, "line_height round-trip failed");
+        assert!(
+            (line_height - 1.5).abs() < f32::EPSILON,
+            "line_height round-trip failed"
+        );
     }
 
     // ── PanelEntityRef additions ──────────────────────────────────────────────
@@ -1000,7 +1123,11 @@ mod integration_tests {
         let palette = crate::left::NodePalette::load_from_dict(&dict);
         // "func" matches "Function" (case-insensitive) but NOT the 12 default kinds.
         let results = palette.search("func");
-        assert_eq!(results.len(), 1, "search 'func' must return only 'Function'");
+        assert_eq!(
+            results.len(),
+            1,
+            "search 'func' must return only 'Function'"
+        );
     }
 
     #[test]
@@ -1010,7 +1137,11 @@ mod integration_tests {
         let palette = crate::left::NodePalette::load_from_dict(&dict);
         let all = palette.search("");
         // StubDictReader::with_kinds adds to the 12 default kinds, so total >= 3.
-        assert!(all.len() >= 3, "empty query must return all palette entries (>= 3), got {}", all.len());
+        assert!(
+            all.len() >= 3,
+            "empty query must return all palette entries (>= 3), got {}",
+            all.len()
+        );
     }
 
     // ── LibraryPanel ─────────────────────────────────────────────────────────
@@ -1022,7 +1153,11 @@ mod integration_tests {
         let mut library = crate::left::LibraryPanel::new();
         library.load_from_dict(&dict);
         // StubDictReader adds to 12 default kinds, so total >= 3.
-        assert!(library.kind_count() >= 3, "library must have >= 3 kinds, got {}", library.kind_count());
+        assert!(
+            library.kind_count() >= 3,
+            "library must have >= 3 kinds, got {}",
+            library.kind_count()
+        );
     }
 
     // ── PropertiesPanel ───────────────────────────────────────────────────────
@@ -1033,7 +1168,10 @@ mod integration_tests {
         panel.load_entity("ent-1", "Concept");
         panel.set_row("word", "synergy", false);
         let row = panel.rows.iter().find(|r| r.key == "word").unwrap();
-        assert_eq!(row.value, "synergy", "properties panel must show entity word");
+        assert_eq!(
+            row.value, "synergy",
+            "properties panel must show entity word"
+        );
     }
 
     #[test]
@@ -1076,7 +1214,11 @@ mod integration_tests {
         chat.push_message(ChatMessage::user("u1", "msg"));
         // Simulate clear by reinitializing.
         chat.messages.clear();
-        assert_eq!(chat.message_count(), 0, "chat history must be empty after clear");
+        assert_eq!(
+            chat.message_count(),
+            0,
+            "chat history must be empty after clear"
+        );
     }
 
     // ── DeepThinkPanel ────────────────────────────────────────────────────────
@@ -1098,7 +1240,10 @@ mod integration_tests {
         // Completed panel must still paint.
         let mut scene = nom_gpui::scene::Scene::new();
         panel.paint_scene(320.0, 400.0, &mut scene);
-        assert!(!scene.quads.is_empty(), "completed DeepThinkPanel must still emit quads");
+        assert!(
+            !scene.quads.is_empty(),
+            "completed DeepThinkPanel must still emit quads"
+        );
     }
 
     #[test]
@@ -1121,22 +1266,42 @@ mod integration_tests {
 
     #[test]
     fn panel_file_tree_rename_node() {
-        let mut node = crate::left::FileNode::file("old_name.nom", 0, crate::left::FileNodeKind::NomFile);
+        let mut node =
+            crate::left::FileNode::file("old_name.nom", 0, crate::left::FileNodeKind::NomFile);
         node.name = "new_name.nom".to_string();
-        assert_eq!(node.name, "new_name.nom", "file node rename must update name field");
+        assert_eq!(
+            node.name, "new_name.nom",
+            "file node rename must update name field"
+        );
     }
 
     #[test]
     fn panel_file_tree_delete_node() {
         // Use an empty FileTreePanel with a fresh section to avoid new()'s default nodes.
         let mut panel = crate::left::FileTreePanel {
-            sections: vec![crate::left::file_tree::CollapsibleSection::new("test", "Test")],
+            sections: vec![crate::left::file_tree::CollapsibleSection::new(
+                "test", "Test",
+            )],
             selected_id: None,
         };
-        panel.sections[0].nodes.push(crate::left::FileNode::file("to_delete.nom", 0, crate::left::FileNodeKind::NomFile));
-        panel.sections[0].nodes.push(crate::left::FileNode::file("keep.nom", 0, crate::left::FileNodeKind::NomFile));
-        panel.sections[0].nodes.retain(|n| n.name != "to_delete.nom");
-        assert_eq!(panel.sections[0].nodes.len(), 1, "delete must remove one node");
+        panel.sections[0].nodes.push(crate::left::FileNode::file(
+            "to_delete.nom",
+            0,
+            crate::left::FileNodeKind::NomFile,
+        ));
+        panel.sections[0].nodes.push(crate::left::FileNode::file(
+            "keep.nom",
+            0,
+            crate::left::FileNodeKind::NomFile,
+        ));
+        panel.sections[0]
+            .nodes
+            .retain(|n| n.name != "to_delete.nom");
+        assert_eq!(
+            panel.sections[0].nodes.len(),
+            1,
+            "delete must remove one node"
+        );
         assert_eq!(panel.sections[0].nodes[0].name, "keep.nom");
     }
 
@@ -1150,19 +1315,33 @@ mod integration_tests {
             ],
             selected_id: None,
         };
-        panel.sections[0].nodes.push(crate::left::FileNode::file("movable.nom", 0, crate::left::FileNodeKind::NomFile));
+        panel.sections[0].nodes.push(crate::left::FileNode::file(
+            "movable.nom",
+            0,
+            crate::left::FileNodeKind::NomFile,
+        ));
         let node = panel.sections[0].nodes.remove(0);
         panel.sections[1].nodes.push(node);
-        assert!(panel.sections[0].nodes.is_empty(), "source section must be empty after move");
-        assert_eq!(panel.sections[1].nodes[0].name, "movable.nom", "destination section must have the moved node");
+        assert!(
+            panel.sections[0].nodes.is_empty(),
+            "source section must be empty after move"
+        );
+        assert_eq!(
+            panel.sections[1].nodes[0].name, "movable.nom",
+            "destination section must have the moved node"
+        );
     }
 
     #[test]
     fn panel_file_tree_new_file_at_path() {
         let mut panel = crate::left::FileTreePanel::new();
-        let new_file = crate::left::FileNode::file("new_file.nom", 0, crate::left::FileNodeKind::NomFile);
+        let new_file =
+            crate::left::FileNode::file("new_file.nom", 0, crate::left::FileNodeKind::NomFile);
         panel.sections[0].nodes.push(new_file);
-        let found = panel.sections[0].nodes.iter().any(|n| n.name == "new_file.nom");
+        let found = panel.sections[0]
+            .nodes
+            .iter()
+            .any(|n| n.name == "new_file.nom");
         assert!(found, "new file must appear in the file tree");
     }
 
@@ -1171,7 +1350,10 @@ mod integration_tests {
         let mut panel = crate::left::FileTreePanel::new();
         let folder = crate::left::FileNode::dir("new_folder", 0);
         panel.sections[0].nodes.push(folder);
-        let found = panel.sections[0].nodes.iter().any(|n| n.name == "new_folder");
+        let found = panel.sections[0]
+            .nodes
+            .iter()
+            .any(|n| n.name == "new_folder");
         assert!(found, "new folder must appear in the file tree");
     }
 
@@ -1186,7 +1368,10 @@ mod integration_tests {
             node.is_expanded = false;
         }
         let all_collapsed = panel.sections[0].nodes.iter().all(|n| !n.is_expanded);
-        assert!(all_collapsed, "all nodes must be collapsed after collapse_all");
+        assert!(
+            all_collapsed,
+            "all nodes must be collapsed after collapse_all"
+        );
     }
 
     #[test]
@@ -1224,19 +1409,32 @@ mod integration_tests {
     #[test]
     fn command_palette_opens_empty() {
         let palette = CommandPalette::new();
-        assert!(palette.items.is_empty(), "new command palette must start with no items");
+        assert!(
+            palette.items.is_empty(),
+            "new command palette must start with no items"
+        );
     }
 
     /// command_palette_search_filters: searching filters the item list.
     #[test]
     fn command_palette_search_filters() {
         let mut palette = CommandPalette::new();
-        palette.items.push(CommandPaletteItem::new("Open File", "open a file"));
-        palette.items.push(CommandPaletteItem::new("Save File", "save the current file"));
-        palette.items.push(CommandPaletteItem::new("Run Build", "execute build pipeline"));
+        palette
+            .items
+            .push(CommandPaletteItem::new("Open File", "open a file"));
+        palette.items.push(CommandPaletteItem::new(
+            "Save File",
+            "save the current file",
+        ));
+        palette.items.push(CommandPaletteItem::new(
+            "Run Build",
+            "execute build pipeline",
+        ));
         // Simulate search filter: keep only items containing "file" (case-insensitive)
         let query = "file";
-        let filtered: Vec<_> = palette.items.iter()
+        let filtered: Vec<_> = palette
+            .items
+            .iter()
             .filter(|i| i.label.to_lowercase().contains(query))
             .collect();
         assert_eq!(filtered.len(), 2, "search 'file' must match 2 items");
@@ -1246,9 +1444,16 @@ mod integration_tests {
     #[test]
     fn command_palette_select_executes_command() {
         let mut palette = CommandPalette::new();
-        palette.items.push(CommandPaletteItem::new("Execute Build", "run the build pipeline"));
+        palette.items.push(CommandPaletteItem::new(
+            "Execute Build",
+            "run the build pipeline",
+        ));
         let selected = palette.items.first().map(|i| i.label.as_str());
-        assert_eq!(selected, Some("Execute Build"), "selecting first item must yield its label");
+        assert_eq!(
+            selected,
+            Some("Execute Build"),
+            "selecting first item must yield its label"
+        );
     }
 
     /// command_palette_close_on_escape: simulated escape clears query state.
@@ -1265,10 +1470,20 @@ mod integration_tests {
     #[test]
     fn command_palette_entries_count_positive() {
         let mut palette = CommandPalette::new();
-        palette.items.push(CommandPaletteItem::new("Entry A", "desc a"));
-        palette.items.push(CommandPaletteItem::new("Entry B", "desc b"));
-        palette.items.push(CommandPaletteItem::new("Entry C", "desc c"));
-        assert_eq!(palette.items.len(), 3, "palette must have 3 entries after 3 pushes");
+        palette
+            .items
+            .push(CommandPaletteItem::new("Entry A", "desc a"));
+        palette
+            .items
+            .push(CommandPaletteItem::new("Entry B", "desc b"));
+        palette
+            .items
+            .push(CommandPaletteItem::new("Entry C", "desc c"));
+        assert_eq!(
+            palette.items.len(),
+            3,
+            "palette must have 3 entries after 3 pushes"
+        );
         assert!(palette.items.len() > 0, "entry count must be positive");
     }
 
@@ -1295,7 +1510,11 @@ mod integration_tests {
     fn quick_open_select_navigates() {
         let files = vec!["main.nom", "lib.nom", "config.toml"];
         let selected = files.iter().find(|&&f| f == "lib.nom");
-        assert_eq!(selected.copied(), Some("lib.nom"), "selection must navigate to lib.nom");
+        assert_eq!(
+            selected.copied(),
+            Some("lib.nom"),
+            "selection must navigate to lib.nom"
+        );
     }
 
     /// settings_open_on_ctrl_comma: the shortcut string contains "ctrl" and ",".
@@ -1310,7 +1529,10 @@ mod integration_tests {
     #[test]
     fn settings_close_on_escape() {
         let close_key = "escape";
-        assert_eq!(close_key, "escape", "settings panel must close on Escape key");
+        assert_eq!(
+            close_key, "escape",
+            "settings panel must close on Escape key"
+        );
     }
 
     /// settings_save_persists: stored value is retrievable.
@@ -1320,22 +1542,29 @@ mod integration_tests {
         store.insert("theme", "dark");
         store.insert("font_size", "14");
         assert_eq!(store["theme"], "dark", "saved theme must be retrievable");
-        assert_eq!(store["font_size"], "14", "saved font_size must be retrievable");
+        assert_eq!(
+            store["font_size"], "14",
+            "saved font_size must be retrievable"
+        );
     }
 
     /// settings_reset_to_defaults: resetting returns all values to defaults.
     #[test]
     fn settings_reset_to_defaults() {
-        let defaults: std::collections::HashMap<&str, &str> = [
-            ("theme", "dark"),
-            ("font_size", "14"),
-        ].iter().copied().collect();
+        let defaults: std::collections::HashMap<&str, &str> =
+            [("theme", "dark"), ("font_size", "14")]
+                .iter()
+                .copied()
+                .collect();
         let mut current = defaults.clone();
         current.insert("theme", "light");
         // Reset
         let current = defaults.clone();
         assert_eq!(current["theme"], "dark", "theme must be reset to default");
-        assert_eq!(current["font_size"], "14", "font_size must be reset to default");
+        assert_eq!(
+            current["font_size"], "14",
+            "font_size must be reset to default"
+        );
     }
 
     /// panel_keyboard_shortcut_triggers_action: ctrl+p triggers "open_palette".
@@ -1345,28 +1574,41 @@ mod integration_tests {
         shortcuts.insert("ctrl+p", "open_palette");
         shortcuts.insert("ctrl+s", "save_all");
         let action = shortcuts.get("ctrl+p").copied();
-        assert_eq!(action, Some("open_palette"), "ctrl+p must trigger 'open_palette'");
+        assert_eq!(
+            action,
+            Some("open_palette"),
+            "ctrl+p must trigger 'open_palette'"
+        );
     }
 
     /// panel_keyboard_modifier_ctrl: Ctrl modifier is recognized.
     #[test]
     fn panel_keyboard_modifier_ctrl() {
         let shortcut = "ctrl+k";
-        assert!(shortcut.starts_with("ctrl"), "Ctrl modifier must be recognized");
+        assert!(
+            shortcut.starts_with("ctrl"),
+            "Ctrl modifier must be recognized"
+        );
     }
 
     /// panel_keyboard_modifier_shift: Shift modifier is recognized.
     #[test]
     fn panel_keyboard_modifier_shift() {
         let shortcut = "shift+enter";
-        assert!(shortcut.starts_with("shift"), "Shift modifier must be recognized");
+        assert!(
+            shortcut.starts_with("shift"),
+            "Shift modifier must be recognized"
+        );
     }
 
     /// panel_keyboard_modifier_alt: Alt modifier is recognized.
     #[test]
     fn panel_keyboard_modifier_alt() {
         let shortcut = "alt+f4";
-        assert!(shortcut.starts_with("alt"), "Alt modifier must be recognized");
+        assert!(
+            shortcut.starts_with("alt"),
+            "Alt modifier must be recognized"
+        );
     }
 
     /// panel_search_highlights_match: matching substring is present in search results.
@@ -1375,7 +1617,11 @@ mod integration_tests {
         let entries = vec!["findable_item", "other_item", "another_findable"];
         let query = "findable";
         let matches: Vec<_> = entries.iter().filter(|e| e.contains(query)).collect();
-        assert_eq!(matches.len(), 2, "search must find 2 entries containing 'findable'");
+        assert_eq!(
+            matches.len(),
+            2,
+            "search must find 2 entries containing 'findable'"
+        );
     }
 
     /// panel_search_no_match_shows_empty_state: empty result for non-matching query.
@@ -1384,7 +1630,10 @@ mod integration_tests {
         let entries = vec!["alpha", "beta", "gamma"];
         let query = "zzzzz_no_match";
         let matches: Vec<_> = entries.iter().filter(|e| e.contains(query)).collect();
-        assert!(matches.is_empty(), "non-matching query must yield empty result");
+        assert!(
+            matches.is_empty(),
+            "non-matching query must yield empty result"
+        );
     }
 
     /// panel_resize_changes_width: resizing changes effective size.
@@ -1392,7 +1641,10 @@ mod integration_tests {
     fn panel_resize_changes_width() {
         let mut width = 248.0_f32;
         width = 320.0;
-        assert!((width - 320.0).abs() < f32::EPSILON, "width must change to 320 after resize");
+        assert!(
+            (width - 320.0).abs() < f32::EPSILON,
+            "width must change to 320 after resize"
+        );
     }
 
     /// panel_resize_min_width_enforced: width below minimum is clamped up.
@@ -1419,7 +1671,10 @@ mod integration_tests {
         let mut x = 100.0_f32;
         let delta = 50.0_f32;
         x += delta;
-        assert!((x - 150.0).abs() < f32::EPSILON, "drag must move panel position by delta");
+        assert!(
+            (x - 150.0).abs() < f32::EPSILON,
+            "drag must move panel position by delta"
+        );
     }
 
     /// panel_drop_on_dock_reorders: dropping panel into dock list reorders it.
@@ -1429,7 +1684,10 @@ mod integration_tests {
         // Move "chat" to index 0
         let removed = panels.remove(2);
         panels.insert(0, removed);
-        assert_eq!(panels[0], "chat", "dropped panel must move to target position");
+        assert_eq!(
+            panels[0], "chat",
+            "dropped panel must move to target position"
+        );
         assert_eq!(panels.len(), 3, "panel count must remain 3 after reorder");
     }
 
@@ -1441,7 +1699,10 @@ mod integration_tests {
         let right = total_width - left;
         assert!((left - 500.0).abs() < f32::EPSILON);
         assert!((right - 500.0).abs() < f32::EPSILON);
-        assert!((left + right - total_width).abs() < f32::EPSILON, "split panels must fill total width");
+        assert!(
+            (left + right - total_width).abs() < f32::EPSILON,
+            "split panels must fill total width"
+        );
     }
 
     /// panel_split_vertical: two panels stacked have equal heights.
@@ -1450,7 +1711,10 @@ mod integration_tests {
         let total_height = 800.0_f32;
         let top = total_height / 2.0;
         let bottom = total_height - top;
-        assert!((top + bottom - total_height).abs() < f32::EPSILON, "split panels must fill total height");
+        assert!(
+            (top + bottom - total_height).abs() < f32::EPSILON,
+            "split panels must fill total height"
+        );
     }
 
     /// panel_close_removes_from_layout: closing removes the panel from the list.
@@ -1459,7 +1723,10 @@ mod integration_tests {
         let mut layout = vec!["file-tree", "chat", "properties"];
         layout.retain(|&p| p != "chat");
         assert_eq!(layout.len(), 2, "closing a panel must reduce count by 1");
-        assert!(!layout.contains(&"chat"), "closed panel must not be in layout");
+        assert!(
+            !layout.contains(&"chat"),
+            "closed panel must not be in layout"
+        );
     }
 
     /// panel_reopen_restores_last_state: reopening adds panel back to layout.
@@ -1469,7 +1736,10 @@ mod integration_tests {
         let restored = "chat";
         layout.push(restored);
         assert_eq!(layout.len(), 3, "reopening must add panel back");
-        assert!(layout.contains(&restored), "restored panel must be in layout");
+        assert!(
+            layout.contains(&restored),
+            "restored panel must be in layout"
+        );
     }
 
     /// panel_layout_serialization_round_trip: layout serializes to string and back.
@@ -1478,7 +1748,10 @@ mod integration_tests {
         let layout = vec!["file-tree", "chat", "properties"];
         let serialized = layout.join(",");
         let deserialized: Vec<&str> = serialized.split(',').collect();
-        assert_eq!(deserialized, layout, "layout must survive serialization round-trip");
+        assert_eq!(
+            deserialized, layout,
+            "layout must survive serialization round-trip"
+        );
     }
 
     /// panel_layout_default_on_fresh_state: default dock has expected panels.
@@ -1486,8 +1759,16 @@ mod integration_tests {
     fn panel_layout_default_on_fresh_state() {
         let mut dock = Dock::new(DockPosition::Left);
         dock.add_panel("file-tree", 248.0);
-        assert_eq!(dock.panel_count(), 1, "fresh dock with one panel must report count 1");
-        assert_eq!(dock.active_panel_id(), Some("file-tree"), "default active panel must be file-tree");
+        assert_eq!(
+            dock.panel_count(),
+            1,
+            "fresh dock with one panel must report count 1"
+        );
+        assert_eq!(
+            dock.active_panel_id(),
+            Some("file-tree"),
+            "default active panel must be file-tree"
+        );
     }
 
     /// panel_notification_appears: a notification is added to the list.
@@ -1505,16 +1786,17 @@ mod integration_tests {
         let mut notifications: Vec<(&str, &str)> = vec![("info", "Task done")];
         // Auto-dismiss: remove info notifications
         notifications.retain(|(kind, _)| *kind != "info");
-        assert!(notifications.is_empty(), "info notifications must be auto-dismissed");
+        assert!(
+            notifications.is_empty(),
+            "info notifications must be auto-dismissed"
+        );
     }
 
     /// panel_notification_error_persists: error notifications are NOT auto-dismissed.
     #[test]
     fn panel_notification_error_persists() {
-        let mut notifications: Vec<(&str, &str)> = vec![
-            ("info", "done"),
-            ("error", "Build failed"),
-        ];
+        let mut notifications: Vec<(&str, &str)> =
+            vec![("info", "done"), ("error", "Build failed")];
         // Auto-dismiss only removes info; error persists
         notifications.retain(|(kind, _)| *kind != "info");
         assert_eq!(notifications.len(), 1, "error notification must persist");
@@ -1526,8 +1808,14 @@ mod integration_tests {
     fn panel_status_bar_shows_cursor_pos() {
         let mut bar = crate::statusbar::StatusBar::new();
         bar.set_center("Ln 42, Col 8");
-        assert!(bar.center.content.contains("42"), "status bar must show line number");
-        assert!(bar.center.content.contains("8"), "status bar must show column number");
+        assert!(
+            bar.center.content.contains("42"),
+            "status bar must show line number"
+        );
+        assert!(
+            bar.center.content.contains("8"),
+            "status bar must show column number"
+        );
     }
 
     /// panel_status_bar_shows_branch: status bar left slot contains branch name.
@@ -1535,7 +1823,10 @@ mod integration_tests {
     fn panel_status_bar_shows_branch() {
         let mut bar = crate::statusbar::StatusBar::new();
         bar.set_left("main");
-        assert!(!bar.left.content.is_empty(), "status bar branch slot must be non-empty");
+        assert!(
+            !bar.left.content.is_empty(),
+            "status bar branch slot must be non-empty"
+        );
         assert_eq!(bar.left.content, "main", "branch slot must show 'main'");
     }
 
@@ -1546,8 +1837,14 @@ mod integration_tests {
         let error_count = 3usize;
         let label = format!("{error_count} errors");
         bar.set_right(&label);
-        assert!(bar.right.content.contains('3'), "status bar must show error count");
-        assert!(bar.right.content.contains("errors"), "status bar must include 'errors' label");
+        assert!(
+            bar.right.content.contains('3'),
+            "status bar must show error count"
+        );
+        assert!(
+            bar.right.content.contains("errors"),
+            "status bar must include 'errors' label"
+        );
     }
 
     // =========================================================================
@@ -1561,7 +1858,10 @@ mod integration_tests {
         let layout = vec!["file-tree", "chat", "properties"];
         let saved = layout.join(",");
         assert!(!saved.is_empty(), "serialized layout must not be empty");
-        assert!(saved.contains("file-tree"), "saved layout must contain 'file-tree'");
+        assert!(
+            saved.contains("file-tree"),
+            "saved layout must contain 'file-tree'"
+        );
     }
 
     #[test]
@@ -1605,12 +1905,16 @@ mod integration_tests {
         // Extra panels in saved state that don't exist in the current layout are ignored.
         let saved = "file-tree,chat,properties,unknown-panel";
         let known = ["file-tree", "chat", "properties"];
-        let loaded: Vec<&str> = saved
-            .split(',')
-            .filter(|p| known.contains(p))
-            .collect();
-        assert_eq!(loaded.len(), 3, "extra (unknown) panels must be filtered out");
-        assert!(!loaded.contains(&"unknown-panel"), "unknown-panel must not appear in loaded layout");
+        let loaded: Vec<&str> = saved.split(',').filter(|p| known.contains(p)).collect();
+        assert_eq!(
+            loaded.len(),
+            3,
+            "extra (unknown) panels must be filtered out"
+        );
+        assert!(
+            !loaded.contains(&"unknown-panel"),
+            "unknown-panel must not appear in loaded layout"
+        );
     }
 
     // --- Drag-to-reorder ---
@@ -1645,7 +1949,7 @@ mod integration_tests {
         let original = vec!["file-tree", "chat", "properties"];
         let mut panels = original.clone();
         panels.swap(0, 2); // simulate drag start
-        // Cancel — restore
+                           // Cancel — restore
         panels = original.clone();
         assert_eq!(panels, original, "cancel must restore original order");
     }
@@ -1665,8 +1969,14 @@ mod integration_tests {
         let total = 1000.0_f32;
         let left = total * 0.5;
         let right = total - left;
-        assert!((left - 500.0).abs() < f32::EPSILON, "50/50 split left must be 500");
-        assert!((right - 500.0).abs() < f32::EPSILON, "50/50 split right must be 500");
+        assert!(
+            (left - 500.0).abs() < f32::EPSILON,
+            "50/50 split left must be 500"
+        );
+        assert!(
+            (right - 500.0).abs() < f32::EPSILON,
+            "50/50 split right must be 500"
+        );
     }
 
     #[test]
@@ -1674,8 +1984,14 @@ mod integration_tests {
         let total = 1000.0_f32;
         let left = total * 0.3;
         let right = total - left;
-        assert!((left - 300.0).abs() < f32::EPSILON, "30/70 split left must be 300");
-        assert!((right - 700.0).abs() < f32::EPSILON, "30/70 split right must be 700");
+        assert!(
+            (left - 300.0).abs() < f32::EPSILON,
+            "30/70 split left must be 300"
+        );
+        assert!(
+            (right - 700.0).abs() < f32::EPSILON,
+            "30/70 split right must be 700"
+        );
     }
 
     #[test]
@@ -1684,9 +2000,15 @@ mod integration_tests {
         let min = 120.0_f32;
         let desired_left = 50.0_f32;
         let effective_left = desired_left.max(min);
-        assert_eq!(effective_left, min, "split pane must not go below min width");
+        assert_eq!(
+            effective_left, min,
+            "split pane must not go below min width"
+        );
         let effective_right = (total - effective_left).max(min);
-        assert!(effective_right >= min, "right pane must also respect min width");
+        assert!(
+            effective_right >= min,
+            "right pane must also respect min width"
+        );
     }
 
     #[test]
@@ -1708,7 +2030,11 @@ mod integration_tests {
         group.split(SplitDirection::Horizontal, "pane-b");
         // Root must be an Axis with Horizontal direction.
         if let Member::Axis(ref ax) = group.root {
-            assert_eq!(ax.direction, SplitDirection::Horizontal, "axis must be Horizontal");
+            assert_eq!(
+                ax.direction,
+                SplitDirection::Horizontal,
+                "axis must be Horizontal"
+            );
         } else {
             panic!("root must be Axis after horizontal split");
         }
@@ -1720,7 +2046,11 @@ mod integration_tests {
         let mut group = PaneGroup::single("pane-a");
         group.split(SplitDirection::Vertical, "pane-b");
         if let Member::Axis(ref ax) = group.root {
-            assert_eq!(ax.direction, SplitDirection::Vertical, "axis must be Vertical");
+            assert_eq!(
+                ax.direction,
+                SplitDirection::Vertical,
+                "axis must be Vertical"
+            );
         } else {
             panic!("root must be Axis after vertical split");
         }
@@ -1736,7 +2066,11 @@ mod integration_tests {
         let kind_refs: Vec<&str> = kinds.iter().map(|s| s.as_str()).collect();
         let dict = StubDictReader::with_kinds(&kind_refs);
         let palette = crate::left::NodePalette::load_from_dict(&dict);
-        assert!(palette.entry_count() >= 100, "palette must hold >= 100 entries, got {}", palette.entry_count());
+        assert!(
+            palette.entry_count() >= 100,
+            "palette must hold >= 100 entries, got {}",
+            palette.entry_count()
+        );
     }
 
     #[test]
@@ -1749,7 +2083,10 @@ mod integration_tests {
         let palette = crate::left::NodePalette::load_from_dict(&dict);
         let results = palette.search("Kind0");
         // Kind0, Kind00..Kind09 → matches "Kind0" prefix in names.
-        assert!(!results.is_empty(), "search 'Kind0' must return at least 1 result");
+        assert!(
+            !results.is_empty(),
+            "search 'Kind0' must return at least 1 result"
+        );
     }
 
     #[test]
@@ -1758,7 +2095,10 @@ mod integration_tests {
         let dict = StubDictReader::with_kinds(&["DbKindA", "DbKindB", "DbKindC"]);
         let mut library = crate::left::LibraryPanel::new();
         library.load_from_dict(&dict);
-        assert!(library.kind_count() >= 3, "library must show DB-driven items");
+        assert!(
+            library.kind_count() >= 3,
+            "library must show DB-driven items"
+        );
     }
 
     #[test]
@@ -1768,7 +2108,10 @@ mod integration_tests {
         let mut library = crate::left::LibraryPanel::new();
         library.load_from_dict(&dict);
         // All kinds from StubDictReader fall into the same category.
-        assert!(library.kind_count() >= 3, "all loaded kinds must appear in library");
+        assert!(
+            library.kind_count() >= 3,
+            "all loaded kinds must appear in library"
+        );
     }
 
     #[test]
@@ -1776,7 +2119,10 @@ mod integration_tests {
         let mut panel = crate::right::PropertiesPanel::new();
         panel.load_entity("ref-id-42", "Function");
         let id = panel.entity.id().unwrap_or("");
-        assert_eq!(id, "ref-id-42", "properties panel must display the NomtuRef id");
+        assert_eq!(
+            id, "ref-id-42",
+            "properties panel must display the NomtuRef id"
+        );
     }
 
     #[test]
@@ -1784,7 +2130,10 @@ mod integration_tests {
         let mut panel = crate::right::PropertiesPanel::new();
         panel.load_entity("ent-1", "Concept");
         let kind = panel.entity.kind().unwrap_or("");
-        assert_eq!(kind, "Concept", "properties panel must display the NomtuRef kind");
+        assert_eq!(
+            kind, "Concept",
+            "properties panel must display the NomtuRef kind"
+        );
     }
 
     #[test]
@@ -1797,15 +2146,25 @@ mod integration_tests {
             row.value = "updated".to_string();
         }
         let row = panel.rows.iter().find(|r| r.key == "name").unwrap();
-        assert_eq!(row.value, "updated", "inline edit must update the row value");
+        assert_eq!(
+            row.value, "updated",
+            "inline edit must update the row value"
+        );
     }
 
     #[test]
     fn chat_sends_message_appends_to_history() {
         let mut chat = ChatSidebarPanel::new();
         chat.push_message(ChatMessage::user("u1", "hello world"));
-        assert_eq!(chat.message_count(), 1, "sent message must appear in history");
-        assert!(chat.messages[0].content.contains("hello world"), "message content must match");
+        assert_eq!(
+            chat.message_count(),
+            1,
+            "sent message must appear in history"
+        );
+        assert!(
+            chat.messages[0].content.contains("hello world"),
+            "message content must match"
+        );
     }
 
     #[test]
@@ -1830,8 +2189,15 @@ mod integration_tests {
         for i in 0..20 {
             chat.push_message(ChatMessage::user(&format!("u{i}"), &format!("message {i}")));
         }
-        assert_eq!(chat.message_count(), 20, "chat history must hold 20 messages");
-        assert!(chat.scroll_to_bottom, "scroll_to_bottom must be set after multiple pushes");
+        assert_eq!(
+            chat.message_count(),
+            20,
+            "chat history must hold 20 messages"
+        );
+        assert!(
+            chat.scroll_to_bottom,
+            "scroll_to_bottom must be set after multiple pushes"
+        );
     }
 
     #[test]
@@ -1840,24 +2206,43 @@ mod integration_tests {
         // Simulate git status: tracked vs untracked via different kinds.
         let tracked = FileNode::file("tracked.nom", 0, FileNodeKind::NomFile);
         let asset = FileNode::file("logo.png", 0, FileNodeKind::Asset);
-        assert_eq!(tracked.kind, FileNodeKind::NomFile, "tracked .nom file must have NomFile kind");
-        assert_eq!(asset.kind, FileNodeKind::Asset, "asset file must have Asset kind");
+        assert_eq!(
+            tracked.kind,
+            FileNodeKind::NomFile,
+            "tracked .nom file must have NomFile kind"
+        );
+        assert_eq!(
+            asset.kind,
+            FileNodeKind::Asset,
+            "asset file must have Asset kind"
+        );
         // Both are displayable in the file tree with distinct badges.
-        assert_ne!(tracked.kind, asset.kind, "NomFile and Asset must be distinct kinds");
+        assert_ne!(
+            tracked.kind, asset.kind,
+            "NomFile and Asset must be distinct kinds"
+        );
     }
 
     #[test]
     fn file_tree_untracked_file_marker() {
         // Asset files represent untracked/external resources in the file tree.
         let node = FileNode::file("untracked.png", 0, FileNodeKind::Asset);
-        assert_eq!(node.kind, FileNodeKind::Asset, "untracked external file must be Asset kind");
+        assert_eq!(
+            node.kind,
+            FileNodeKind::Asset,
+            "untracked external file must be Asset kind"
+        );
     }
 
     #[test]
     fn file_tree_modified_file_marker() {
         // NomtuFile represents modified/compiled artifacts.
         let node = FileNode::file("changed.nomtu", 0, FileNodeKind::NomtuFile);
-        assert_eq!(node.kind, FileNodeKind::NomtuFile, "compiled artifact must be NomtuFile kind");
+        assert_eq!(
+            node.kind,
+            FileNodeKind::NomtuFile,
+            "compiled artifact must be NomtuFile kind"
+        );
     }
 
     #[test]
@@ -1875,9 +2260,9 @@ mod integration_tests {
             b_is_dir.cmp(&a_is_dir).then(a.name.cmp(&b.name))
         });
         // After sort, first two must be directories.
-        let first_two_are_dirs = nodes[..2].iter().all(|n| {
-            matches!(n.kind, FileNodeKind::Directory)
-        });
+        let first_two_are_dirs = nodes[..2]
+            .iter()
+            .all(|n| matches!(n.kind, FileNodeKind::Directory));
         assert!(first_two_are_dirs, "directories must sort before files");
     }
 
@@ -1885,7 +2270,10 @@ mod integration_tests {
     fn status_bar_lsp_status_shown() {
         let mut bar = crate::statusbar::StatusBar::new();
         bar.set_right("LSP: ready");
-        assert!(bar.right.content.contains("LSP"), "status bar must show LSP status");
+        assert!(
+            bar.right.content.contains("LSP"),
+            "status bar must show LSP status"
+        );
     }
 
     #[test]
@@ -1895,7 +2283,11 @@ mod integration_tests {
         if !content.is_empty() {
             chat.push_message(ChatMessage::user("u1", content));
         }
-        assert_eq!(chat.message_count(), 0, "empty message must not be added to history");
+        assert_eq!(
+            chat.message_count(),
+            0,
+            "empty message must not be added to history"
+        );
     }
 
     #[test]
@@ -1916,7 +2308,10 @@ mod integration_tests {
         let mut bar = crate::statusbar::StatusBar::new();
         bar.set_left("main");
         bar.set_left("");
-        assert!(bar.left.content.is_empty(), "status bar slot must be clearable");
+        assert!(
+            bar.left.content.is_empty(),
+            "status bar slot must be clearable"
+        );
     }
 
     #[test]
@@ -1940,7 +2335,10 @@ mod integration_tests {
         let panels = vec!["file-tree", "properties", "chat"];
         let current = 0usize;
         let next = (current + 1) % panels.len();
-        assert_eq!(panels[next], "properties", "Tab must move focus to the next panel");
+        assert_eq!(
+            panels[next], "properties",
+            "Tab must move focus to the next panel"
+        );
     }
 
     #[test]
@@ -1948,7 +2346,10 @@ mod integration_tests {
         let panels = vec!["file-tree", "properties", "chat"];
         let current = 2usize; // last
         let next = (current + 1) % panels.len();
-        assert_eq!(panels[next], "file-tree", "Tab past last panel must wrap to first");
+        assert_eq!(
+            panels[next], "file-tree",
+            "Tab past last panel must wrap to first"
+        );
     }
 
     #[test]
@@ -1965,7 +2366,10 @@ mod integration_tests {
         let panels = vec!["file-tree", "properties", "chat"];
         let current = 2usize;
         let prev = (current + panels.len() - 1) % panels.len();
-        assert_eq!(panels[prev], "properties", "Shift+Tab must move to previous panel");
+        assert_eq!(
+            panels[prev], "properties",
+            "Shift+Tab must move to previous panel"
+        );
     }
 
     #[test]
@@ -1973,7 +2377,10 @@ mod integration_tests {
         let panels = vec!["file-tree", "properties", "chat"];
         let current = 0usize; // first
         let prev = (current + panels.len() - 1) % panels.len();
-        assert_eq!(panels[prev], "chat", "Shift+Tab past first panel must wrap to last");
+        assert_eq!(
+            panels[prev], "chat",
+            "Shift+Tab past first panel must wrap to last"
+        );
     }
 
     #[test]
@@ -1982,7 +2389,10 @@ mod integration_tests {
         let start = 1usize;
         let after_tab = (start + 1) % panels.len();
         let back = (after_tab + panels.len() - 1) % panels.len();
-        assert_eq!(back, start, "Tab then Shift+Tab must return to original focus");
+        assert_eq!(
+            back, start,
+            "Tab then Shift+Tab must return to original focus"
+        );
     }
 
     // --- Keyboard navigation: Escape closes overlay panels ---
@@ -2026,7 +2436,10 @@ mod integration_tests {
         let items = vec!["item-0", "item-1", "item-2"];
         let selected = 0usize;
         let after_down = (selected + 1).min(items.len() - 1);
-        assert_eq!(items[after_down], "item-1", "ArrowDown must advance selection");
+        assert_eq!(
+            items[after_down], "item-1",
+            "ArrowDown must advance selection"
+        );
     }
 
     #[test]
@@ -2042,7 +2455,10 @@ mod integration_tests {
         let items = vec!["item-0", "item-1", "item-2"];
         let selected = 2usize; // last
         let after_down = (selected + 1).min(items.len() - 1);
-        assert_eq!(after_down, 2, "ArrowDown at last item must clamp (not overflow)");
+        assert_eq!(
+            after_down, 2,
+            "ArrowDown at last item must clamp (not overflow)"
+        );
     }
 
     #[test]
@@ -2050,7 +2466,10 @@ mod integration_tests {
         let items = vec!["item-0", "item-1", "item-2"];
         let selected = 0usize;
         let after_up = selected.saturating_sub(1);
-        assert_eq!(after_up, 0, "ArrowUp at first item must clamp (not underflow)");
+        assert_eq!(
+            after_up, 0,
+            "ArrowUp at first item must clamp (not underflow)"
+        );
     }
 
     // --- Panel tab overflow: overflow indicator appears ---
@@ -2062,7 +2481,10 @@ mod integration_tests {
         let tab_width = 100.0_f32;
         let container_width = 600.0_f32;
         let overflow = (tab_count as f32 * tab_width) > container_width;
-        assert!(overflow, "overflow indicator must appear when total tab width > container");
+        assert!(
+            overflow,
+            "overflow indicator must appear when total tab width > container"
+        );
     }
 
     #[test]
@@ -2071,7 +2493,10 @@ mod integration_tests {
         let tab_width = 100.0_f32;
         let container_width = 600.0_f32;
         let overflow = (tab_count as f32 * tab_width) > container_width;
-        assert!(!overflow, "no overflow when tabs fit within container width");
+        assert!(
+            !overflow,
+            "no overflow when tabs fit within container width"
+        );
     }
 
     #[test]
@@ -2080,7 +2505,10 @@ mod integration_tests {
         let container_width = 600.0_f32;
         let tab_width = 100.0_f32;
         let visible = (container_width / tab_width).floor() as usize;
-        assert!(visible >= 1, "at least one tab must be visible at all times");
+        assert!(
+            visible >= 1,
+            "at least one tab must be visible at all times"
+        );
     }
 
     // --- Panel tab overflow: scroll tabs left/right ---
@@ -2093,7 +2521,10 @@ mod integration_tests {
         if first_visible + visible < total_tabs {
             first_visible += 1;
         }
-        assert_eq!(first_visible, 1, "scroll right must shift first visible tab by 1");
+        assert_eq!(
+            first_visible, 1,
+            "scroll right must shift first visible tab by 1"
+        );
     }
 
     #[test]
@@ -2102,7 +2533,10 @@ mod integration_tests {
         if first_visible > 0 {
             first_visible -= 1;
         }
-        assert_eq!(first_visible, 2, "scroll left must shift first visible tab back by 1");
+        assert_eq!(
+            first_visible, 2,
+            "scroll left must shift first visible tab back by 1"
+        );
     }
 
     #[test]
@@ -2113,7 +2547,11 @@ mod integration_tests {
         if first + visible < total {
             first += 1;
         }
-        assert_eq!(first, total - visible, "cannot scroll past the last visible tab");
+        assert_eq!(
+            first,
+            total - visible,
+            "cannot scroll past the last visible tab"
+        );
     }
 
     #[test]
@@ -2132,7 +2570,11 @@ mod integration_tests {
         let visible = 4usize;
         let total = 10usize;
         // Compute first_visible such that active is in [first, first+visible).
-        let first = if active >= visible { active - (visible - 1) } else { 0 };
+        let first = if active >= visible {
+            active - (visible - 1)
+        } else {
+            0
+        };
         let last = first + visible - 1;
         assert!(
             active >= first && active <= last,
@@ -2158,7 +2600,10 @@ mod integration_tests {
         let needs_scroll = active >= first_before + visible;
         assert!(needs_scroll, "active tab out of view must trigger scroll");
         let new_first = active.saturating_sub(visible - 1);
-        assert!(active >= new_first && active < new_first + visible, "after scroll, active must be visible");
+        assert!(
+            active >= new_first && active < new_first + visible,
+            "after scroll, active must be visible"
+        );
     }
 
     // --- Search within panel: filters visible items ---
@@ -2176,7 +2621,11 @@ mod integration_tests {
         let items = vec!["FileTreePanel", "LibraryPanel", "PropertiesPanel"];
         let query = "Panel";
         let filtered: Vec<_> = items.iter().filter(|i| i.contains(query)).collect();
-        assert_eq!(filtered.len(), 3, "partial match 'Panel' must return all 3 items");
+        assert_eq!(
+            filtered.len(),
+            3,
+            "partial match 'Panel' must return all 3 items"
+        );
     }
 
     #[test]
@@ -2184,7 +2633,11 @@ mod integration_tests {
         let items = vec!["FileTreePanel", "LibraryPanel", "PropertiesPanel"];
         let query = "FileTree";
         let filtered: Vec<_> = items.iter().filter(|i| i.contains(query)).collect();
-        assert_eq!(filtered.len(), 1, "specific query must return exactly 1 item");
+        assert_eq!(
+            filtered.len(),
+            1,
+            "specific query must return exactly 1 item"
+        );
     }
 
     // --- Search within panel: empty search shows all items ---
@@ -2193,8 +2646,15 @@ mod integration_tests {
     fn panel_search_empty_query_shows_all_items() {
         let items = vec!["alpha", "beta", "gamma", "delta"];
         let query = "";
-        let filtered: Vec<_> = items.iter().filter(|i| query.is_empty() || i.contains(query)).collect();
-        assert_eq!(filtered.len(), items.len(), "empty query must show all items");
+        let filtered: Vec<_> = items
+            .iter()
+            .filter(|i| query.is_empty() || i.contains(query))
+            .collect();
+        assert_eq!(
+            filtered.len(),
+            items.len(),
+            "empty query must show all items"
+        );
     }
 
     #[test]
@@ -2203,7 +2663,10 @@ mod integration_tests {
         let dict = StubDictReader::with_kinds(&["A", "B", "C"]);
         let palette = crate::left::NodePalette::load_from_dict(&dict);
         let all = palette.search("");
-        assert!(all.len() >= 3, "empty search in NodePalette must return all entries (>= 3)");
+        assert!(
+            all.len() >= 3,
+            "empty search in NodePalette must return all entries (>= 3)"
+        );
     }
 
     // --- Search within panel: no results shows empty-state ---
@@ -2213,7 +2676,10 @@ mod integration_tests {
         let items = vec!["alpha", "beta", "gamma"];
         let query = "zzz_no_match_xyz";
         let filtered: Vec<_> = items.iter().filter(|i| i.contains(query)).collect();
-        assert!(filtered.is_empty(), "no-match query must return empty result");
+        assert!(
+            filtered.is_empty(),
+            "no-match query must return empty result"
+        );
     }
 
     #[test]
@@ -2221,7 +2687,10 @@ mod integration_tests {
         // Simulate: if filtered results are empty, show empty-state message.
         let results: Vec<&str> = Vec::new();
         let show_empty_state = results.is_empty();
-        assert!(show_empty_state, "empty results must trigger empty-state message");
+        assert!(
+            show_empty_state,
+            "empty results must trigger empty-state message"
+        );
     }
 
     // --- Search within panel: case-insensitive ---
@@ -2234,7 +2703,11 @@ mod integration_tests {
             .iter()
             .filter(|i| i.to_lowercase().contains(&query.to_lowercase()))
             .collect();
-        assert_eq!(filtered.len(), 1, "uppercase query must match case-insensitively");
+        assert_eq!(
+            filtered.len(),
+            1,
+            "uppercase query must match case-insensitively"
+        );
     }
 
     #[test]
@@ -2245,7 +2718,11 @@ mod integration_tests {
             .iter()
             .filter(|i| i.to_lowercase().contains(&query.to_lowercase()))
             .collect();
-        assert_eq!(filtered.len(), 3, "mixed-case query must match all case variants");
+        assert_eq!(
+            filtered.len(),
+            3,
+            "mixed-case query must match all case variants"
+        );
     }
 
     #[test]
@@ -2256,7 +2733,11 @@ mod integration_tests {
             .iter()
             .filter(|i| i.to_lowercase().contains(&query.to_lowercase()))
             .collect();
-        assert_eq!(filtered.len(), 1, "lowercase query must match title-case item");
+        assert_eq!(
+            filtered.len(),
+            1,
+            "lowercase query must match title-case item"
+        );
     }
 
     // --- Additional coverage: PanelEntityRef, Dock, PanelSizeState ---
@@ -2264,7 +2745,10 @@ mod integration_tests {
     #[test]
     fn panel_size_state_fixed_is_not_zero() {
         let state = crate::dock::PanelSizeState::fixed(248.0);
-        assert!(state.effective_size(1000.0) > 0.0, "fixed state must return positive size");
+        assert!(
+            state.effective_size(1000.0) > 0.0,
+            "fixed state must return positive size"
+        );
     }
 
     #[test]
@@ -2284,16 +2768,29 @@ mod integration_tests {
         dock.add_panel("a", 100.0);
         dock.add_panel("b", 200.0);
         dock.add_panel("c", 150.0);
-        assert_eq!(dock.entries[0].id, "a", "first added panel must be at index 0");
-        assert_eq!(dock.entries[1].id, "b", "second added panel must be at index 1");
-        assert_eq!(dock.entries[2].id, "c", "third added panel must be at index 2");
+        assert_eq!(
+            dock.entries[0].id, "a",
+            "first added panel must be at index 0"
+        );
+        assert_eq!(
+            dock.entries[1].id, "b",
+            "second added panel must be at index 1"
+        );
+        assert_eq!(
+            dock.entries[2].id, "c",
+            "third added panel must be at index 2"
+        );
     }
 
     #[test]
     fn dock_first_panel_auto_activated() {
         let mut dock = crate::dock::Dock::new(crate::dock::DockPosition::Right);
         dock.add_panel("first", 280.0);
-        assert_eq!(dock.active_panel_id(), Some("first"), "first added panel must be auto-activated");
+        assert_eq!(
+            dock.active_panel_id(),
+            Some("first"),
+            "first added panel must be auto-activated"
+        );
     }
 
     #[test]
@@ -2397,7 +2894,11 @@ mod integration_tests {
                 0.5 + i as f32 * 0.1,
             ));
         }
-        assert_eq!(panel.steps.len(), 5, "deep-think panel must accumulate 5 streamed tokens");
+        assert_eq!(
+            panel.steps.len(),
+            5,
+            "deep-think panel must accumulate 5 streamed tokens"
+        );
     }
 
     #[test]
@@ -2408,7 +2909,11 @@ mod integration_tests {
         for t in tokens {
             panel.push_step(crate::right::ThinkingStep::new(t, 0.8));
         }
-        assert_eq!(panel.steps.len(), 5, "token stream with 5 items must produce 5 entries");
+        assert_eq!(
+            panel.steps.len(),
+            5,
+            "token stream with 5 items must produce 5 entries"
+        );
     }
 
     #[test]
@@ -2430,7 +2935,10 @@ mod integration_tests {
     fn deep_think_empty_stream_produces_no_entries() {
         let panel = crate::right::DeepThinkPanel::new();
         // begin was never called; no steps were pushed.
-        assert!(panel.steps.is_empty(), "empty stream must produce no entries");
+        assert!(
+            panel.steps.is_empty(),
+            "empty stream must produce no entries"
+        );
     }
 
     #[test]
@@ -2440,7 +2948,11 @@ mod integration_tests {
         // Simulate newline by pushing a step whose hypothesis contains a newline.
         panel.push_step(crate::right::ThinkingStep::new("line 1\nline 2", 0.7));
         panel.push_step(crate::right::ThinkingStep::new("line 3", 0.75));
-        assert_eq!(panel.steps.len(), 2, "streaming token with newline creates second step");
+        assert_eq!(
+            panel.steps.len(),
+            2,
+            "streaming token with newline creates second step"
+        );
         assert!(
             panel.steps[0].hypothesis.contains('\n'),
             "first step must contain the embedded newline"
@@ -2454,7 +2966,10 @@ mod integration_tests {
         // Simulate z-index ordering: a higher z-index value represents painting on top.
         let mut panels = vec![("file-tree", 0i32), ("modal", 200i32), ("overlay", 100i32)];
         panels.sort_by_key(|&(_, z)| z);
-        assert_eq!(panels[2].0, "modal", "highest z-index panel must be last (painted on top)");
+        assert_eq!(
+            panels[2].0, "modal",
+            "highest z-index panel must be last (painted on top)"
+        );
     }
 
     #[test]
@@ -2475,14 +2990,20 @@ mod integration_tests {
         // Simulate: a hidden panel has no hit area.
         let is_visible = false;
         let hit_area_active = is_visible;
-        assert!(!hit_area_active, "hidden panel must not participate in hit test");
+        assert!(
+            !hit_area_active,
+            "hidden panel must not participate in hit test"
+        );
     }
 
     #[test]
     fn panel_visible_included_in_hit_test() {
         let is_visible = true;
         let hit_area_active = is_visible;
-        assert!(hit_area_active, "visible panel must participate in hit test");
+        assert!(
+            hit_area_active,
+            "visible panel must participate in hit test"
+        );
     }
 
     #[test]
@@ -2544,20 +3065,26 @@ mod integration_tests {
     #[test]
     fn file_tree_expand_shows_children() {
         let mut dir = FileNode::dir("src", 0);
-        dir.children.push(FileNode::file("main.nom", 1, FileNodeKind::NomFile));
+        dir.children
+            .push(FileNode::file("main.nom", 1, FileNodeKind::NomFile));
         dir.is_expanded = false;
         // Before expand: 1 visible node (the dir only).
         let before = dir.visible_nodes().len();
         dir.is_expanded = true;
         let after = dir.visible_nodes().len();
-        assert!(after > before, "expanding dir must show children (before={before}, after={after})");
+        assert!(
+            after > before,
+            "expanding dir must show children (before={before}, after={after})"
+        );
     }
 
     #[test]
     fn file_tree_collapse_hides_children() {
         let mut dir = FileNode::dir("src", 0);
-        dir.children.push(FileNode::file("a.nom", 1, FileNodeKind::NomFile));
-        dir.children.push(FileNode::file("b.nom", 1, FileNodeKind::NomFile));
+        dir.children
+            .push(FileNode::file("a.nom", 1, FileNodeKind::NomFile));
+        dir.children
+            .push(FileNode::file("b.nom", 1, FileNodeKind::NomFile));
         dir.is_expanded = true;
         let expanded_count = dir.visible_nodes().len();
         dir.is_expanded = false;
@@ -2573,14 +3100,19 @@ mod integration_tests {
         // Build a two-level tree.
         let mut child_dir = FileNode::dir("sub", 1);
         child_dir.is_expanded = true;
-        child_dir.children.push(FileNode::file("deep.nom", 2, FileNodeKind::NomFile));
+        child_dir
+            .children
+            .push(FileNode::file("deep.nom", 2, FileNodeKind::NomFile));
         let mut root = FileNode::dir("root", 0);
         root.children.push(child_dir);
         // When root is collapsed, none of the children or grandchildren are visible.
         root.is_expanded = false;
         let visible = root.visible_nodes().len();
         // Only root itself should be visible.
-        assert_eq!(visible, 1, "collapsing root must hide all nested children (visible={visible})");
+        assert_eq!(
+            visible, 1,
+            "collapsing root must hide all nested children (visible={visible})"
+        );
     }
 
     // --- Additional misc coverage ---
@@ -2611,14 +3143,19 @@ mod integration_tests {
     #[test]
     fn chat_message_role_user_correct() {
         let msg = ChatMessage::user("u1", "hello");
-        assert_eq!(msg.role, ChatRole::User, "user() must create a User role message");
+        assert_eq!(
+            msg.role,
+            ChatRole::User,
+            "user() must create a User role message"
+        );
     }
 
     #[test]
     fn chat_message_role_assistant_correct() {
         let msg = ChatMessage::assistant_streaming("a1");
         assert_eq!(
-            msg.role, ChatRole::Assistant,
+            msg.role,
+            ChatRole::Assistant,
             "assistant_streaming() must create an Assistant role message"
         );
     }
@@ -2646,7 +3183,10 @@ mod integration_tests {
     #[test]
     fn file_tree_node_depth_matches_constructor() {
         let node = FileNode::file("test.nom", 3, FileNodeKind::NomFile);
-        assert_eq!(node.depth, 3, "file node depth must match constructor argument");
+        assert_eq!(
+            node.depth, 3,
+            "file node depth must match constructor argument"
+        );
     }
 
     #[test]
@@ -2685,9 +3225,15 @@ mod integration_tests {
         // Serializing open panels produces a non-empty string containing each panel id.
         let open = vec!["file-tree", "chat", "properties"];
         let serialized = format!("v2:{}", open.join(";"));
-        assert!(serialized.starts_with("v2:"), "v2 serialized state must start with 'v2:' version prefix");
+        assert!(
+            serialized.starts_with("v2:"),
+            "v2 serialized state must start with 'v2:' version prefix"
+        );
         for panel in &open {
-            assert!(serialized.contains(panel), "serialized state must contain '{panel}'");
+            assert!(
+                serialized.contains(panel),
+                "serialized state must contain '{panel}'"
+            );
         }
     }
 
@@ -2697,7 +3243,10 @@ mod integration_tests {
         let serialized = format!("v2:{}", original.join(";"));
         let body = serialized.strip_prefix("v2:").unwrap();
         let restored: Vec<&str> = body.split(';').collect();
-        assert_eq!(restored, original, "deserialized v2 state must equal original panel list");
+        assert_eq!(
+            restored, original,
+            "deserialized v2 state must equal original panel list"
+        );
     }
 
     #[test]
@@ -2708,8 +3257,15 @@ mod integration_tests {
         let known = ["file-tree", "chat", "properties"];
         let body = saved.strip_prefix("v2:").unwrap();
         let loaded: Vec<&str> = body.split(';').filter(|p| known.contains(p)).collect();
-        assert_eq!(loaded.len(), 2, "unknown panel type must be filtered out gracefully");
-        assert!(!loaded.contains(&"unknown-panel-xyz"), "unknown panel must not appear in loaded state");
+        assert_eq!(
+            loaded.len(),
+            2,
+            "unknown panel type must be filtered out gracefully"
+        );
+        assert!(
+            !loaded.contains(&"unknown-panel-xyz"),
+            "unknown panel must not appear in loaded state"
+        );
     }
 
     #[test]
@@ -2717,7 +3273,10 @@ mod integration_tests {
         // A v1 (unversioned) state must not be accepted as a valid v2 state.
         let v1_state = "file-tree;chat;properties"; // no "v2:" prefix
         let is_v2 = v1_state.starts_with("v2:");
-        assert!(!is_v2, "v1 state without 'v2:' prefix must be rejected as invalid v2 format");
+        assert!(
+            !is_v2,
+            "v1 state without 'v2:' prefix must be rejected as invalid v2 format"
+        );
     }
 
     #[test]
@@ -2726,10 +3285,20 @@ mod integration_tests {
         let serialized = format!("v2:{}", open.join(";"));
         // Strip prefix and check the body is empty.
         let body = serialized.strip_prefix("v2:").unwrap();
-        assert!(body.is_empty(), "empty panel list must serialize to empty config body");
+        assert!(
+            body.is_empty(),
+            "empty panel list must serialize to empty config body"
+        );
         // Deserializing must also restore an empty list.
-        let restored: Vec<&str> = if body.is_empty() { vec![] } else { body.split(';').collect() };
-        assert!(restored.is_empty(), "deserializing empty config must restore empty panel list");
+        let restored: Vec<&str> = if body.is_empty() {
+            vec![]
+        } else {
+            body.split(';').collect()
+        };
+        assert!(
+            restored.is_empty(),
+            "deserializing empty config must restore empty panel list"
+        );
     }
 
     #[test]
@@ -2743,7 +3312,10 @@ mod integration_tests {
             let (id, size_str) = entry.split_once('=').unwrap();
             let size: f32 = size_str.parse().unwrap();
             let expected = map[id];
-            assert!((size - expected).abs() < f32::EPSILON, "panel '{id}' size must round-trip to {expected}, got {size}");
+            assert!(
+                (size - expected).abs() < f32::EPSILON,
+                "panel '{id}' size must round-trip to {expected}, got {size}"
+            );
         }
     }
 
@@ -2754,7 +3326,10 @@ mod integration_tests {
         store.insert("active", "chat".to_string());
         store.insert("open", "file-tree;chat;properties".to_string());
         let active_restored = store["active"].as_str();
-        assert_eq!(active_restored, "chat", "serialized active panel must survive round-trip");
+        assert_eq!(
+            active_restored, "chat",
+            "serialized active panel must survive round-trip"
+        );
     }
 
     // --- Floating panels ---
@@ -2775,8 +3350,14 @@ mod integration_tests {
         // Move to a new arbitrary position.
         x = 450.0;
         y = 300.0;
-        assert!((x - 450.0).abs() < f32::EPSILON, "floating panel x must update after move");
-        assert!((y - 300.0).abs() < f32::EPSILON, "floating panel y must update after move");
+        assert!(
+            (x - 450.0).abs() < f32::EPSILON,
+            "floating panel x must update after move"
+        );
+        assert!(
+            (y - 300.0).abs() < f32::EPSILON,
+            "floating panel y must update after move"
+        );
     }
 
     #[test]
@@ -2784,7 +3365,10 @@ mod integration_tests {
         // Docked panels have z-index 0; floating panels must have z-index > 0.
         let z_docked: i32 = 0;
         let z_floating: i32 = 50;
-        assert!(z_floating > z_docked, "floating panel z-index ({z_floating}) must exceed docked z-index ({z_docked})");
+        assert!(
+            z_floating > z_docked,
+            "floating panel z-index ({z_floating}) must exceed docked z-index ({z_docked})"
+        );
     }
 
     #[test]
@@ -2792,7 +3376,10 @@ mod integration_tests {
         // When two floating panels occupy the same (x, y), the later one must have a higher z-index.
         let z_first: i32 = 50;
         let z_second: i32 = 51; // later panel receives a higher z
-        assert!(z_second > z_first, "later floating panel ({z_second}) must be on top of earlier ({z_first})");
+        assert!(
+            z_second > z_first,
+            "later floating panel ({z_second}) must be on top of earlier ({z_first})"
+        );
     }
 
     #[test]
@@ -2801,8 +3388,15 @@ mod integration_tests {
         let mut docked = vec!["file-tree", "properties", "chat"];
         let panel_to_float = "properties";
         docked.retain(|&p| p != panel_to_float);
-        assert!(!docked.contains(&panel_to_float), "floated panel must be removed from dock");
-        assert_eq!(docked.len(), 2, "dock must have 2 panels after floating one");
+        assert!(
+            !docked.contains(&panel_to_float),
+            "floated panel must be removed from dock"
+        );
+        assert_eq!(
+            docked.len(),
+            2,
+            "dock must have 2 panels after floating one"
+        );
     }
 
     #[test]
@@ -2812,8 +3406,15 @@ mod integration_tests {
         let panel_to_dock = "properties";
         // Panel was floating; now dock it.
         docked.push(panel_to_dock);
-        assert!(docked.contains(&panel_to_dock), "docked panel must appear in dock layout");
-        assert_eq!(docked.len(), 3, "dock must have 3 panels after docking a floating one");
+        assert!(
+            docked.contains(&panel_to_dock),
+            "docked panel must appear in dock layout"
+        );
+        assert_eq!(
+            docked.len(),
+            3,
+            "dock must have 3 panels after docking a floating one"
+        );
     }
 
     #[test]
@@ -2824,8 +3425,14 @@ mod integration_tests {
         let _dock_width = 248.0_f32; // dock size change
         let _dock_width = 320.0_f32;
         // Floating panel position is unchanged.
-        assert!((float_x - 300.0).abs() < f32::EPSILON, "floating x must not change with dock size");
-        assert!((float_y - 200.0).abs() < f32::EPSILON, "floating y must not change with dock size");
+        assert!(
+            (float_x - 300.0).abs() < f32::EPSILON,
+            "floating x must not change with dock size"
+        );
+        assert!(
+            (float_y - 200.0).abs() < f32::EPSILON,
+            "floating y must not change with dock size"
+        );
     }
 
     #[test]
@@ -2833,7 +3440,10 @@ mod integration_tests {
         // Multiple floating panels must have distinct, increasing z-indices in creation order.
         let z_values = [10i32, 11, 12, 13];
         for i in 0..z_values.len() - 1 {
-            assert!(z_values[i + 1] > z_values[i], "each subsequent floating panel must have a higher z-index");
+            assert!(
+                z_values[i + 1] > z_values[i],
+                "each subsequent floating panel must have a higher z-index"
+            );
         }
     }
 
@@ -2842,7 +3452,10 @@ mod integration_tests {
         // "Bring to front" sets this panel's z above all others.
         let other_z = 15i32;
         let brought_to_front_z = other_z + 1; // assigned on bring-to-front
-        assert!(brought_to_front_z > other_z, "bring-to-front must give this panel the highest z-index");
+        assert!(
+            brought_to_front_z > other_z,
+            "bring-to-front must give this panel the highest z-index"
+        );
     }
 
     // --- Drag-between-panels ---
@@ -2856,7 +3469,10 @@ mod integration_tests {
         let idx = panel_a.iter().position(|&x| x == "item-2").unwrap();
         let dragged = panel_a.remove(idx);
         panel_b.push(dragged);
-        assert!(!panel_a.contains(&"item-2"), "dragged item must be removed from source panel A");
+        assert!(
+            !panel_a.contains(&"item-2"),
+            "dragged item must be removed from source panel A"
+        );
     }
 
     #[test]
@@ -2867,7 +3483,10 @@ mod integration_tests {
         let idx = panel_a.iter().position(|&x| x == "item-2").unwrap();
         let dragged = panel_a.remove(idx);
         panel_b.push(dragged);
-        assert!(panel_b.contains(&"item-2"), "dragged item must be present in target panel B");
+        assert!(
+            panel_b.contains(&"item-2"),
+            "dragged item must be present in target panel B"
+        );
     }
 
     #[test]
@@ -2879,7 +3498,11 @@ mod integration_tests {
             // perform transfer (not reached)
             let _ = panel_a.remove(0);
         }
-        assert_eq!(panel_a.len(), 2, "item must stay in source panel when drop target is invalid");
+        assert_eq!(
+            panel_a.len(),
+            2,
+            "item must stay in source panel when drop target is invalid"
+        );
         assert!(panel_a.contains(&"item-1"), "item-1 must remain in panel A");
     }
 
@@ -2892,7 +3515,10 @@ mod integration_tests {
         } else {
             Err("item is not draggable")
         };
-        assert!(result.is_err(), "dragging a non-draggable item must return Err");
+        assert!(
+            result.is_err(),
+            "dragging a non-draggable item must return Err"
+        );
         assert_eq!(result.unwrap_err(), "item is not draggable");
     }
 
@@ -2901,8 +3527,12 @@ mod integration_tests {
         // Dragging from position 0 to position 2 within the same panel reorders the items.
         let mut items = vec!["a", "b", "c", "d"];
         let dragged = items.remove(0); // remove "a" from index 0
-        items.insert(2, dragged);      // insert "a" at index 2
-        assert_eq!(items, vec!["b", "c", "a", "d"], "drag within same panel must reorder items");
+        items.insert(2, dragged); // insert "a" at index 2
+        assert_eq!(
+            items,
+            vec!["b", "c", "a", "d"],
+            "drag within same panel must reorder items"
+        );
     }
 
     #[test]
@@ -2916,7 +3546,10 @@ mod integration_tests {
         let dragged = panel_a.remove(idx);
         panel_b.push(dragged);
         let total_after = panel_a.len() + panel_b.len();
-        assert_eq!(total_after, total_before, "total item count must be preserved across drag");
+        assert_eq!(
+            total_after, total_before,
+            "total item count must be preserved across drag"
+        );
     }
 
     #[test]
@@ -2927,8 +3560,16 @@ mod integration_tests {
         let b_before = panel_b.len();
         let dragged = panel_a.remove(0);
         panel_b.push(dragged);
-        assert_eq!(panel_a.len(), a_before - 1, "source panel must shrink by 1 after drag");
-        assert_eq!(panel_b.len(), b_before + 1, "target panel must grow by 1 after drag");
+        assert_eq!(
+            panel_a.len(),
+            a_before - 1,
+            "source panel must shrink by 1 after drag"
+        );
+        assert_eq!(
+            panel_b.len(),
+            b_before + 1,
+            "target panel must grow by 1 after drag"
+        );
     }
 
     #[test]
@@ -2938,7 +3579,11 @@ mod integration_tests {
         let len_before = items.len();
         let dragged = items.remove(2);
         items.insert(0, dragged);
-        assert_eq!(items.len(), len_before, "reorder within panel must preserve item count");
+        assert_eq!(
+            items.len(),
+            len_before,
+            "reorder within panel must preserve item count"
+        );
     }
 
     #[test]
@@ -2948,8 +3593,15 @@ mod integration_tests {
         let mut panel_b: Vec<&str> = vec![];
         let dragged = panel_a.remove(0);
         panel_b.push(dragged);
-        assert!(panel_a.is_empty(), "source panel must be empty after dragging its only item");
-        assert_eq!(panel_b.len(), 1, "target panel must have 1 item after receiving the dragged item");
+        assert!(
+            panel_a.is_empty(),
+            "source panel must be empty after dragging its only item"
+        );
+        assert_eq!(
+            panel_b.len(),
+            1,
+            "target panel must have 1 item after receiving the dragged item"
+        );
     }
 
     #[test]
@@ -2960,7 +3612,10 @@ mod integration_tests {
         let idx = panel_a.iter().position(|&x| x == "unique-item").unwrap();
         let dragged = panel_a.remove(idx);
         panel_b.push(dragged);
-        assert_eq!(panel_b[0], "unique-item", "dragged item identity must be preserved after transfer");
+        assert_eq!(
+            panel_b[0], "unique-item",
+            "dragged item identity must be preserved after transfer"
+        );
     }
 
     #[test]
@@ -2968,21 +3623,33 @@ mod integration_tests {
         // Full persistence round-trip: open panels + sizes → string → restored.
         let open = ["file-tree", "chat", "properties"];
         let sizes = [248.0_f32, 320.0, 280.0];
-        let serialized: Vec<String> = open.iter().zip(sizes.iter())
+        let serialized: Vec<String> = open
+            .iter()
+            .zip(sizes.iter())
             .map(|(id, &sz)| format!("{id}={sz}"))
             .collect();
         let joined = format!("v2:{}", serialized.join(";"));
-        assert!(joined.starts_with("v2:"), "serialized state must start with 'v2:'");
+        assert!(
+            joined.starts_with("v2:"),
+            "serialized state must start with 'v2:'"
+        );
         let body = joined.strip_prefix("v2:").unwrap();
         for (id, &expected_size) in open.iter().zip(sizes.iter()) {
             let found = body.split(';').any(|entry| {
                 if let Some((entry_id, sz_str)) = entry.split_once('=') {
-                    entry_id == *id && sz_str.parse::<f32>().map(|s| (s - expected_size).abs() < 0.001).unwrap_or(false)
+                    entry_id == *id
+                        && sz_str
+                            .parse::<f32>()
+                            .map(|s| (s - expected_size).abs() < 0.001)
+                            .unwrap_or(false)
                 } else {
                     false
                 }
             });
-            assert!(found, "panel '{id}' with size {expected_size} must survive persistence round-trip");
+            assert!(
+                found,
+                "panel '{id}' with size {expected_size} must survive persistence round-trip"
+            );
         }
     }
 
@@ -2993,8 +3660,14 @@ mod integration_tests {
         let canvas_h = 900.0_f32;
         let default_x = canvas_w / 2.0;
         let default_y = canvas_h / 2.0;
-        assert!(default_x > 0.0 && default_x < canvas_w, "default x must be within canvas bounds");
-        assert!(default_y > 0.0 && default_y < canvas_h, "default y must be within canvas bounds");
+        assert!(
+            default_x > 0.0 && default_x < canvas_w,
+            "default x must be within canvas bounds"
+        );
+        assert!(
+            default_y > 0.0 && default_y < canvas_h,
+            "default y must be within canvas bounds"
+        );
     }
 
     #[test]
@@ -3006,17 +3679,28 @@ mod integration_tests {
         let idx = left_panel.iter().position(|&x| x == "item-b").unwrap();
         let dragged = left_panel.remove(idx);
         right_panel.push(dragged);
-        assert_eq!(right_panel.len(), 2, "right panel must have 2 items after drag from left");
-        assert!(right_panel.contains(&"item-b"), "dragged item must appear in right panel");
+        assert_eq!(
+            right_panel.len(),
+            2,
+            "right panel must have 2 items after drag from left"
+        );
+        assert!(
+            right_panel.contains(&"item-b"),
+            "dragged item must appear in right panel"
+        );
     }
 
     #[test]
     fn persistence_v2_preserves_dock_position() {
         // The dock position (left/right/bottom) must be serialized and restored.
-        let dock_positions: &[(&str, &str)] = &[("left", "Left"), ("right", "Right"), ("bottom", "Bottom")];
+        let dock_positions: &[(&str, &str)] =
+            &[("left", "Left"), ("right", "Right"), ("bottom", "Bottom")];
         for (key, value) in dock_positions {
             let serialized = format!("v2:dock.{key}={value}");
-            assert!(serialized.contains(key), "dock position '{key}' must appear in serialized state");
+            assert!(
+                serialized.contains(key),
+                "dock position '{key}' must appear in serialized state"
+            );
         }
     }
 
@@ -3026,7 +3710,10 @@ mod integration_tests {
         let mut x = 300.0_f32;
         let delta = -50.0_f32;
         x += delta;
-        assert!((x - 250.0).abs() < f32::EPSILON, "floating panel x must decrease by |delta| on negative move");
+        assert!(
+            (x - 250.0).abs() < f32::EPSILON,
+            "floating panel x must decrease by |delta| on negative move"
+        );
     }
 
     #[test]
@@ -3035,7 +3722,11 @@ mod integration_tests {
         let mut items = vec!["first", "second", "third", "fourth"];
         let dragged = items.remove(0);
         items.push(dragged);
-        assert_eq!(items[items.len() - 1], "first", "first item must move to the end after drag");
+        assert_eq!(
+            items[items.len() - 1],
+            "first",
+            "first item must move to the end after drag"
+        );
         assert_eq!(items.len(), 4, "panel must still have 4 items");
     }
 
@@ -3061,8 +3752,14 @@ mod integration_tests {
         // Clamp so the panel remains fully within the canvas.
         let clamped_x = desired_x.min(canvas_w - panel_w);
         let clamped_y = desired_y.min(canvas_h - panel_h);
-        assert!(clamped_x + panel_w <= canvas_w, "panel right edge must be within canvas");
-        assert!(clamped_y + panel_h <= canvas_h, "panel bottom edge must be within canvas");
+        assert!(
+            clamped_x + panel_w <= canvas_w,
+            "panel right edge must be within canvas"
+        );
+        assert!(
+            clamped_y + panel_h <= canvas_h,
+            "panel bottom edge must be within canvas"
+        );
     }
 
     #[test]
@@ -3082,9 +3779,15 @@ mod integration_tests {
         for panel in &known_panels {
             let size = sizes.get(panel).copied().unwrap_or(0.0);
             if *panel == "file-tree" {
-                assert!((size - 248.0).abs() < 0.001, "file-tree must load saved size 248.0");
+                assert!(
+                    (size - 248.0).abs() < 0.001,
+                    "file-tree must load saved size 248.0"
+                );
             } else {
-                assert_eq!(size, 0.0, "panel '{panel}' not in saved state must default to 0.0");
+                assert_eq!(
+                    size, 0.0,
+                    "panel '{panel}' not in saved state must default to 0.0"
+                );
             }
         }
     }
@@ -3109,7 +3812,10 @@ mod integration_tests {
         } else {
             active
         };
-        assert_eq!(fallback, "file-tree", "empty active field must fall back to first open panel");
+        assert_eq!(
+            fallback, "file-tree",
+            "empty active field must fall back to first open panel"
+        );
     }
 
     #[test]
@@ -3119,9 +3825,19 @@ mod integration_tests {
         let known = ["file-tree", "chat", "properties"];
         let body = saved.strip_prefix("v2:").unwrap();
         let loaded: Vec<&str> = body.split(';').filter(|p| known.contains(p)).collect();
-        assert_eq!(loaded.len(), 3, "extra panels beyond current count must be ignored");
-        assert!(!loaded.contains(&"extra-panel-a"), "extra-panel-a must not appear in loaded state");
-        assert!(!loaded.contains(&"extra-panel-b"), "extra-panel-b must not appear in loaded state");
+        assert_eq!(
+            loaded.len(),
+            3,
+            "extra panels beyond current count must be ignored"
+        );
+        assert!(
+            !loaded.contains(&"extra-panel-a"),
+            "extra-panel-a must not appear in loaded state"
+        );
+        assert!(
+            !loaded.contains(&"extra-panel-b"),
+            "extra-panel-b must not appear in loaded state"
+        );
     }
 
     #[test]
@@ -3129,12 +3845,20 @@ mod integration_tests {
         // Width=0 is a valid (collapsed) state and must survive round-trip.
         let mut map: std::collections::HashMap<&str, f32> = std::collections::HashMap::new();
         map.insert("file-tree", 0.0);
-        let serialized = map.iter().map(|(k, v)| format!("{k}={v}")).collect::<Vec<_>>().join(";");
+        let serialized = map
+            .iter()
+            .map(|(k, v)| format!("{k}={v}"))
+            .collect::<Vec<_>>()
+            .join(";");
         let restored: f32 = serialized
             .split(';')
             .find_map(|e| {
                 let (id, sz) = e.split_once('=')?;
-                if id == "file-tree" { sz.parse().ok() } else { None }
+                if id == "file-tree" {
+                    sz.parse().ok()
+                } else {
+                    None
+                }
             })
             .unwrap_or(f32::NAN);
         assert_eq!(restored, 0.0, "panel width=0 must survive round-trip");
@@ -3148,7 +3872,10 @@ mod integration_tests {
         if !is_compatible {
             // Load defaults instead.
             let default_left_w = nom_theme::tokens::PANEL_LEFT_WIDTH;
-            assert!(default_left_w > 0.0, "fallback default left width must be positive");
+            assert!(
+                default_left_w > 0.0,
+                "fallback default left width must be positive"
+            );
         }
         assert!(!is_compatible, "v9 state must be rejected as incompatible");
     }
@@ -3157,12 +3884,19 @@ mod integration_tests {
     fn persistence_v2_serialize_10_panels_all_restored() {
         // Serializing 10 panels must restore all 10 in the correct order.
         let panels: Vec<String> = (0..10).map(|i| format!("panel-{i}")).collect();
-        let serialized = format!("v2:{}", panels.iter().cloned().collect::<Vec<_>>().join(";"));
+        let serialized = format!(
+            "v2:{}",
+            panels.iter().cloned().collect::<Vec<_>>().join(";")
+        );
         let body = serialized.strip_prefix("v2:").unwrap();
         let restored: Vec<&str> = body.split(';').collect();
         assert_eq!(restored.len(), 10, "all 10 panels must be restored");
         for (i, panel) in panels.iter().enumerate() {
-            assert_eq!(restored[i], panel.as_str(), "panel at index {i} must match after round-trip");
+            assert_eq!(
+                restored[i],
+                panel.as_str(),
+                "panel at index {i} must match after round-trip"
+            );
         }
     }
 
@@ -3173,7 +3907,10 @@ mod integration_tests {
         let serialized = format!("v2:{}", original.join(";"));
         let body = serialized.strip_prefix("v2:").unwrap();
         let restored: Vec<&str> = body.split(';').collect();
-        assert_eq!(restored, original, "panel order must be preserved in serialized state");
+        assert_eq!(
+            restored, original,
+            "panel order must be preserved in serialized state"
+        );
     }
 
     // --- Floating panel depth ---
@@ -3188,9 +3925,18 @@ mod integration_tests {
         x = 250.0;
         y = 180.0;
         // Content is unchanged.
-        assert_eq!(content, "important content", "float panel content must survive position change");
-        assert!((x - 250.0).abs() < f32::EPSILON, "x must update after position change");
-        assert!((y - 180.0).abs() < f32::EPSILON, "y must update after position change");
+        assert_eq!(
+            content, "important content",
+            "float panel content must survive position change"
+        );
+        assert!(
+            (x - 250.0).abs() < f32::EPSILON,
+            "x must update after position change"
+        );
+        assert!(
+            (y - 180.0).abs() < f32::EPSILON,
+            "y must update after position change"
+        );
     }
 
     #[test]
@@ -3223,7 +3969,10 @@ mod integration_tests {
         // Panel B was brought to front later; now bring A to front.
         let max_z = z_b;
         z_a = max_z + 1;
-        assert!(z_a > z_b, "after bring-to-front, panel A z ({z_a}) must exceed panel B z ({z_b})");
+        assert!(
+            z_a > z_b,
+            "after bring-to-front, panel A z ({z_a}) must exceed panel B z ({z_b})"
+        );
     }
 
     #[test]
@@ -3236,8 +3985,14 @@ mod integration_tests {
         x = 400.0;
         y = 300.0;
         // width and height are unchanged.
-        assert!((width - 320.0).abs() < f32::EPSILON, "float panel width must be unchanged after move");
-        assert!((height - 480.0).abs() < f32::EPSILON, "float panel height must be unchanged after move");
+        assert!(
+            (width - 320.0).abs() < f32::EPSILON,
+            "float panel width must be unchanged after move"
+        );
+        assert!(
+            (height - 480.0).abs() < f32::EPSILON,
+            "float panel height must be unchanged after move"
+        );
     }
 
     #[test]
@@ -3246,7 +4001,10 @@ mod integration_tests {
         let mut floating: Vec<&str> = vec!["properties"];
         let panel = "properties";
         floating.retain(|&p| p != panel);
-        assert!(floating.is_empty(), "docked panel must be removed from floating list");
+        assert!(
+            floating.is_empty(),
+            "docked panel must be removed from floating list"
+        );
     }
 
     #[test]
@@ -3255,7 +4013,10 @@ mod integration_tests {
         let mut docked: Vec<&str> = vec!["file-tree", "chat"];
         let returning = "properties";
         docked.push(returning);
-        assert!(docked.contains(&returning), "re-docked panel must appear in dock list");
+        assert!(
+            docked.contains(&returning),
+            "re-docked panel must appear in dock list"
+        );
         assert_eq!(docked.len(), 3, "dock must have 3 panels after re-docking");
     }
 
@@ -3286,8 +4047,15 @@ mod integration_tests {
     fn deep_think_token_with_newline_creates_paragraph_break() {
         let mut panel = crate::right::DeepThinkPanel::new();
         panel.begin("paragraph test");
-        panel.push_step(crate::right::ThinkingStep::new("first line\nsecond line", 0.7));
-        assert_eq!(panel.steps.len(), 1, "single push_step with newline is one step");
+        panel.push_step(crate::right::ThinkingStep::new(
+            "first line\nsecond line",
+            0.7,
+        ));
+        assert_eq!(
+            panel.steps.len(),
+            1,
+            "single push_step with newline is one step"
+        );
         assert!(
             panel.steps[0].hypothesis.contains('\n'),
             "step must contain embedded newline for paragraph break"
@@ -3301,7 +4069,11 @@ mod integration_tests {
         for i in 0..20 {
             panel.push_step(crate::right::ThinkingStep::new(&format!("token-{i}"), 0.6));
         }
-        assert_eq!(panel.steps.len(), 20, "20-token stream must produce exactly 20 entries");
+        assert_eq!(
+            panel.steps.len(),
+            20,
+            "20-token stream must produce exactly 20 entries"
+        );
     }
 
     #[test]
@@ -3316,7 +4088,10 @@ mod integration_tests {
         // because complete() has been called. We verify the count did not change if ignored,
         // OR increment by 1 if accepted. Either way the test documents expected behaviour.
         // The real assertion: completing must have been called (steps > 0).
-        assert!(count_after_complete >= 1, "completed panel must have at least 1 step");
+        assert!(
+            count_after_complete >= 1,
+            "completed panel must have at least 1 step"
+        );
     }
 
     #[test]
@@ -3328,7 +4103,11 @@ mod integration_tests {
         assert_eq!(panel.steps.len(), 2);
         // Clear.
         panel.steps.clear();
-        assert_eq!(panel.steps.len(), 0, "clearing stream must reset entry count to 0");
+        assert_eq!(
+            panel.steps.len(),
+            0,
+            "clearing stream must reset entry count to 0"
+        );
     }
 
     #[test]
@@ -3337,7 +4116,11 @@ mod integration_tests {
         let mut panel = crate::right::DeepThinkPanel::new();
         panel.begin("empty token test");
         panel.push_step(crate::right::ThinkingStep::new("", 0.5));
-        assert_eq!(panel.steps.len(), 1, "empty-string token must still be added as an entry");
+        assert_eq!(
+            panel.steps.len(),
+            1,
+            "empty-string token must still be added as an entry"
+        );
     }
 
     #[test]
@@ -3358,7 +4141,11 @@ mod integration_tests {
         let mut panel = crate::right::DeepThinkPanel::new();
         panel.begin("single");
         panel.push_step(crate::right::ThinkingStep::new("only", 1.0));
-        assert_eq!(panel.steps.len(), 1, "single-token stream must produce exactly 1 entry");
+        assert_eq!(
+            panel.steps.len(),
+            1,
+            "single-token stream must produce exactly 1 entry"
+        );
     }
 
     #[test]
@@ -3384,31 +4171,46 @@ mod integration_tests {
     fn file_tree_root_path_non_empty() {
         // The default file tree must have at least one section with a non-empty id.
         let panel = FileTreePanel::new();
-        assert!(!panel.sections.is_empty(), "file tree must have at least one section");
-        assert!(!panel.sections[0].id.is_empty(), "file tree root section id must be non-empty");
+        assert!(
+            !panel.sections.is_empty(),
+            "file tree must have at least one section"
+        );
+        assert!(
+            !panel.sections[0].id.is_empty(),
+            "file tree root section id must be non-empty"
+        );
     }
 
     #[test]
     fn file_tree_expand_node_children_become_visible() {
         let mut dir = FileNode::dir("pkg", 0);
-        dir.children.push(FileNode::file("mod.nom", 1, FileNodeKind::NomFile));
+        dir.children
+            .push(FileNode::file("mod.nom", 1, FileNodeKind::NomFile));
         dir.is_expanded = false;
         let before = dir.visible_nodes().len();
         dir.is_expanded = true;
         let after = dir.visible_nodes().len();
-        assert!(after > before, "expanding node must make children visible (before={before}, after={after})");
+        assert!(
+            after > before,
+            "expanding node must make children visible (before={before}, after={after})"
+        );
     }
 
     #[test]
     fn file_tree_collapse_node_children_hidden() {
         let mut dir = FileNode::dir("lib", 0);
-        dir.children.push(FileNode::file("a.nom", 1, FileNodeKind::NomFile));
-        dir.children.push(FileNode::file("b.nom", 1, FileNodeKind::NomFile));
+        dir.children
+            .push(FileNode::file("a.nom", 1, FileNodeKind::NomFile));
+        dir.children
+            .push(FileNode::file("b.nom", 1, FileNodeKind::NomFile));
         dir.is_expanded = true;
         let expanded = dir.visible_nodes().len();
         dir.is_expanded = false;
         let collapsed = dir.visible_nodes().len();
-        assert!(collapsed < expanded, "collapsing node must hide children (expanded={expanded}, collapsed={collapsed})");
+        assert!(
+            collapsed < expanded,
+            "collapsing node must hide children (expanded={expanded}, collapsed={collapsed})"
+        );
     }
 
     #[test]
@@ -3418,14 +4220,24 @@ mod integration_tests {
             ("theme", "dark"),
             ("font_size", "14"),
             ("line_height", "1.5"),
-        ].iter().copied().collect();
-        assert!(settings.len() >= 1, "settings panel must have at least 1 setting");
+        ]
+        .iter()
+        .copied()
+        .collect();
+        assert!(
+            settings.len() >= 1,
+            "settings panel must have at least 1 setting"
+        );
     }
 
     #[test]
     fn chat_panel_message_count_starts_at_zero() {
         let chat = ChatSidebarPanel::new();
-        assert_eq!(chat.message_count(), 0, "new chat panel must start with 0 messages");
+        assert_eq!(
+            chat.message_count(),
+            0,
+            "new chat panel must start with 0 messages"
+        );
     }
 
     #[test]
@@ -3433,17 +4245,28 @@ mod integration_tests {
         let mut chat = ChatSidebarPanel::new();
         assert_eq!(chat.message_count(), 0);
         chat.push_message(ChatMessage::user("u1", "hello"));
-        assert_eq!(chat.message_count(), 1, "appending a message must increment count to 1");
+        assert_eq!(
+            chat.message_count(),
+            1,
+            "appending a message must increment count to 1"
+        );
         chat.push_message(ChatMessage::assistant_streaming("a1"));
         chat.finalize_last();
-        assert_eq!(chat.message_count(), 2, "second append must increment count to 2");
+        assert_eq!(
+            chat.message_count(),
+            2,
+            "second append must increment count to 2"
+        );
     }
 
     #[test]
     fn status_bar_shows_correct_panel_name() {
         let mut bar = crate::statusbar::StatusBar::new();
         bar.set_left("FileTree");
-        assert_eq!(bar.left.content, "FileTree", "status bar left slot must show correct panel name");
+        assert_eq!(
+            bar.left.content, "FileTree",
+            "status bar left slot must show correct panel name"
+        );
     }
 
     #[test]
@@ -3461,7 +4284,10 @@ mod integration_tests {
         // First-created floating panel must have lower z-index than the second.
         let z_first = 50i32;
         let z_second = 51i32;
-        assert!(z_first < z_second, "first floating panel must have lower z than second");
+        assert!(
+            z_first < z_second,
+            "first floating panel must have lower z than second"
+        );
     }
 
     #[test]
@@ -3472,7 +4298,10 @@ mod integration_tests {
         assert!(!is_valid, "empty string must not be a valid v2 state");
         // Fallback: use default layout.
         let default_panel = "file-tree";
-        assert!(!default_panel.is_empty(), "default fallback panel must be non-empty");
+        assert!(
+            !default_panel.is_empty(),
+            "default fallback panel must be non-empty"
+        );
     }
 
     #[test]
@@ -3488,7 +4317,10 @@ mod integration_tests {
     fn file_tree_panel_sections_non_empty_by_default() {
         // The default FileTreePanel constructed with new() must have at least one section.
         let panel = FileTreePanel::new();
-        assert!(!panel.sections.is_empty(), "default FileTreePanel must have at least one section");
+        assert!(
+            !panel.sections.is_empty(),
+            "default FileTreePanel must have at least one section"
+        );
     }
 
     // =========================================================================
@@ -3556,7 +4388,10 @@ mod integration_tests {
     fn edge_color_medium_hue_differs_from_high() {
         let high = nom_theme::tokens::edge_color_high_confidence();
         let med = nom_theme::tokens::edge_color_medium_confidence();
-        assert!((high.h - med.h).abs() > 1.0, "high and medium hues must differ by > 1 degree");
+        assert!(
+            (high.h - med.h).abs() > 1.0,
+            "high and medium hues must differ by > 1 degree"
+        );
     }
 
     #[test]
@@ -3660,7 +4495,11 @@ mod integration_tests {
 
     #[test]
     fn filter_by_prefix_exact_match() {
-        let items = vec!["exact".to_string(), "exactmatch".to_string(), "other".to_string()];
+        let items = vec![
+            "exact".to_string(),
+            "exactmatch".to_string(),
+            "other".to_string(),
+        ];
         let result = crate::filter_by_prefix(&items, "exact");
         assert_eq!(result.len(), 2);
     }
@@ -3674,7 +4513,11 @@ mod integration_tests {
 
     #[test]
     fn filter_by_prefix_single_char_prefix() {
-        let items = vec!["apple".to_string(), "apricot".to_string(), "banana".to_string()];
+        let items = vec![
+            "apple".to_string(),
+            "apricot".to_string(),
+            "banana".to_string(),
+        ];
         let result = crate::filter_by_prefix(&items, "a");
         assert_eq!(result.len(), 2);
     }

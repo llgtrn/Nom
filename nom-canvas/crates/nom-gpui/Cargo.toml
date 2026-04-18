@@ -11,3 +11,4 @@ cosmic-text = { workspace = true }
 etagere = { workspace = true }
 bytemuck = { workspace = true }
 lru = { workspace = true }
+pollster = "0.3"

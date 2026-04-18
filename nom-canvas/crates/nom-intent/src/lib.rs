@@ -1619,7 +1619,11 @@ mod tests {
         let ev = &["graph node query"];
         let mut items = rank_hypotheses(&["banana", "graph node", "graph node query", "xyz"], ev);
         // Already sorted descending by rank_hypotheses; re-sort ascending and verify reversal.
-        items.sort_by(|a, b| a.score.partial_cmp(&b.score).unwrap_or(std::cmp::Ordering::Equal));
+        items.sort_by(|a, b| {
+            a.score
+                .partial_cmp(&b.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         // Now ascending: first element has lowest score.
         assert!(items[0].score <= items[items.len() - 1].score);
     }
@@ -1633,15 +1637,20 @@ mod tests {
 
         // Run first segment of the chain (steps 0..1) — signal not yet cancelled.
         let evidence = &["deep", "think", "node", "graph", "query"];
-        let part_a = react_chain_interruptible("deep think node graph query", &evidence[..2], 2, &signal);
+        let part_a =
+            react_chain_interruptible("deep think node graph query", &evidence[..2], 2, &signal);
         assert_eq!(part_a.len(), 2, "first segment must complete");
 
         // Cancel via the guard clone (simulating mid-chain interrupt from another context).
         guard.cancel();
 
         // Remaining steps must yield empty.
-        let part_b = react_chain_interruptible("deep think node graph query", &evidence[2..], 3, &signal);
-        assert!(part_b.is_empty(), "interrupted mid-chain must yield no further steps");
+        let part_b =
+            react_chain_interruptible("deep think node graph query", &evidence[2..], 3, &signal);
+        assert!(
+            part_b.is_empty(),
+            "interrupted mid-chain must yield no further steps"
+        );
     }
 
     #[test]
@@ -1662,7 +1671,8 @@ mod tests {
         // Full 5-step chain without interrupt — all steps complete, scores valid.
         let signal = InterruptSignal::new();
         let evidence = &["node", "graph", "query", "traversal", "result"];
-        let steps = react_chain_interruptible("node graph query traversal result", evidence, 5, &signal);
+        let steps =
+            react_chain_interruptible("node graph query traversal result", evidence, 5, &signal);
         assert_eq!(steps.len(), 5);
         for s in &steps {
             assert!(s.score >= 0.0 && s.score <= 1.0);
@@ -1702,12 +1712,18 @@ mod tests {
         // Cancel the "highest priority" signal (index 0).
         signals[0].cancel();
         let any_cancelled = signals.iter().any(|s| s.is_cancelled());
-        assert!(any_cancelled, "at least one signal cancelled means chain should stop");
+        assert!(
+            any_cancelled,
+            "at least one signal cancelled means chain should stop"
+        );
 
         // Verify chain stops when using the cancelled signal.
         let evidence = &["e0", "e1", "e2"];
         let steps = react_chain_interruptible("e0 e1 e2", evidence, 3, &signals[0]);
-        assert!(steps.is_empty(), "highest-priority cancel must stop the chain");
+        assert!(
+            steps.is_empty(),
+            "highest-priority cancel must stop the chain"
+        );
     }
 
     #[test]
@@ -1719,7 +1735,11 @@ mod tests {
         // s_low is not cancelled — chain using s_low proceeds normally.
         let evidence = &["item one", "item two"];
         let steps = react_chain_interruptible("item one two", evidence, 2, &s_low);
-        assert_eq!(steps.len(), 2, "lower-priority non-cancelled signal must allow full chain");
+        assert_eq!(
+            steps.len(),
+            2,
+            "lower-priority non-cancelled signal must allow full chain"
+        );
     }
 
     #[test]
@@ -1732,7 +1752,10 @@ mod tests {
         let evidence = &["e0", "e1", "e2", "e3", "e4"];
         for s in &signals {
             let steps = react_chain_interruptible("test", evidence, 5, s);
-            assert!(steps.is_empty(), "every cancelled signal must stop the chain");
+            assert!(
+                steps.is_empty(),
+                "every cancelled signal must stop the chain"
+            );
         }
     }
 
@@ -1778,7 +1801,10 @@ mod tests {
         let ranked = rank_hypotheses(&["node graph", "unrelated"], evidence);
         let sum: f32 = ranked.iter().map(|h| h.score).sum();
         assert!(sum > 0.0, "sum of scores must be positive");
-        let max: f32 = ranked.iter().map(|h| h.score).fold(f32::NEG_INFINITY, f32::max);
+        let max: f32 = ranked
+            .iter()
+            .map(|h| h.score)
+            .fold(f32::NEG_INFINITY, f32::max);
         assert!(max <= 1.0, "max score must be <= 1.0");
     }
 
@@ -1820,7 +1846,10 @@ mod tests {
         assert_eq!(ranked.len(), 6);
         for (i, h) in ranked.iter().enumerate() {
             assert_eq!(h.score, 0.0);
-            assert_eq!(h.hypothesis, hypotheses[i], "stable order must be preserved at index {i}");
+            assert_eq!(
+                h.hypothesis, hypotheses[i],
+                "stable order must be preserved at index {i}"
+            );
         }
     }
 
@@ -1836,15 +1865,13 @@ mod tests {
         let evidence = &["e0", "e1", "e2", "e3", "e4", "e5", "e6", "e7", "e8", "e9"];
 
         // Run first 5 steps (indices 0..5) — signal not yet cancelled.
-        let first_half =
-            react_chain_interruptible("hypothesis", &evidence[..5], 5, &signal);
+        let first_half = react_chain_interruptible("hypothesis", &evidence[..5], 5, &signal);
         assert_eq!(first_half.len(), 5, "first 5 steps must complete");
 
         // Cancel before running the remaining 5.
         signal.cancel();
 
-        let second_half =
-            react_chain_interruptible("hypothesis", &evidence[5..], 5, &signal);
+        let second_half = react_chain_interruptible("hypothesis", &evidence[5..], 5, &signal);
         assert_eq!(
             second_half.len(),
             0,
@@ -2069,15 +2096,46 @@ mod tests {
     fn classify_with_react_single_char_words() {
         // Single-character hypothesis and evidence.
         let score = classify_with_react("a", &["a"]);
-        assert!((score - 1.0_f32).abs() < 1e-5, "single char exact match must score 1.0");
+        assert!(
+            (score - 1.0_f32).abs() < 1e-5,
+            "single char exact match must score 1.0"
+        );
     }
 
     #[test]
     fn react_chain_interruptible_ten_steps_not_cancelled() {
         let signal = InterruptSignal::new(); // not cancelled
-        let evidence: Vec<&str> = (0..10).map(|i| if i == 0 { "ev0" } else if i == 1 { "ev1" } else if i == 2 { "ev2" } else if i == 3 { "ev3" } else if i == 4 { "ev4" } else if i == 5 { "ev5" } else if i == 6 { "ev6" } else if i == 7 { "ev7" } else if i == 8 { "ev8" } else { "ev9" }).collect();
+        let evidence: Vec<&str> = (0..10)
+            .map(|i| {
+                if i == 0 {
+                    "ev0"
+                } else if i == 1 {
+                    "ev1"
+                } else if i == 2 {
+                    "ev2"
+                } else if i == 3 {
+                    "ev3"
+                } else if i == 4 {
+                    "ev4"
+                } else if i == 5 {
+                    "ev5"
+                } else if i == 6 {
+                    "ev6"
+                } else if i == 7 {
+                    "ev7"
+                } else if i == 8 {
+                    "ev8"
+                } else {
+                    "ev9"
+                }
+            })
+            .collect();
         let steps = react_chain_interruptible("ev", &evidence, 10, &signal);
-        assert_eq!(steps.len(), 10, "uncancelled 10-step chain must complete all steps");
+        assert_eq!(
+            steps.len(),
+            10,
+            "uncancelled 10-step chain must complete all steps"
+        );
     }
 
     #[test]
@@ -2104,7 +2162,13 @@ mod tests {
     #[test]
     fn classify_with_react_multiple_evidence_items_bounded() {
         // 5 evidence items; score must stay in [0,1].
-        let evidence = &["one two", "two three", "three four", "four five", "five one"];
+        let evidence = &[
+            "one two",
+            "two three",
+            "three four",
+            "four five",
+            "five one",
+        ];
         let score = classify_with_react("one two three four five", evidence);
         assert!(score >= 0.0 && score <= 1.0, "score {score} out of [0,1]");
     }
@@ -2131,19 +2195,29 @@ mod tests {
     fn scored_hypothesis_evidence_used_not_empty_when_evidence_provided() {
         let evidence = &["evidence item"];
         let ranked = rank_hypotheses(&["evidence"], evidence);
-        assert!(!ranked[0].evidence_used.is_empty(), "evidence_used must not be empty");
+        assert!(
+            !ranked[0].evidence_used.is_empty(),
+            "evidence_used must not be empty"
+        );
     }
 
     #[test]
     fn react_chain_interruptible_five_steps_all_have_non_empty_fields() {
         let signal = InterruptSignal::new();
         let evidence = &["alpha", "beta", "gamma", "delta", "epsilon"];
-        let steps = react_chain_interruptible("alpha beta gamma delta epsilon", evidence, 5, &signal);
+        let steps =
+            react_chain_interruptible("alpha beta gamma delta epsilon", evidence, 5, &signal);
         assert_eq!(steps.len(), 5);
         for (i, step) in steps.iter().enumerate() {
-            assert!(!step.thought.is_empty(), "step {i} thought must not be empty");
+            assert!(
+                !step.thought.is_empty(),
+                "step {i} thought must not be empty"
+            );
             assert!(!step.action.is_empty(), "step {i} action must not be empty");
-            assert!(!step.observation.is_empty(), "step {i} observation must not be empty");
+            assert!(
+                !step.observation.is_empty(),
+                "step {i} observation must not be empty"
+            );
         }
     }
 
@@ -2186,7 +2260,10 @@ mod tests {
         // Specifically test return type is Vec (not Option), and empty is the sentinel.
         let result = react_chain("test", &["evidence"], 0);
         let is_empty: bool = result.is_empty();
-        assert!(is_empty, "zero steps must yield empty (not Some/None — it is a Vec)");
+        assert!(
+            is_empty,
+            "zero steps must yield empty (not Some/None — it is a Vec)"
+        );
     }
 
     // --- Hypothesis with confidence exactly 0.0 sorts last ---
@@ -2200,7 +2277,8 @@ mod tests {
         assert!(ranked[0].score > 0.0, "winner must have score > 0");
         // The zero-score hypothesis must be at the end.
         assert_eq!(
-            ranked[ranked.len() - 1].score, 0.0,
+            ranked[ranked.len() - 1].score,
+            0.0,
             "hypothesis with score 0.0 must sort last"
         );
     }
@@ -2239,7 +2317,10 @@ mod tests {
         let hypotheses = &["match word", "zero overlap zzz"];
         let ranked = rank_hypotheses(hypotheses, evidence);
         // Winner has score > 0; loser has 0.
-        assert!(ranked[0].score > ranked[1].score, "winner score must exceed zero-score");
+        assert!(
+            ranked[0].score > ranked[1].score,
+            "winner score must exceed zero-score"
+        );
         assert_eq!(ranked[1].score, 0.0, "loser must be exactly 0.0");
         assert_eq!(ranked[1].hypothesis, "zero overlap zzz");
     }
@@ -2250,7 +2331,11 @@ mod tests {
         let evidence = &["completely irrelevant"];
         let hypotheses = &["aaa bbb", "ccc ddd", "eee fff"];
         let ranked = rank_hypotheses(hypotheses, evidence);
-        assert_eq!(ranked.len(), 3, "all hypotheses must be preserved even with zero scores");
+        assert_eq!(
+            ranked.len(),
+            3,
+            "all hypotheses must be preserved even with zero scores"
+        );
         for h in &ranked {
             assert_eq!(h.score, 0.0, "all scores must be 0.0 with no overlap");
         }
@@ -2273,7 +2358,8 @@ mod tests {
         // Steps 1–9 must not run.
         let remaining = react_chain_interruptible("hyp", &evidence[1..], 9, &signal);
         assert_eq!(
-            remaining.len(), 0,
+            remaining.len(),
+            0,
             "after cancel at step 1, no further steps must run (0 of 9 remaining)"
         );
 
@@ -2310,20 +2396,51 @@ mod tests {
         guard.cancel();
 
         let rest = react_chain_interruptible("hyp", &evidence[1..], 9, &signal);
-        assert_eq!(rest.len(), 0, "clone cancel at step 1 must stop remaining 9 steps");
+        assert_eq!(
+            rest.len(),
+            0,
+            "clone cancel at step 1 must stop remaining 9 steps"
+        );
     }
 
     #[test]
     fn interrupt_step_1_total_completed_is_one() {
         let signal = InterruptSignal::new();
-        let evidence: Vec<&str> = (0..10).map(|i| if i == 0 {"ev0"} else if i == 1 {"ev1"} else if i == 2 {"ev2"} else if i == 3 {"ev3"} else if i == 4 {"ev4"} else if i == 5 {"ev5"} else if i == 6 {"ev6"} else if i == 7 {"ev7"} else if i == 8 {"ev8"} else {"ev9"}).collect();
+        let evidence: Vec<&str> = (0..10)
+            .map(|i| {
+                if i == 0 {
+                    "ev0"
+                } else if i == 1 {
+                    "ev1"
+                } else if i == 2 {
+                    "ev2"
+                } else if i == 3 {
+                    "ev3"
+                } else if i == 4 {
+                    "ev4"
+                } else if i == 5 {
+                    "ev5"
+                } else if i == 6 {
+                    "ev6"
+                } else if i == 7 {
+                    "ev7"
+                } else if i == 8 {
+                    "ev8"
+                } else {
+                    "ev9"
+                }
+            })
+            .collect();
 
         let step0_result = react_chain_interruptible("test", &evidence[..1], 1, &signal);
         signal.cancel();
         let steps_1_9 = react_chain_interruptible("test", &evidence[1..], 9, &signal);
 
         let total = step0_result.len() + steps_1_9.len();
-        assert_eq!(total, 1, "only step 0 of 10 must complete when cancelled at step 1");
+        assert_eq!(
+            total, 1,
+            "only step 0 of 10 must complete when cancelled at step 1"
+        );
     }
 
     // --- rank_hypotheses preserves all input hypotheses (none lost) ---
@@ -2346,7 +2463,11 @@ mod tests {
         let hypotheses: Vec<String> = (0..10).map(|i| format!("hyp_{i}")).collect();
         let refs: Vec<&str> = hypotheses.iter().map(|s| s.as_str()).collect();
         let ranked = rank_hypotheses(&refs, evidence);
-        assert_eq!(ranked.len(), 10, "all 10 input hypotheses must be preserved");
+        assert_eq!(
+            ranked.len(),
+            10,
+            "all 10 input hypotheses must be preserved"
+        );
     }
 
     #[test]
@@ -2355,7 +2476,11 @@ mod tests {
         let evidence = &["node"];
         let hypotheses = &["node", "node", "other"];
         let ranked = rank_hypotheses(hypotheses, evidence);
-        assert_eq!(ranked.len(), 3, "3 input hypotheses including duplicates must all be in output");
+        assert_eq!(
+            ranked.len(),
+            3,
+            "3 input hypotheses including duplicates must all be in output"
+        );
     }
 
     #[test]
@@ -2370,7 +2495,11 @@ mod tests {
             "zzz",
         ];
         let ranked = rank_hypotheses(hypotheses, evidence);
-        assert_eq!(ranked.len(), hypotheses.len(), "ranked output must match input count — none dropped");
+        assert_eq!(
+            ranked.len(),
+            hypotheses.len(),
+            "ranked output must match input count — none dropped"
+        );
         // Verify all hypotheses present in ranked output.
         for h in hypotheses {
             assert!(
@@ -2383,7 +2512,11 @@ mod tests {
     #[test]
     fn rank_hypotheses_empty_preserves_empty() {
         let ranked = rank_hypotheses(&[], &["evidence"]);
-        assert_eq!(ranked.len(), 0, "empty input → empty output (nothing dropped)");
+        assert_eq!(
+            ranked.len(),
+            0,
+            "empty input → empty output (nothing dropped)"
+        );
     }
 
     #[test]
@@ -2400,13 +2533,20 @@ mod tests {
         let hypotheses: Vec<String> = (0..100).map(|i| format!("h{i}")).collect();
         let refs: Vec<&str> = hypotheses.iter().map(|s| s.as_str()).collect();
         let ranked = rank_hypotheses(&refs, evidence);
-        assert_eq!(ranked.len(), 100, "all 100 hypotheses must be preserved in output");
+        assert_eq!(
+            ranked.len(),
+            100,
+            "all 100 hypotheses must be preserved in output"
+        );
     }
 
     #[test]
     fn react_chain_zero_steps_returns_empty_vec_type() {
         let result: Vec<ReactStep> = react_chain("hyp", &["ev"], 0);
-        assert!(result.is_empty(), "return type is Vec<ReactStep>, which is empty for 0 steps");
+        assert!(
+            result.is_empty(),
+            "return type is Vec<ReactStep>, which is empty for 0 steps"
+        );
     }
 
     #[test]
@@ -2432,9 +2572,15 @@ mod tests {
         let signal = InterruptSignal::new();
         let evidence = &["e0"];
         let _ = react_chain_interruptible("hyp", evidence, 1, &signal);
-        assert!(!signal.is_cancelled(), "running chain must not cancel signal");
+        assert!(
+            !signal.is_cancelled(),
+            "running chain must not cancel signal"
+        );
         signal.cancel();
-        assert!(signal.is_cancelled(), "signal must be set after explicit cancel");
+        assert!(
+            signal.is_cancelled(),
+            "signal must be set after explicit cancel"
+        );
     }
 
     #[test]
@@ -2444,7 +2590,8 @@ mod tests {
             let refs: Vec<&str> = hypotheses.iter().map(|s| s.as_str()).collect();
             let ranked = rank_hypotheses(&refs, &["evidence"]);
             assert_eq!(
-                ranked.len(), n,
+                ranked.len(),
+                n,
                 "rank_hypotheses output length must equal input length for n={n}"
             );
         }
@@ -2467,7 +2614,10 @@ mod tests {
     fn hypothesis_zero_confidence_is_exactly_zero_not_epsilon() {
         // Zero overlap must produce exactly 0.0, not a tiny positive float.
         let score = classify_with_react("xyz_unique_abc", &["totally_unrelated_content"]);
-        assert_eq!(score, 0.0_f32, "zero-overlap must be exactly 0.0, not near-zero");
+        assert_eq!(
+            score, 0.0_f32,
+            "zero-overlap must be exactly 0.0, not near-zero"
+        );
     }
 
     #[test]
@@ -2526,7 +2676,8 @@ mod tests {
     #[test]
     fn intent_chain_10_steps_ok() {
         // react_chain caps steps at min(max_steps, evidence.len()), so provide 10 evidence items.
-        let evidence: Vec<&str> = ["e0","e1","e2","e3","e4","e5","e6","e7","e8","e9"].into();
+        let evidence: Vec<&str> =
+            ["e0", "e1", "e2", "e3", "e4", "e5", "e6", "e7", "e8", "e9"].into();
         let result = react_chain("word", &evidence, 10);
         assert_eq!(result.len(), 10, "10 steps must return Vec of length 10");
         for step in &result {
@@ -2563,14 +2714,20 @@ mod tests {
     #[test]
     fn intent_resolve_empty_query_returns_empty() {
         let ranked = rank_hypotheses(&[], &["evidence"]);
-        assert!(ranked.is_empty(), "empty hypotheses slice must return empty");
+        assert!(
+            ranked.is_empty(),
+            "empty hypotheses slice must return empty"
+        );
     }
 
     #[test]
     fn intent_resolve_single_word_query() {
         let ranked = rank_hypotheses(&["hello"], &["hello"]);
         assert_eq!(ranked.len(), 1);
-        assert!(ranked[0].score > 0.0, "single matching word must yield positive score");
+        assert!(
+            ranked[0].score > 0.0,
+            "single matching word must yield positive score"
+        );
     }
 
     #[test]
@@ -2615,7 +2772,10 @@ mod tests {
     fn intent_fallback_when_no_match() {
         // best_hypothesis on non-overlapping returns Some (lowest scorer) — length 1 input.
         let best = best_hypothesis(&["zzz_unique"], &["aaa_different"]);
-        assert!(best.is_some(), "best_hypothesis must always return Some when input is non-empty");
+        assert!(
+            best.is_some(),
+            "best_hypothesis must always return Some when input is non-empty"
+        );
         assert_eq!(best.unwrap().score, 0.0);
     }
 
@@ -2631,7 +2791,10 @@ mod tests {
     fn intent_chain_step_thought_nonempty() {
         let steps = react_chain("my_hypothesis", &["my", "hypothesis"], 3);
         for step in &steps {
-            assert!(!step.thought.is_empty(), "ReactStep.thought must not be empty");
+            assert!(
+                !step.thought.is_empty(),
+                "ReactStep.thought must not be empty"
+            );
         }
     }
 
@@ -2640,7 +2803,10 @@ mod tests {
         let steps = react_chain("ev1", &["ev1", "ev2"], 2);
         assert_eq!(steps.len(), 2);
         for step in &steps {
-            assert!(!step.action.is_empty(), "ReactStep.action must not be empty");
+            assert!(
+                !step.action.is_empty(),
+                "ReactStep.action must not be empty"
+            );
         }
     }
 
@@ -2648,7 +2814,10 @@ mod tests {
     fn intent_ranked_first_score_gte_last_score() {
         let hypotheses = &["perfect match", "partial", "nothing_at_all_xyz"];
         let ranked = rank_hypotheses(hypotheses, &["perfect match"]);
-        assert!(ranked[0].score >= ranked[ranked.len() - 1].score, "ranked output must be descending by score");
+        assert!(
+            ranked[0].score >= ranked[ranked.len() - 1].score,
+            "ranked output must be descending by score"
+        );
     }
 
     #[test]
@@ -2656,7 +2825,10 @@ mod tests {
         let signal = InterruptSignal::new();
         signal.cancel();
         let steps = react_chain_interruptible("hyp", &["hyp"], 100, &signal);
-        assert!(steps.is_empty(), "cancelled signal must stop chain immediately");
+        assert!(
+            steps.is_empty(),
+            "cancelled signal must stop chain immediately"
+        );
     }
 
     #[test]
@@ -2676,7 +2848,10 @@ mod tests {
         let hypotheses = &["direct match", "indirect", "unrelated_xyz"];
         let best = best_hypothesis(hypotheses, &["direct match"]).unwrap();
         let ranked = rank_hypotheses(hypotheses, &["direct match"]);
-        assert_eq!(best.score, ranked[0].score, "best_hypothesis must equal ranked[0]");
+        assert_eq!(
+            best.score, ranked[0].score,
+            "best_hypothesis must equal ranked[0]"
+        );
     }
 
     #[test]
@@ -2686,7 +2861,10 @@ mod tests {
         let ranked = rank_hypotheses(&refs, &["item_0"]);
         assert_eq!(ranked.len(), 20);
         for h in &hypotheses {
-            assert!(ranked.iter().any(|r| r.hypothesis == *h), "'{h}' must be in ranked output");
+            assert!(
+                ranked.iter().any(|r| r.hypothesis == *h),
+                "'{h}' must be in ranked output"
+            );
         }
     }
 
@@ -2721,7 +2899,13 @@ mod tests {
 
     #[test]
     fn intent_rank_5_items_descending_order() {
-        let hypotheses = &["perfect match", "good match", "ok match", "poor match", "no match xyz"];
+        let hypotheses = &[
+            "perfect match",
+            "good match",
+            "ok match",
+            "poor match",
+            "no match xyz",
+        ];
         let ranked = rank_hypotheses(hypotheses, &["perfect match"]);
         assert_eq!(ranked.len(), 5);
         // Scores must be non-increasing.
@@ -2739,14 +2923,20 @@ mod tests {
     #[test]
     fn intent_best_hypothesis_none_on_empty() {
         let result = best_hypothesis(&[], &["evidence"]);
-        assert!(result.is_none(), "best_hypothesis on empty input must return None");
+        assert!(
+            result.is_none(),
+            "best_hypothesis on empty input must return None"
+        );
     }
 
     #[test]
     fn intent_scored_hypothesis_step_count_matches_evidence() {
         let evidence = &["a", "b", "c"];
         let ranked = rank_hypotheses(&["a"], evidence);
-        assert_eq!(ranked[0].step_count, 3, "step_count must equal evidence.len()");
+        assert_eq!(
+            ranked[0].step_count, 3,
+            "step_count must equal evidence.len()"
+        );
     }
 
     // --- Wave AH Agent 9 additions ---
@@ -2764,7 +2954,10 @@ mod tests {
     fn intent_confidence_above_threshold_routes() {
         // Score above 0.5 threshold should select the winning hypothesis.
         let score = classify_with_react("match word", &["match word here"]);
-        assert!(score > 0.5, "high-overlap input must exceed 0.5 threshold, got {score}");
+        assert!(
+            score > 0.5,
+            "high-overlap input must exceed 0.5 threshold, got {score}"
+        );
     }
 
     #[test]
@@ -2829,8 +3022,10 @@ mod tests {
         let evidence = &["ambiguous input"];
         let ranked = rank_hypotheses(&["route a", "route b"], evidence);
         // Both score zero → ambiguous case; neither clearly wins.
-        assert!((ranked[0].score - ranked[1].score).abs() < 1e-5,
-            "ambiguous input must produce nearly equal scores");
+        assert!(
+            (ranked[0].score - ranked[1].score).abs() < 1e-5,
+            "ambiguous input must produce nearly equal scores"
+        );
     }
 
     #[test]
@@ -2838,8 +3033,10 @@ mod tests {
         // Adding disambiguating evidence resolves to one winner.
         let evidence = &["route a specific keyword"];
         let ranked = rank_hypotheses(&["route a", "route b"], evidence);
-        assert_eq!(ranked[0].hypothesis, "route a",
-            "disambiguating evidence must resolve to route a");
+        assert_eq!(
+            ranked[0].hypothesis, "route a",
+            "disambiguating evidence must resolve to route a"
+        );
     }
 
     #[test]
@@ -2854,9 +3051,14 @@ mod tests {
         // react_chain with max_steps > 0 returns at most evidence.len() steps.
         let evidence = &["i1", "i2", "i3"];
         let steps = react_chain("i1 i2 i3", evidence, 10);
-        assert!(steps.len() <= evidence.len(),
-            "steps must be clamped to evidence length");
-        assert!(!steps.is_empty(), "non-zero max_steps must produce at least one step");
+        assert!(
+            steps.len() <= evidence.len(),
+            "steps must be clamped to evidence length"
+        );
+        assert!(
+            !steps.is_empty(),
+            "non-zero max_steps must produce at least one step"
+        );
     }
 
     #[test]
@@ -2902,12 +3104,7 @@ mod tests {
     #[test]
     fn intent_batch_no_panics_on_edge_inputs() {
         // Edge inputs that could cause panics (empty, single char, etc.) must not panic.
-        let cases: &[(&str, &[&str])] = &[
-            ("", &[]),
-            ("", &[""]),
-            ("a", &["a"]),
-            ("", &["word"]),
-        ];
+        let cases: &[(&str, &[&str])] = &[("", &[]), ("", &[""]), ("a", &["a"]), ("", &["word"])];
         for (h, ev) in cases {
             let _ = classify_with_react(h, ev);
             let _ = best_hypothesis(&[h], ev);
@@ -2921,13 +3118,19 @@ mod tests {
         let ev = &["cache test evidence"];
         let s1 = classify_with_react(h, ev);
         let s2 = classify_with_react(h, ev);
-        assert!((s1 - s2).abs() < f32::EPSILON, "same input must produce same score");
+        assert!(
+            (s1 - s2).abs() < f32::EPSILON,
+            "same input must produce same score"
+        );
     }
 
     #[test]
     fn intent_normalize_score_0_to_1() {
         let score = classify_with_react("any hypothesis", &["any evidence here"]);
-        assert!(score >= 0.0 && score <= 1.0, "score {score} must be in [0,1]");
+        assert!(
+            score >= 0.0 && score <= 1.0,
+            "score {score} must be in [0,1]"
+        );
     }
 
     #[test]
@@ -2954,7 +3157,10 @@ mod tests {
         let evidence = &["graph node"];
         let best = best_hypothesis(&["graph-kind", "storage-kind"], evidence).unwrap();
         let kind: &str = &best.hypothesis;
-        assert!(!kind.is_empty(), "route must return a non-empty kind string");
+        assert!(
+            !kind.is_empty(),
+            "route must return a non-empty kind string"
+        );
     }
 
     #[test]
@@ -2962,14 +3168,20 @@ mod tests {
         // Input with zero overlap → all hypotheses score 0.0; stable sort returns first.
         let evidence = &["xyz_unknown_token"];
         let best = best_hypothesis(&["fallback-route", "secondary-route"], evidence).unwrap();
-        assert_eq!(best.score, 0.0, "unknown input must map to fallback with score 0");
+        assert_eq!(
+            best.score, 0.0,
+            "unknown input must map to fallback with score 0"
+        );
     }
 
     #[test]
     fn intent_chain_zero_steps_returns_passthrough() {
         // Zero steps returns empty vec — the passthrough case.
         let steps = react_chain("passthrough", &["some evidence"], 0);
-        assert!(steps.is_empty(), "zero-step chain must be empty passthrough");
+        assert!(
+            steps.is_empty(),
+            "zero-step chain must be empty passthrough"
+        );
     }
 
     #[test]
@@ -2979,8 +3191,10 @@ mod tests {
         let steps = react_chain("alpha beta", evidence, 2);
         assert_eq!(steps.len(), 2);
         // Step 0 uses only evidence[0]; step 1 uses evidence[0..=1] → same or higher score.
-        assert!(steps[1].score >= steps[0].score - 1e-5,
-            "later step with more evidence must not significantly decrease score");
+        assert!(
+            steps[1].score >= steps[0].score - 1e-5,
+            "later step with more evidence must not significantly decrease score"
+        );
     }
 
     #[test]
@@ -2996,7 +3210,10 @@ mod tests {
         // Deep-think with matching evidence must produce a nonzero confidence.
         let evidence = &["deep think analysis"];
         let score = classify_with_react("deep think analysis", evidence);
-        assert!(score > 0.0, "deep-think matching input must yield confidence > 0");
+        assert!(
+            score > 0.0,
+            "deep-think matching input must yield confidence > 0"
+        );
     }
 
     #[test]
@@ -3019,8 +3236,14 @@ mod tests {
         signal.cancel();
         let evidence = &["e1", "e2", "e3", "e4", "e5"];
         let steps = react_chain_interruptible("hypothesis", evidence, 5, &signal);
-        assert!(steps.is_empty(), "cancelled signal must yield empty result cleanly");
-        assert!(signal.is_cancelled(), "signal must remain cancelled after use");
+        assert!(
+            steps.is_empty(),
+            "cancelled signal must yield empty result cleanly"
+        );
+        assert!(
+            signal.is_cancelled(),
+            "signal must remain cancelled after use"
+        );
     }
 
     #[test]
@@ -3029,7 +3252,11 @@ mod tests {
         let signal = InterruptSignal::new();
         signal.cancel();
         let steps = react_chain_interruptible("timeout test", &["ev1", "ev2"], 2, &signal);
-        assert_eq!(steps.len(), 0, "timed-out (cancelled) chain must return empty");
+        assert_eq!(
+            steps.len(),
+            0,
+            "timed-out (cancelled) chain must return empty"
+        );
     }
 
     // ── Wave AI Agent 9 additions ─────────────────────────────────────────────
@@ -3050,7 +3277,10 @@ mod tests {
     fn routing_precision_partial_match_in_0_1() {
         // Partial overlap → score in (0, 1).
         let score = classify_with_react("alpha beta gamma delta", &["alpha beta"]);
-        assert!(score > 0.0 && score < 1.0, "partial match must be in (0, 1), got {score}");
+        assert!(
+            score > 0.0 && score < 1.0,
+            "partial match must be in (0, 1), got {score}"
+        );
     }
 
     #[test]
@@ -3073,7 +3303,10 @@ mod tests {
     #[test]
     fn routing_precision_single_word_hypothesis() {
         let score = classify_with_react("graph", &["graph traversal algorithm result"]);
-        assert!(score > 0.0, "single-word hypothesis with matching evidence must score > 0");
+        assert!(
+            score > 0.0,
+            "single-word hypothesis with matching evidence must score > 0"
+        );
     }
 
     // --- Chain error recovery ---
@@ -3111,7 +3344,11 @@ mod tests {
     fn chain_error_recovery_max_steps_exceeds_evidence() {
         // When max_steps > evidence.len(), chain is capped at evidence.len().
         let steps = react_chain("hypothesis", &["e1", "e2"], 100);
-        assert_eq!(steps.len(), 2, "chain must cap at evidence.len() not max_steps");
+        assert_eq!(
+            steps.len(),
+            2,
+            "chain must cap at evidence.len() not max_steps"
+        );
     }
 
     #[test]
@@ -3133,8 +3370,14 @@ mod tests {
         // Rank two hypotheses; the better one must win.
         let evidence = &["node graph traversal query"];
         let ranked = rank_hypotheses(&["node graph", "banana orange"], evidence);
-        assert_eq!(ranked[0].hypothesis, "node graph", "better-matching hypothesis must rank first");
-        assert!(ranked[0].score > ranked[1].score, "best must have higher score than worst");
+        assert_eq!(
+            ranked[0].hypothesis, "node graph",
+            "better-matching hypothesis must rank first"
+        );
+        assert!(
+            ranked[0].score > ranked[1].score,
+            "best must have higher score than worst"
+        );
     }
 
     #[test]
@@ -3143,8 +3386,14 @@ mod tests {
         let ranked = rank_hypotheses(&["alpha", "beta gamma", "alpha beta gamma"], evidence);
         // All three must be ranked and scores must be non-increasing.
         assert_eq!(ranked.len(), 3);
-        assert!(ranked[0].score >= ranked[1].score, "ranked must be sorted descending");
-        assert!(ranked[1].score >= ranked[2].score, "ranked must be sorted descending");
+        assert!(
+            ranked[0].score >= ranked[1].score,
+            "ranked must be sorted descending"
+        );
+        assert!(
+            ranked[1].score >= ranked[2].score,
+            "ranked must be sorted descending"
+        );
         // The top hypothesis must have a positive score (some evidence matched).
         assert!(ranked[0].score > 0.0, "top hypothesis must match evidence");
     }
@@ -3179,7 +3428,10 @@ mod tests {
     fn confidence_calibration_clamped_to_1() {
         // Even with redundant matching evidence, score must not exceed 1.0.
         let score = classify_with_react("alpha", &["alpha", "alpha alpha", "alpha alpha alpha"]);
-        assert!(score <= 1.0, "confidence must be clamped to 1.0, got {score}");
+        assert!(
+            score <= 1.0,
+            "confidence must be clamped to 1.0, got {score}"
+        );
     }
 
     #[test]
@@ -3215,7 +3467,10 @@ mod tests {
     fn confidence_calibration_score_is_finite() {
         // All confidence scores must be finite (no NaN/Inf).
         let score = classify_with_react("hypothesis text", &["hypothesis", "text", "other"]);
-        assert!(score.is_finite(), "confidence score must be finite, got {score}");
+        assert!(
+            score.is_finite(),
+            "confidence score must be finite, got {score}"
+        );
     }
 
     // --- Step structure ---
@@ -3245,7 +3500,11 @@ mod tests {
     #[test]
     fn step_score_is_monotonically_nondecreasing_for_matching_evidence() {
         // When all evidence matches, scores should increase or stay stable.
-        let steps = react_chain("alpha beta gamma", &["alpha", "alpha beta", "alpha beta gamma"], 3);
+        let steps = react_chain(
+            "alpha beta gamma",
+            &["alpha", "alpha beta", "alpha beta gamma"],
+            3,
+        );
         assert_eq!(steps.len(), 3);
         // Scores may not be strictly increasing due to averaging, but must all be ≥ 0.
         for step in &steps {
@@ -3259,7 +3518,11 @@ mod tests {
         let evidence = &["some evidence"];
         let hypotheses = &["h1", "h2", "h3", "h4", "h5"];
         let ranked = rank_hypotheses(hypotheses, evidence);
-        assert_eq!(ranked.len(), 5, "rank_hypotheses must return same count as input");
+        assert_eq!(
+            ranked.len(),
+            5,
+            "rank_hypotheses must return same count as input"
+        );
     }
 
     #[test]
@@ -3320,14 +3583,20 @@ mod tests {
     fn intent_precision_exact_word_routes_correctly() {
         // Hypothesis that exactly matches all evidence words gets max score.
         let score = classify_with_react("canvas", &["canvas"]);
-        assert!(score > 0.5, "exact match must yield high confidence, got {score}");
+        assert!(
+            score > 0.5,
+            "exact match must yield high confidence, got {score}"
+        );
     }
 
     #[test]
     fn intent_precision_partial_word_routes_fallback() {
         // Hypothesis with zero overlap gets low score.
         let score = classify_with_react("canvas", &["compiler"]);
-        assert!(score < 0.5, "zero-overlap must yield low confidence, got {score}");
+        assert!(
+            score < 0.5,
+            "zero-overlap must yield low confidence, got {score}"
+        );
     }
 
     #[test]
@@ -3341,7 +3610,10 @@ mod tests {
     fn intent_calibration_high_confidence_routes() {
         // Full overlap with single-word evidence → confidence > 0.9.
         let score = classify_with_react("graph", &["graph"]);
-        assert!(score > 0.9, "full overlap confidence must exceed 0.9, got {score}");
+        assert!(
+            score > 0.9,
+            "full overlap confidence must exceed 0.9, got {score}"
+        );
     }
 
     #[test]
@@ -3358,7 +3630,11 @@ mod tests {
         // Retry = call react_chain again; must produce same-length result.
         let first = react_chain("retry hyp", &["retry", "hyp"], 2);
         let second = react_chain("retry hyp", &["retry", "hyp"], 2);
-        assert_eq!(first.len(), second.len(), "retry must produce same step count");
+        assert_eq!(
+            first.len(),
+            second.len(),
+            "retry must produce same step count"
+        );
     }
 
     #[test]
@@ -3384,7 +3660,8 @@ mod tests {
         assert!(
             steps[0].score >= steps[1].score,
             "earlier evidence must yield >= score: step0={}, step1={}",
-            steps[0].score, steps[1].score
+            steps[0].score,
+            steps[1].score
         );
     }
 
@@ -3395,7 +3672,10 @@ mod tests {
         let b = react_chain("tie", &["x", "x", "x"], 3);
         assert_eq!(a.len(), b.len());
         for (sa, sb) in a.iter().zip(b.iter()) {
-            assert!((sa.score - sb.score).abs() < 1e-6, "scores must be deterministic");
+            assert!(
+                (sa.score - sb.score).abs() < 1e-6,
+                "scores must be deterministic"
+            );
         }
     }
 
@@ -3440,7 +3720,10 @@ mod tests {
     fn intent_tool_fallback_when_primary_fails_empty_evidence() {
         // Empty evidence simulates primary tool failure → fallback = empty result.
         let steps = react_chain("primary-tool", &[], 3);
-        assert!(steps.is_empty(), "no evidence = primary failure, fallback = empty");
+        assert!(
+            steps.is_empty(),
+            "no evidence = primary failure, fallback = empty"
+        );
     }
 
     #[test]
@@ -3548,7 +3831,10 @@ mod tests {
     fn react_step_observation_field_is_string() {
         let steps = react_chain("obs", &["some observation"], 1);
         assert_eq!(steps.len(), 1);
-        assert!(!steps[0].observation.is_empty(), "observation must be non-empty");
+        assert!(
+            !steps[0].observation.is_empty(),
+            "observation must be non-empty"
+        );
     }
 
     #[test]
@@ -3678,7 +3964,11 @@ mod tests {
         signal.cancel();
         let evidence = &["e1", "e2", "e3", "e4", "e5"];
         let steps = react_chain_interruptible("hypothesis", evidence, 5, &signal);
-        assert_eq!(steps.len(), 0, "pre-cancelled signal must produce zero steps");
+        assert_eq!(
+            steps.len(),
+            0,
+            "pre-cancelled signal must produce zero steps"
+        );
     }
 
     #[test]
@@ -3818,7 +4108,10 @@ mod tests {
     fn react_chain_thought_has_evidence_index() {
         let evidence = &["item"];
         let steps = react_chain("hyp", evidence, 1);
-        assert!(steps[0].thought.contains("0"), "thought must reference evidence index 0");
+        assert!(
+            steps[0].thought.contains("0"),
+            "thought must reference evidence index 0"
+        );
     }
 
     #[test]
@@ -3896,7 +4189,10 @@ mod tests {
         // Evidence that has no overlap with the hypothesis → zero score.
         let unknown_tool_evidence = "xyzzy_tool output: nothing";
         let score = classify_with_react("search_graph node", &[unknown_tool_evidence]);
-        assert_eq!(score, 0.0, "unknown tool evidence must produce zero confidence");
+        assert_eq!(
+            score, 0.0,
+            "unknown tool evidence must produce zero confidence"
+        );
     }
 
     #[test]
@@ -3961,15 +4257,24 @@ mod tests {
         // Second call: hit → return stored value without recomputing.
         let hit = cache.get(query).copied();
         assert!(hit.is_some(), "second lookup must be a cache hit");
-        assert!((hit.unwrap() - score).abs() < 1e-9, "cached score must match original");
+        assert!(
+            (hit.unwrap() - score).abs() < 1e-9,
+            "cached score must match original"
+        );
     }
 
     #[test]
     fn intent_cache_different_queries_independent() {
         use std::collections::HashMap;
         let mut cache: HashMap<&str, f32> = HashMap::new();
-        cache.insert("query_a", classify_with_react("query_a", &["query_a evidence"]));
-        cache.insert("query_b", classify_with_react("query_b", &["query_b evidence"]));
+        cache.insert(
+            "query_a",
+            classify_with_react("query_a", &["query_a evidence"]),
+        );
+        cache.insert(
+            "query_b",
+            classify_with_react("query_b", &["query_b evidence"]),
+        );
         assert!(cache.contains_key("query_a"));
         assert!(cache.contains_key("query_b"));
         assert_ne!(cache["query_a"], f32::NAN);
@@ -4021,7 +4326,10 @@ mod tests {
     #[test]
     fn classify_single_word_hypothesis_full_match() {
         let score = classify_with_react("word", &["word"]);
-        assert!((score - 1.0).abs() < 1e-6, "single-word full match should score 1.0, got {score}");
+        assert!(
+            (score - 1.0).abs() < 1e-6,
+            "single-word full match should score 1.0, got {score}"
+        );
     }
 
     #[test]
@@ -4081,7 +4389,11 @@ mod tests {
         let signal = InterruptSignal::new();
         let evidence = &["a", "b", "c"];
         let steps = react_chain_interruptible("a b c", evidence, 3, &signal);
-        assert_eq!(steps.len(), 3, "all 3 steps must complete when not cancelled");
+        assert_eq!(
+            steps.len(),
+            3,
+            "all 3 steps must complete when not cancelled"
+        );
     }
 
     #[test]
@@ -4122,7 +4434,10 @@ mod tests {
     fn classify_three_word_hypothesis_partial_match() {
         // "alpha beta gamma" vs evidence "alpha beta" → 2/3 match before decay.
         let score = classify_with_react("alpha beta gamma", &["alpha beta"]);
-        assert!(score > 0.0 && score < 1.0, "partial match must be in (0, 1)");
+        assert!(
+            score > 0.0 && score < 1.0,
+            "partial match must be in (0, 1)"
+        );
     }
 
     #[test]
@@ -4241,7 +4556,10 @@ mod tests {
         let raw_scores: Vec<f32> = ranked.iter().map(|h| h.score).collect();
         let normalized = softmax(&raw_scores);
         let sum: f32 = normalized.iter().sum();
-        assert!((sum - 1.0_f32).abs() < 1e-5, "normalized sum must be 1.0, got {sum}");
+        assert!(
+            (sum - 1.0_f32).abs() < 1e-5,
+            "normalized sum must be 1.0, got {sum}"
+        );
     }
 
     #[test]
@@ -4303,7 +4621,11 @@ mod tests {
 
         // On cache hit, we use the stored score without calling compute again.
         let score2 = score1; // cache hit: reuse stored value
-        assert_eq!(calls_after_first, call_count.get(), "cache hit must not invoke compute again");
+        assert_eq!(
+            calls_after_first,
+            call_count.get(),
+            "cache hit must not invoke compute again"
+        );
         assert!((score1 - score2).abs() < 1e-9);
     }
 
@@ -4313,7 +4635,10 @@ mod tests {
         let hyp = "graph node";
         let score_a = classify_with_react(hyp, evidence);
         let score_b = classify_with_react(hyp, evidence);
-        assert!((score_a - score_b).abs() < 1e-9, "deterministic: same input same score");
+        assert!(
+            (score_a - score_b).abs() < 1e-9,
+            "deterministic: same input same score"
+        );
     }
 
     // --- Additional coverage ---
@@ -4430,8 +4755,11 @@ mod tests {
     #[test]
     fn intent_resolver_new_with_five_kinds_count_is_five() {
         let r = IntentResolver::new(vec![
-            "video".to_string(), "audio".to_string(), "image".to_string(),
-            "graph".to_string(), "canvas".to_string(),
+            "video".to_string(),
+            "audio".to_string(),
+            "image".to_string(),
+            "graph".to_string(),
+            "canvas".to_string(),
         ]);
         assert_eq!(r.kind_count(), 5);
     }
@@ -4505,7 +4833,9 @@ mod tests {
     #[test]
     fn intent_resolver_resolve_alternatives_non_empty_when_multiple_match() {
         let r = IntentResolver::new(vec![
-            "video".to_string(), "audio".to_string(), "image".to_string(),
+            "video".to_string(),
+            "audio".to_string(),
+            "image".to_string(),
         ]);
         // All three kinds appear in the input string.
         let result = r.resolve("video audio image combined");
@@ -4531,41 +4861,52 @@ mod tests {
 
     #[test]
     fn resolved_intent_best_kind_none_when_no_match() {
-        let ri = ResolvedIntent { best_kind: None, confidence: 0.0, alternatives: vec![] };
+        let ri = ResolvedIntent {
+            best_kind: None,
+            confidence: 0.0,
+            alternatives: vec![],
+        };
         assert!(ri.best_kind.is_none());
     }
 
     #[test]
     fn resolved_intent_confidence_zero_when_no_match() {
-        let ri = ResolvedIntent { best_kind: None, confidence: 0.0, alternatives: vec![] };
+        let ri = ResolvedIntent {
+            best_kind: None,
+            confidence: 0.0,
+            alternatives: vec![],
+        };
         assert_eq!(ri.confidence, 0.0);
     }
 
     #[test]
     fn resolved_intent_alternatives_empty_when_no_match() {
-        let ri = ResolvedIntent { best_kind: None, confidence: 0.0, alternatives: vec![] };
+        let ri = ResolvedIntent {
+            best_kind: None,
+            confidence: 0.0,
+            alternatives: vec![],
+        };
         assert!(ri.alternatives.is_empty());
     }
 
     #[test]
     fn resolved_intent_alternatives_sorted_by_confidence_desc() {
-        let r = IntentResolver::new(vec![
-            "a".to_string(), "ab".to_string(), "abc".to_string(),
-        ]);
+        let r = IntentResolver::new(vec!["a".to_string(), "ab".to_string(), "abc".to_string()]);
         // Input "abc" contains all three kinds; "abc" should score highest.
         let result = r.resolve("abc");
         if result.alternatives.len() >= 2 {
             for w in result.alternatives.windows(2) {
-                assert!(w[0].1 >= w[1].1, "alternatives must be sorted descending by confidence");
+                assert!(
+                    w[0].1 >= w[1].1,
+                    "alternatives must be sorted descending by confidence"
+                );
             }
         }
     }
 
     #[test]
     fn resolved_intent_best_confidence_gte_any_alternative() {
-        let r = IntentResolver::new(vec![
-            "video".to_string(), "audio".to_string(),
-        ]);
+        let r = IntentResolver::new(vec!["video".to_string(), "audio".to_string()]);
         let result = r.resolve("video audio");
         if let Some(_) = &result.best_kind {
             for (_, alt_score) in &result.alternatives {
@@ -4615,9 +4956,7 @@ mod tests {
 
     #[test]
     fn intent_resolver_longest_kind_scores_highest() {
-        let r = IntentResolver::new(vec![
-            "a".to_string(), "ab".to_string(), "abc".to_string(),
-        ]);
+        let r = IntentResolver::new(vec!["a".to_string(), "ab".to_string(), "abc".to_string()]);
         // "abc" is the longest matching substring of "abc longer text" and scores highest.
         let result = r.resolve("abc longer text");
         // "abc" matches and its score = 3 / len("abc longer text") which may be the highest.
@@ -4650,7 +4989,11 @@ mod tests {
 
     #[test]
     fn resolved_intent_debug_format_contains_resolved_intent() {
-        let ri = ResolvedIntent { best_kind: None, confidence: 0.0, alternatives: vec![] };
+        let ri = ResolvedIntent {
+            best_kind: None,
+            confidence: 0.0,
+            alternatives: vec![],
+        };
         let dbg = format!("{:?}", ri);
         assert!(dbg.contains("ResolvedIntent"));
     }
@@ -4691,7 +5034,10 @@ mod tests {
     #[test]
     fn best_kind_for_single_kind_present_in_query() {
         let r = IntentResolver::new(vec!["canvas".to_string()]);
-        assert_eq!(r.best_kind_for("draw on the canvas"), Some("canvas".to_string()));
+        assert_eq!(
+            r.best_kind_for("draw on the canvas"),
+            Some("canvas".to_string())
+        );
     }
 
     #[test]
@@ -4784,7 +5130,11 @@ mod tests {
 
     #[test]
     fn all_matches_returns_all_matching_kinds() {
-        let r = IntentResolver::new(vec!["canvas".to_string(), "block".to_string(), "graph".to_string()]);
+        let r = IntentResolver::new(vec![
+            "canvas".to_string(),
+            "block".to_string(),
+            "graph".to_string(),
+        ]);
         let matches = r.all_matches("block on canvas");
         // "graph" does not appear; "canvas" and "block" do.
         assert_eq!(matches.len(), 2);
@@ -4859,7 +5209,10 @@ mod tests {
         let r = IntentResolver::new(vec!["block".to_string()]);
         // "block" in "block" → score = 5/5 = 1.0.
         let conf = r.confidence_for("block", "block");
-        assert!((conf - 1.0).abs() < 1e-6, "exact match must give confidence 1.0, got {conf}");
+        assert!(
+            (conf - 1.0).abs() < 1e-6,
+            "exact match must give confidence 1.0, got {conf}"
+        );
     }
 
     #[test]
@@ -4874,13 +5227,20 @@ mod tests {
 
     #[test]
     fn best_kind_for_multiword_query_with_multiple_kinds() {
-        let r = IntentResolver::new(vec!["block".to_string(), "layout".to_string(), "canvas".to_string()]);
+        let r = IntentResolver::new(vec![
+            "block".to_string(),
+            "layout".to_string(),
+            "canvas".to_string(),
+        ]);
         let q = "layout the block on the canvas";
         let best = r.best_kind_for(q);
         // All three appear; longest = "layout" (6) = "canvas" (6) = "block" (5).
         // Whichever wins, it must be one of the three.
         let valid = ["block", "layout", "canvas"];
-        assert!(valid.contains(&best.as_deref().unwrap()), "best must be one of the three kinds");
+        assert!(
+            valid.contains(&best.as_deref().unwrap()),
+            "best must be one of the three kinds"
+        );
     }
 
     #[test]
@@ -4899,7 +5259,11 @@ mod tests {
 
     #[test]
     fn best_kind_for_ignores_nonmatching_kinds() {
-        let r = IntentResolver::new(vec!["video".to_string(), "audio".to_string(), "canvas".to_string()]);
+        let r = IntentResolver::new(vec![
+            "video".to_string(),
+            "audio".to_string(),
+            "canvas".to_string(),
+        ]);
         // Only "canvas" appears in the query.
         let best = r.best_kind_for("draw on canvas surface");
         assert_eq!(best, Some("canvas".to_string()));
@@ -4912,12 +5276,19 @@ mod tests {
         // canvas-block (12 chars) scores higher than canvas (6 chars).
         let best_conf = r.confidence_for(q, "canvas-block");
         let alt_conf = r.confidence_for(q, "canvas");
-        assert!(best_conf >= alt_conf, "best kind must have higher or equal confidence");
+        assert!(
+            best_conf >= alt_conf,
+            "best kind must have higher or equal confidence"
+        );
     }
 
     #[test]
     fn all_matches_includes_all_three_when_all_present() {
-        let r = IntentResolver::new(vec!["canvas".to_string(), "block".to_string(), "graph".to_string()]);
+        let r = IntentResolver::new(vec![
+            "canvas".to_string(),
+            "block".to_string(),
+            "graph".to_string(),
+        ]);
         let q = "canvas block graph pipeline";
         let matches = r.all_matches(q);
         assert_eq!(matches.len(), 3);

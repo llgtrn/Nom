@@ -130,7 +130,11 @@ mod tests {
         for i in 0u64..50 {
             cache.invalidate(&Hash128::of_u64(i));
         }
-        assert_eq!(cache.len(), 50, "50 entries must remain after 50 invalidations");
+        assert_eq!(
+            cache.len(),
+            50,
+            "50 entries must remain after 50 invalidations"
+        );
     }
 
     #[test]
@@ -195,7 +199,7 @@ mod tests {
         let key = Hash128::of_str("overwrite");
         cache.put(key, 1, Constraint::new(10));
         cache.put(key, 2, Constraint::new(10)); // overwrite
-        // New value must be returned.
+                                                // New value must be returned.
         assert_eq!(cache.get(&key, 10, &[]), Some(2));
         assert_eq!(cache.len(), 1, "overwrite must not grow the cache");
     }
@@ -261,13 +265,21 @@ mod tests {
         // (None from HashMap.get() happens before constraint check).
         let mut cache: MemoCache<u8> = MemoCache::new();
         let _ = cache.get(&Hash128::of_str("absent"), 0, &[]);
-        assert_eq!(cache.miss_count(), 0, "absent key must not increment miss_count");
+        assert_eq!(
+            cache.miss_count(),
+            0,
+            "absent key must not increment miss_count"
+        );
     }
 
     #[test]
     fn memo_hit_rate_zero_when_no_lookups() {
         let cache: MemoCache<u8> = MemoCache::new();
-        assert_eq!(cache.hit_rate(), 0.0, "hit rate must be 0.0 with no lookups");
+        assert_eq!(
+            cache.hit_rate(),
+            0.0,
+            "hit rate must be 0.0 with no lookups"
+        );
     }
 
     // --- Cache miss calls underlying function ---
@@ -453,7 +465,7 @@ mod tests {
         cache.put(key, 1, Constraint::new(5));
         cache.get(&key, 5, &[]); // hit
         cache.get(&key, 99, &[]); // miss
-        // hit_rate = 1/2 = 0.5
+                                  // hit_rate = 1/2 = 0.5
         let rate = cache.hit_rate();
         assert!((rate - 0.5).abs() < 1e-9);
     }
@@ -610,7 +622,11 @@ mod tests {
         let mut cache: MemoCache<u32> = MemoCache::new();
         let key = Hash128::of_str("ttl_valid");
         cache.put(key, 77, Constraint::new(10));
-        assert_eq!(cache.get(&key, 10, &[]), Some(77), "entry must be valid before version change");
+        assert_eq!(
+            cache.get(&key, 10, &[]),
+            Some(77),
+            "entry must be valid before version change"
+        );
     }
 
     #[test]
@@ -619,7 +635,11 @@ mod tests {
         let mut cache: MemoCache<u32> = MemoCache::new();
         let key = Hash128::of_str("ttl_expired");
         cache.put(key, 88, Constraint::new(10));
-        assert_eq!(cache.get(&key, 11, &[]), None, "entry must expire after version change");
+        assert_eq!(
+            cache.get(&key, 11, &[]),
+            None,
+            "entry must expire after version change"
+        );
     }
 
     #[test]
@@ -633,7 +653,11 @@ mod tests {
         assert_eq!(cache.get(&key, 1, &[]), Some(1));
         // Overwrite = "evict old, insert new"
         cache.put(key, 2, Constraint::new(2));
-        assert_eq!(cache.get(&key, 2, &[]), Some(2), "overwrite must reflect new value");
+        assert_eq!(
+            cache.get(&key, 2, &[]),
+            Some(2),
+            "overwrite must reflect new value"
+        );
     }
 
     #[test]
@@ -663,7 +687,10 @@ mod tests {
         cache.put(key_b, 2, Constraint::new(1));
         assert_eq!(cache.get(&key_a, 1, &[]), Some(1));
         assert_eq!(cache.get(&key_b, 1, &[]), Some(2));
-        assert_ne!(key_a, key_b, "distinct key strings must produce distinct Hash128 values");
+        assert_ne!(
+            key_a, key_b,
+            "distinct key strings must produce distinct Hash128 values"
+        );
     }
 
     #[test]
@@ -675,7 +702,11 @@ mod tests {
         cache.put(key, 42, Constraint::new(1));
         // Every read uses a different version → always misses.
         for v in 2u64..12 {
-            assert_eq!(cache.get(&key, v, &[]), None, "version mismatch must always miss");
+            assert_eq!(
+                cache.get(&key, v, &[]),
+                None,
+                "version mismatch must always miss"
+            );
         }
     }
 
@@ -732,8 +763,14 @@ mod tests {
     #[test]
     fn memo_constraint_new_validates_own_hash_new() {
         let c = Constraint::new(99);
-        assert!(c.validate(99, &[]), "constraint must accept its own input_hash");
-        assert!(!c.validate(100, &[]), "constraint must reject a different input_hash");
+        assert!(
+            c.validate(99, &[]),
+            "constraint must accept its own input_hash"
+        );
+        assert!(
+            !c.validate(100, &[]),
+            "constraint must reject a different input_hash"
+        );
     }
 
     #[test]
@@ -790,7 +827,11 @@ mod tests {
     fn memo_put_many_distinct_keys_all_retrievable() {
         let mut cache: MemoCache<usize> = MemoCache::new();
         for i in 0usize..50 {
-            cache.put(Hash128::of_u64(i as u64 + 1000), i, Constraint::new(i as u64 + 1000));
+            cache.put(
+                Hash128::of_u64(i as u64 + 1000),
+                i,
+                Constraint::new(i as u64 + 1000),
+            );
         }
         for i in 0usize..50 {
             let v = cache.get(&Hash128::of_u64(i as u64 + 1000), i as u64 + 1000, &[]);
@@ -806,7 +847,10 @@ mod tests {
         cache.get(&key, 5, &[]); // hit
         cache.get(&key, 6, &[]); // miss
         let rate = cache.hit_rate();
-        assert!((rate - 0.5).abs() < 1e-6, "hit rate must be 0.5, got {rate}");
+        assert!(
+            (rate - 0.5).abs() < 1e-6,
+            "hit rate must be 0.5, got {rate}"
+        );
     }
 
     #[test]
@@ -860,7 +904,10 @@ mod tests {
     #[test]
     fn memo_constraint_fresh_with_deps_empty_slice() {
         let c = Constraint::new(42);
-        assert!(c.validate(42, &[]), "fresh constraint with empty deps must validate");
+        assert!(
+            c.validate(42, &[]),
+            "fresh constraint with empty deps must validate"
+        );
     }
 
     #[test]
@@ -905,7 +952,10 @@ mod tests {
         for k in &keys {
             cache.invalidate(k);
         }
-        assert!(cache.is_empty(), "invalidating all keys must leave cache empty");
+        assert!(
+            cache.is_empty(),
+            "invalidating all keys must leave cache empty"
+        );
     }
 
     #[test]
@@ -1399,7 +1449,11 @@ mod tests {
         for _ in 0..10 {
             let _ = cache.get(&key, 5, &[]);
         }
-        assert_eq!(call_count.get(), 1, "function must not be called again after cache hits");
+        assert_eq!(
+            call_count.get(),
+            1,
+            "function must not be called again after cache hits"
+        );
     }
 
     // --- Cache warm-up: pre-populate, all reads are hits ---
@@ -1439,7 +1493,11 @@ mod tests {
         cache.put(key, 42, Constraint::new(0));
         // Any version != 0 misses immediately.
         for v in 1u64..5 {
-            assert_eq!(cache.get(&key, v, &[]), None, "TTL=0: version {v} must miss");
+            assert_eq!(
+                cache.get(&key, v, &[]),
+                None,
+                "TTL=0: version {v} must miss"
+            );
         }
     }
 
@@ -1458,9 +1516,17 @@ mod tests {
         // Sequential simulation of "concurrent" inserts: 20 distinct keys.
         let mut cache: MemoCache<u32> = MemoCache::new();
         for i in 0u64..20 {
-            cache.put(Hash128::of_u64(i + 1000), i as u32, Constraint::new(i + 1000));
+            cache.put(
+                Hash128::of_u64(i + 1000),
+                i as u32,
+                Constraint::new(i + 1000),
+            );
         }
-        assert_eq!(cache.len(), 20, "count must be 20 after 20 distinct inserts");
+        assert_eq!(
+            cache.len(),
+            20,
+            "count must be 20 after 20 distinct inserts"
+        );
     }
 
     #[test]
@@ -1479,8 +1545,16 @@ mod tests {
     fn cache_len_grows_with_more_entries() {
         let mut cache: MemoCache<u32> = MemoCache::new();
         for i in 0u64..5 {
-            cache.put(Hash128::of_u64(i + 2000), i as u32, Constraint::new(i + 2000));
-            assert_eq!(cache.len(), i as usize + 1, "len must grow with each new key");
+            cache.put(
+                Hash128::of_u64(i + 2000),
+                i as u32,
+                Constraint::new(i + 2000),
+            );
+            assert_eq!(
+                cache.len(),
+                i as usize + 1,
+                "len must grow with each new key"
+            );
         }
     }
 
@@ -1561,7 +1635,11 @@ mod tests {
         let hits_before = cache.hit_count();
         cache.clear();
         assert!(cache.is_empty());
-        assert_eq!(cache.hit_count(), hits_before, "hit count persists after clear");
+        assert_eq!(
+            cache.hit_count(),
+            hits_before,
+            "hit count persists after clear"
+        );
     }
 
     #[test]
@@ -1582,7 +1660,10 @@ mod tests {
         }
         cache.get(&key, 2, &[]); // miss
         let rate = cache.hit_rate();
-        assert!((rate - 0.9_f64).abs() < 1e-9, "expected 90% hit rate, got {rate}");
+        assert!(
+            (rate - 0.9_f64).abs() < 1e-9,
+            "expected 90% hit rate, got {rate}"
+        );
     }
 
     #[test]
@@ -1734,7 +1815,11 @@ mod tests {
         cache.put(k2, 20, Constraint::new(1));
         // "Evict oldest" = invalidate k1.
         cache.invalidate(&k1);
-        assert_eq!(cache.get(&k2, 1, &[]), Some(20), "newest entry must survive");
+        assert_eq!(
+            cache.get(&k2, 1, &[]),
+            Some(20),
+            "newest entry must survive"
+        );
         assert_eq!(cache.get(&k1, 1, &[]), None, "oldest entry must be gone");
     }
 
@@ -1762,7 +1847,11 @@ mod tests {
         for (idx, &k) in keys.iter().enumerate() {
             cache.put(k, idx as u32, Constraint::new(idx as u64));
         }
-        assert_eq!(cache.len(), 25, "25 distinct composite keys must all be stored");
+        assert_eq!(
+            cache.len(),
+            25,
+            "25 distinct composite keys must all be stored"
+        );
     }
 
     #[test]
@@ -1819,11 +1908,18 @@ mod tests {
         let mut cache: MemoCache<u32> = MemoCache::new();
         cache.resize(1000);
         for i in 0u64..50 {
-            cache.put(Hash128::of_u64(i + 9000), i as u32, Constraint::new(i + 9000));
+            cache.put(
+                Hash128::of_u64(i + 9000),
+                i as u32,
+                Constraint::new(i + 9000),
+            );
         }
         assert_eq!(cache.len(), 50);
         for i in 0u64..50 {
-            assert_eq!(cache.get(&Hash128::of_u64(i + 9000), i + 9000, &[]), Some(i as u32));
+            assert_eq!(
+                cache.get(&Hash128::of_u64(i + 9000), i + 9000, &[]),
+                Some(i as u32)
+            );
         }
     }
 
@@ -1833,7 +1929,11 @@ mod tests {
         let k = Hash128::of_str("ev_single");
         cache.put(k, 42, Constraint::new(7));
         cache.invalidate(&k);
-        assert_eq!(cache.eviction_count(), 1, "one real eviction must increment counter");
+        assert_eq!(
+            cache.eviction_count(),
+            1,
+            "one real eviction must increment counter"
+        );
     }
 
     #[test]

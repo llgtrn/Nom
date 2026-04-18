@@ -390,9 +390,27 @@ mod tests {
     #[test]
     fn credential_store_multiple_keys() {
         let mut s = CredentialStore::new();
-        s.set("svc_a", Credential { kind: "api_key".into(), value: "val_a".into() });
-        s.set("svc_b", Credential { kind: "bearer".into(), value: "val_b".into() });
-        s.set("svc_c", Credential { kind: "oauth2".into(), value: "val_c".into() });
+        s.set(
+            "svc_a",
+            Credential {
+                kind: "api_key".into(),
+                value: "val_a".into(),
+            },
+        );
+        s.set(
+            "svc_b",
+            Credential {
+                kind: "bearer".into(),
+                value: "val_b".into(),
+            },
+        );
+        s.set(
+            "svc_c",
+            Credential {
+                kind: "oauth2".into(),
+                value: "val_c".into(),
+            },
+        );
         assert_eq!(s.len(), 3);
         assert_eq!(s.get("svc_a").unwrap().value, "val_a");
         assert_eq!(s.get("svc_b").unwrap().value, "val_b");
@@ -402,8 +420,20 @@ mod tests {
     #[test]
     fn credential_store_overwrite_key() {
         let mut s = CredentialStore::new();
-        s.set("key", Credential { kind: "api_key".into(), value: "first".into() });
-        s.set("key", Credential { kind: "api_key".into(), value: "second".into() });
+        s.set(
+            "key",
+            Credential {
+                kind: "api_key".into(),
+                value: "first".into(),
+            },
+        );
+        s.set(
+            "key",
+            Credential {
+                kind: "api_key".into(),
+                value: "second".into(),
+            },
+        );
         assert_eq!(s.get("key").unwrap().value, "second");
         assert_eq!(s.len(), 1);
     }
@@ -418,8 +448,20 @@ mod tests {
     #[test]
     fn credential_store_len_after_remove_decreases() {
         let mut s = CredentialStore::new();
-        s.set("a", Credential { kind: "k".into(), value: "v".into() });
-        s.set("b", Credential { kind: "k".into(), value: "v".into() });
+        s.set(
+            "a",
+            Credential {
+                kind: "k".into(),
+                value: "v".into(),
+            },
+        );
+        s.set(
+            "b",
+            Credential {
+                kind: "k".into(),
+                value: "v".into(),
+            },
+        );
         assert_eq!(s.len(), 2);
         s.remove("a");
         assert_eq!(s.len(), 1);

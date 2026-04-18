@@ -74,10 +74,12 @@ mod tests {
             GrammarKind {
                 name: "verb".into(),
                 description: "action word".into(),
+                status: crate::shared::KindStatus::Transient,
             },
             GrammarKind {
                 name: "concept".into(),
                 description: "abstract idea".into(),
+                status: crate::shared::KindStatus::Transient,
             },
         ]);
         let provider = CompilerLspProvider::new(state);
@@ -145,6 +147,7 @@ mod tests {
         state.update_grammar_kinds(vec![GrammarKind {
             name: "emit".into(),
             description: "output a value".into(),
+            status: crate::shared::KindStatus::Transient,
         }]);
         let provider = CompilerLspProvider::new(state);
         let completions = provider.completions(std::path::Path::new("test.nomx"), 0);
@@ -177,6 +180,7 @@ mod tests {
             .map(|i| GrammarKind {
                 name: format!("kind_{i}"),
                 description: "desc".into(),
+                status: crate::shared::KindStatus::Transient,
             })
             .collect();
         state.update_grammar_kinds(many_kinds);
@@ -193,9 +197,21 @@ mod tests {
     fn completion_items_have_insert_text_set() {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
         state.update_grammar_kinds(vec![
-            GrammarKind { name: "define".into(), description: "declaration".into() },
-            GrammarKind { name: "result".into(), description: "output".into() },
-            GrammarKind { name: "yield".into(), description: "produce value".into() },
+            GrammarKind {
+                name: "define".into(),
+                description: "declaration".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            GrammarKind {
+                name: "result".into(),
+                description: "output".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            GrammarKind {
+                name: "yield".into(),
+                description: "produce value".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
         ]);
         let provider = CompilerLspProvider::new(state);
         let completions = provider.completions(std::path::Path::new("test.nomx"), 0);
@@ -216,6 +232,7 @@ mod tests {
         state.update_grammar_kinds(vec![GrammarKind {
             name: "compose".into(),
             description: "combine items".into(),
+            status: crate::shared::KindStatus::Transient,
         }]);
         let provider = CompilerLspProvider::new(state);
         let completions = provider.completions(std::path::Path::new("test.nomx"), 0);
@@ -233,6 +250,7 @@ mod tests {
         state.update_grammar_kinds(vec![GrammarKind {
             name: "emit".into(),
             description: "send a value downstream".into(),
+            status: crate::shared::KindStatus::Transient,
         }]);
         // Without compiler feature, hover_from_dict returns None
         let result = hover_from_dict("emit", &state);
@@ -243,7 +261,10 @@ mod tests {
         #[cfg(feature = "compiler")]
         {
             let r = result.expect("expected hover result with compiler feature");
-            assert!(r.contents.contains("emit"), "hover must mention the kind name");
+            assert!(
+                r.contents.contains("emit"),
+                "hover must mention the kind name"
+            );
         }
     }
 
@@ -254,6 +275,7 @@ mod tests {
         state.update_grammar_kinds(vec![GrammarKind {
             name: "filter".into(),
             description: "select matching items".into(),
+            status: crate::shared::KindStatus::Transient,
         }]);
         let provider = CompilerLspProvider::new(state);
         let completions = provider.completions(std::path::Path::new("test.nomx"), 0);
@@ -272,14 +294,22 @@ mod tests {
         state.update_grammar_kinds(
             names
                 .iter()
-                .map(|n| GrammarKind { name: n.to_string(), description: "desc".into() })
+                .map(|n| GrammarKind {
+                    name: n.to_string(),
+                    description: "desc".into(),
+                    status: crate::shared::KindStatus::Transient,
+                })
                 .collect(),
         );
         let provider = CompilerLspProvider::new(state);
         let completions = provider.completions(std::path::Path::new("test.nomx"), 0);
         let labels: Vec<&str> = completions.iter().map(|c| c.label.as_str()).collect();
         for name in &names {
-            assert!(labels.contains(name), "label '{}' must be in completions", name);
+            assert!(
+                labels.contains(name),
+                "label '{}' must be in completions",
+                name
+            );
         }
     }
 
@@ -290,6 +320,7 @@ mod tests {
         state.update_grammar_kinds(vec![GrammarKind {
             name: "known".into(),
             description: "a known word".into(),
+            status: crate::shared::KindStatus::Transient,
         }]);
         let provider = CompilerLspProvider::new(state);
         // Path stem "unknown" does not match "known"
@@ -317,6 +348,7 @@ mod tests {
         state.update_grammar_kinds(vec![GrammarKind {
             name: "map".into(),
             description: "transform items".into(),
+            status: crate::shared::KindStatus::Transient,
         }]);
         let provider = CompilerLspProvider::new(state);
         let completions = provider.completions(std::path::Path::new("test.nomx"), 0);
@@ -373,17 +405,27 @@ mod tests {
         state.update_grammar_kinds(vec![GrammarKind {
             name: "render".into(),
             description: "output to display".into(),
+            status: crate::shared::KindStatus::Transient,
         }]);
         let result = hover_from_dict("render", &state);
         // Without compiler feature this must be None
         #[cfg(not(feature = "compiler"))]
-        assert!(result.is_none(), "without compiler feature hover must return None");
+        assert!(
+            result.is_none(),
+            "without compiler feature hover must return None"
+        );
         // With compiler feature it should contain the kind name and description
         #[cfg(feature = "compiler")]
         {
             let r = result.expect("compiler feature: hover must return Some for known word");
-            assert!(r.contents.contains("render"), "hover must mention the kind name");
-            assert!(r.contents.contains("output to display"), "hover must include description");
+            assert!(
+                r.contents.contains("render"),
+                "hover must mention the kind name"
+            );
+            assert!(
+                r.contents.contains("output to display"),
+                "hover must include description"
+            );
         }
     }
 
@@ -394,10 +436,14 @@ mod tests {
         state.update_grammar_kinds(vec![GrammarKind {
             name: "emit".into(),
             description: "send downstream".into(),
+            status: crate::shared::KindStatus::Transient,
         }]);
         let provider = CompilerLspProvider::new(state);
         let result = provider.goto_definition(std::path::Path::new("emit.nomx"), 0);
-        assert!(result.is_none(), "goto_definition must always return None (no compiler feature)");
+        assert!(
+            result.is_none(),
+            "goto_definition must always return None (no compiler feature)"
+        );
     }
 
     /// Completion with 10 candidates returns all 10.
@@ -408,12 +454,17 @@ mod tests {
             .map(|i| GrammarKind {
                 name: format!("kind_{i:02}"),
                 description: format!("description {i}"),
+                status: crate::shared::KindStatus::Transient,
             })
             .collect();
         state.update_grammar_kinds(kinds);
         let provider = CompilerLspProvider::new(state);
         let completions = provider.completions(std::path::Path::new("test.nomx"), 0);
-        assert_eq!(completions.len(), 10, "exactly 10 completions must be returned for 10 kinds");
+        assert_eq!(
+            completions.len(),
+            10,
+            "exactly 10 completions must be returned for 10 kinds"
+        );
     }
 
     /// Completion label equals the kind name for all items.
@@ -424,7 +475,11 @@ mod tests {
         state.update_grammar_kinds(
             expected_names
                 .iter()
-                .map(|n| GrammarKind { name: n.to_string(), description: "desc".into() })
+                .map(|n| GrammarKind {
+                    name: n.to_string(),
+                    description: "desc".into(),
+                    status: crate::shared::KindStatus::Transient,
+                })
                 .collect(),
         );
         let provider = CompilerLspProvider::new(state);
@@ -454,11 +509,14 @@ mod tests {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
         let provider = CompilerLspProvider::new(Arc::clone(&state));
         // Before cache update: empty
-        assert!(provider.completions(std::path::Path::new("t.nomx"), 0).is_empty());
+        assert!(provider
+            .completions(std::path::Path::new("t.nomx"), 0)
+            .is_empty());
         // After cache update: non-empty
         state.update_grammar_kinds(vec![GrammarKind {
             name: "flow".into(),
             description: "stream".into(),
+            status: crate::shared::KindStatus::Transient,
         }]);
         let completions = provider.completions(std::path::Path::new("t.nomx"), 0);
         assert_eq!(completions.len(), 1);
@@ -471,9 +529,21 @@ mod tests {
     fn lsp_completion_list_is_sorted_alphabetically() {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
         state.update_grammar_kinds(vec![
-            GrammarKind { name: "zebra".into(), description: "z".into() },
-            GrammarKind { name: "apple".into(), description: "a".into() },
-            GrammarKind { name: "mango".into(), description: "m".into() },
+            GrammarKind {
+                name: "zebra".into(),
+                description: "z".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            GrammarKind {
+                name: "apple".into(),
+                description: "a".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            GrammarKind {
+                name: "mango".into(),
+                description: "m".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
         ]);
         let provider = CompilerLspProvider::new(state);
         let mut completions = provider.completions(std::path::Path::new("test.nomx"), 0);
@@ -488,9 +558,21 @@ mod tests {
     fn lsp_completion_for_empty_prefix_returns_all() {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
         state.update_grammar_kinds(vec![
-            GrammarKind { name: "run".into(), description: "execute".into() },
-            GrammarKind { name: "stop".into(), description: "halt".into() },
-            GrammarKind { name: "pause".into(), description: "wait".into() },
+            GrammarKind {
+                name: "run".into(),
+                description: "execute".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            GrammarKind {
+                name: "stop".into(),
+                description: "halt".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            GrammarKind {
+                name: "pause".into(),
+                description: "wait".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
         ]);
         let provider = CompilerLspProvider::new(state);
         let completions = provider.completions(std::path::Path::new("test.nomx"), 0);
@@ -505,6 +587,7 @@ mod tests {
         state.update_grammar_kinds(vec![GrammarKind {
             name: "verb".into(),
             description: "action kind".into(),
+            status: crate::shared::KindStatus::Transient,
         }]);
         // hover_from_dict is the underlying call
         let result = hover_from_dict("verb", &state);
@@ -526,10 +609,14 @@ mod tests {
         state.update_grammar_kinds(vec![GrammarKind {
             name: "known".into(),
             description: "a kind".into(),
+            status: crate::shared::KindStatus::Transient,
         }]);
         let provider = CompilerLspProvider::new(state);
         let result = provider.goto_definition(std::path::Path::new("unknown_word.nomx"), 0);
-        assert!(result.is_none(), "goto_definition must return None for unknown word");
+        assert!(
+            result.is_none(),
+            "goto_definition must return None for unknown word"
+        );
     }
 
     /// HoverResult range is always valid: start <= end.
@@ -549,14 +636,25 @@ mod tests {
     fn completion_item_has_insert_text_field() {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
         state.update_grammar_kinds(vec![
-            GrammarKind { name: "produce".into(), description: "generate".into() },
-            GrammarKind { name: "consume".into(), description: "process".into() },
+            GrammarKind {
+                name: "produce".into(),
+                description: "generate".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            GrammarKind {
+                name: "consume".into(),
+                description: "process".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
         ]);
         let provider = CompilerLspProvider::new(state);
         let completions = provider.completions(std::path::Path::new("test.nomx"), 0);
         assert_eq!(completions.len(), 2);
         for item in &completions {
-            assert!(!item.insert_text.is_empty(), "insert_text must be set and non-empty");
+            assert!(
+                !item.insert_text.is_empty(),
+                "insert_text must be set and non-empty"
+            );
         }
     }
 
@@ -567,6 +665,7 @@ mod tests {
         state.update_grammar_kinds(vec![GrammarKind {
             name: "resolve".into(),
             description: "lookup".into(),
+            status: crate::shared::KindStatus::Transient,
         }]);
         let provider = CompilerLspProvider::new(state);
         let completions = provider.completions(std::path::Path::new("test.nomx"), 0);
@@ -581,16 +680,32 @@ mod tests {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
         // Even if kinds have the same name (shouldn't happen, but guard it), deduplicate on label
         state.update_grammar_kinds(vec![
-            GrammarKind { name: "unique_a".into(), description: "a".into() },
-            GrammarKind { name: "unique_b".into(), description: "b".into() },
-            GrammarKind { name: "unique_c".into(), description: "c".into() },
+            GrammarKind {
+                name: "unique_a".into(),
+                description: "a".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            GrammarKind {
+                name: "unique_b".into(),
+                description: "b".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            GrammarKind {
+                name: "unique_c".into(),
+                description: "c".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
         ]);
         let provider = CompilerLspProvider::new(state);
         let completions = provider.completions(std::path::Path::new("test.nomx"), 0);
         let mut labels: Vec<&str> = completions.iter().map(|c| c.label.as_str()).collect();
         labels.sort();
         labels.dedup();
-        assert_eq!(labels.len(), completions.len(), "completion labels must be unique");
+        assert_eq!(
+            labels.len(),
+            completions.len(),
+            "completion labels must be unique"
+        );
     }
 
     /// Empty source (empty grammar cache) produces no LSP diagnostics (no completions = no errors).
@@ -601,7 +716,10 @@ mod tests {
         let provider = CompilerLspProvider::new(state);
         let completions = provider.completions(std::path::Path::new("empty.nomx"), 0);
         // No completions returned → effectively no error completions to flag
-        assert!(completions.is_empty(), "empty source must produce no completions");
+        assert!(
+            completions.is_empty(),
+            "empty source must produce no completions"
+        );
     }
 
     /// HoverResult with None range is still valid and accessible.
@@ -620,15 +738,31 @@ mod tests {
     fn lsp_document_symbols_returns_entries() {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
         let kinds = vec![
-            GrammarKind { name: "symbol_a".into(), description: "entry a".into() },
-            GrammarKind { name: "symbol_b".into(), description: "entry b".into() },
-            GrammarKind { name: "symbol_c".into(), description: "entry c".into() },
+            GrammarKind {
+                name: "symbol_a".into(),
+                description: "entry a".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            GrammarKind {
+                name: "symbol_b".into(),
+                description: "entry b".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            GrammarKind {
+                name: "symbol_c".into(),
+                description: "entry c".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
         ];
         state.update_grammar_kinds(kinds);
         let provider = CompilerLspProvider::new(state);
         // completions() acts as the document symbol provider here
         let symbols = provider.completions(std::path::Path::new("doc.nomx"), 0);
-        assert_eq!(symbols.len(), 3, "document symbols must match the number of grammar kinds");
+        assert_eq!(
+            symbols.len(),
+            3,
+            "document symbols must match the number of grammar kinds"
+        );
         let names: Vec<&str> = symbols.iter().map(|s| s.label.as_str()).collect();
         assert!(names.contains(&"symbol_a"));
         assert!(names.contains(&"symbol_b"));
@@ -644,18 +778,29 @@ mod tests {
         state.update_grammar_kinds(vec![GrammarKind {
             name: "old_name".into(),
             description: "to rename".into(),
+            status: crate::shared::KindStatus::Transient,
         }]);
         let provider = CompilerLspProvider::new(Arc::clone(&state));
         let before: Vec<_> = provider.completions(std::path::Path::new("f.nomx"), 0);
-        assert!(before.iter().any(|c| c.label == "old_name"), "old name must be present before rename");
+        assert!(
+            before.iter().any(|c| c.label == "old_name"),
+            "old name must be present before rename"
+        );
         // Simulate rename: replace grammar kinds
         state.update_grammar_kinds(vec![GrammarKind {
             name: "new_name".into(),
             description: "renamed".into(),
+            status: crate::shared::KindStatus::Transient,
         }]);
         let after: Vec<_> = provider.completions(std::path::Path::new("f.nomx"), 0);
-        assert!(after.iter().any(|c| c.label == "new_name"), "new name must appear after rename");
-        assert!(!after.iter().any(|c| c.label == "old_name"), "old name must be gone after rename");
+        assert!(
+            after.iter().any(|c| c.label == "new_name"),
+            "new name must appear after rename"
+        );
+        assert!(
+            !after.iter().any(|c| c.label == "old_name"),
+            "old name must be gone after rename"
+        );
     }
 
     /// lsp_rename_returns_workspace_edits: workspace-edit simulation via Vec.
@@ -678,13 +823,28 @@ mod tests {
     fn lsp_workspace_symbol_finds_by_prefix() {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
         state.update_grammar_kinds(vec![
-            GrammarKind { name: "workspace_a".into(), description: "a".into() },
-            GrammarKind { name: "workspace_b".into(), description: "b".into() },
-            GrammarKind { name: "other_kind".into(), description: "c".into() },
+            GrammarKind {
+                name: "workspace_a".into(),
+                description: "a".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            GrammarKind {
+                name: "workspace_b".into(),
+                description: "b".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            GrammarKind {
+                name: "other_kind".into(),
+                description: "c".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
         ]);
         let provider = CompilerLspProvider::new(state);
         let all = provider.completions(std::path::Path::new("ws.nomx"), 0);
-        let filtered: Vec<_> = all.iter().filter(|c| c.label.starts_with("workspace")).collect();
+        let filtered: Vec<_> = all
+            .iter()
+            .filter(|c| c.label.starts_with("workspace"))
+            .collect();
         assert_eq!(filtered.len(), 2, "prefix 'workspace' must match 2 items");
     }
 
@@ -693,10 +853,26 @@ mod tests {
     fn lsp_workspace_symbol_empty_query_returns_all() {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
         state.update_grammar_kinds(vec![
-            GrammarKind { name: "alpha".into(), description: "".into() },
-            GrammarKind { name: "beta".into(), description: "".into() },
-            GrammarKind { name: "gamma".into(), description: "".into() },
-            GrammarKind { name: "delta".into(), description: "".into() },
+            GrammarKind {
+                name: "alpha".into(),
+                description: "".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            GrammarKind {
+                name: "beta".into(),
+                description: "".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            GrammarKind {
+                name: "gamma".into(),
+                description: "".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            GrammarKind {
+                name: "delta".into(),
+                description: "".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
         ]);
         let provider = CompilerLspProvider::new(state);
         let items = provider.completions(std::path::Path::new("ws.nomx"), 0);
@@ -711,11 +887,16 @@ mod tests {
         state.update_grammar_kinds(vec![GrammarKind {
             name: "emit".into(),
             description: "output".into(),
+            status: crate::shared::KindStatus::Transient,
         }]);
         let provider = CompilerLspProvider::new(state);
         let items = provider.completions(std::path::Path::new("ws.nomx"), 0);
         assert_eq!(items.len(), 1);
-        assert_eq!(items[0].kind, CompletionKind::Keyword, "workspace symbol kind must be Keyword");
+        assert_eq!(
+            items[0].kind,
+            CompletionKind::Keyword,
+            "workspace symbol kind must be Keyword"
+        );
     }
 
     /// lsp_workspace_symbol_has_location: each item has a non-empty label (simulating a location).
@@ -725,12 +906,16 @@ mod tests {
         state.update_grammar_kinds(vec![GrammarKind {
             name: "locate_me".into(),
             description: "find this".into(),
+            status: crate::shared::KindStatus::Transient,
         }]);
         let provider = CompilerLspProvider::new(state);
         let items = provider.completions(std::path::Path::new("file.nomx"), 0);
         assert_eq!(items.len(), 1);
         // label serves as the location identifier
-        assert!(!items[0].label.is_empty(), "workspace symbol must have a non-empty label (location)");
+        assert!(
+            !items[0].label.is_empty(),
+            "workspace symbol must have a non-empty label (location)"
+        );
     }
 
     /// lsp_format_document_source_valid_utf8: format output is valid UTF-8.
@@ -741,7 +926,10 @@ mod tests {
         let formatted = format!("{}\n", source.trim_end());
         // Must be valid UTF-8 (String guarantees this in Rust)
         assert!(std::str::from_utf8(formatted.as_bytes()).is_ok());
-        assert!(formatted.ends_with('\n'), "formatted source must end with newline");
+        assert!(
+            formatted.ends_with('\n'),
+            "formatted source must end with newline"
+        );
     }
 
     /// lsp_format_document_preserves_semantics: formatting does not alter non-whitespace content.
@@ -750,8 +938,14 @@ mod tests {
         let source = "  define x that is 42  ";
         let formatted = source.trim().to_string();
         // Semantic tokens (non-whitespace) are preserved
-        assert!(formatted.contains("define"), "formatted source must contain 'define'");
-        assert!(formatted.contains("42"), "formatted source must contain '42'");
+        assert!(
+            formatted.contains("define"),
+            "formatted source must contain 'define'"
+        );
+        assert!(
+            formatted.contains("42"),
+            "formatted source must contain '42'"
+        );
     }
 
     /// lsp_format_idempotent: formatting an already-formatted source yields the same output.
@@ -772,7 +966,10 @@ mod tests {
             .iter()
             .map(|(bad, good)| (*bad, *good))
             .collect();
-        assert!(!actions.is_empty(), "a diagnostic must produce at least one code action");
+        assert!(
+            !actions.is_empty(),
+            "a diagnostic must produce at least one code action"
+        );
         assert_eq!(actions[0].1, "misspelled");
     }
 
@@ -787,8 +984,14 @@ mod tests {
     #[test]
     fn lsp_signature_help_returns_signatures() {
         // Simulate signature help for "define"
-        let signatures = vec!["define <name> that is <value>", "define <name> that <description>"];
-        assert!(!signatures.is_empty(), "signature help must return at least one signature");
+        let signatures = vec![
+            "define <name> that is <value>",
+            "define <name> that <description>",
+        ];
+        assert!(
+            !signatures.is_empty(),
+            "signature help must return at least one signature"
+        );
     }
 
     /// lsp_signature_help_active_parameter: active parameter index is 0 for the first token.
@@ -797,7 +1000,10 @@ mod tests {
         let active_parameter: usize = 0;
         let signature = "define <name> that is <value>";
         let params: Vec<&str> = signature.split_whitespace().collect();
-        assert!(active_parameter < params.len(), "active parameter index must be within signature bounds");
+        assert!(
+            active_parameter < params.len(),
+            "active parameter index must be within signature bounds"
+        );
     }
 
     /// lsp_call_hierarchy_outgoing: outgoing call list is non-empty for a known entry.

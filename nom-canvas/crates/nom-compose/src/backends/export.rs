@@ -175,7 +175,10 @@ mod tests {
                 &LogProgressSink,
             );
             assert_eq!(out.format, *fmt);
-            assert!(out.byte_size > 0, "format {fmt} must produce non-empty output");
+            assert!(
+                out.byte_size > 0,
+                "format {fmt} must produce non-empty output"
+            );
         }
     }
 
@@ -195,7 +198,10 @@ mod tests {
             &LogProgressSink,
         );
         // Empty source produces empty hex — byte_size is 0.
-        assert_eq!(out.byte_size, 0, "missing hash must produce zero-size output");
+        assert_eq!(
+            out.byte_size, 0,
+            "missing hash must produce zero-size output"
+        );
         let result = store.read(&out.artifact_hash).unwrap_or_default();
         assert!(result.is_empty(), "hex of empty slice must be empty");
     }
@@ -218,8 +224,7 @@ mod tests {
             );
             let expected_len = if n == 0 { 0 } else { n.div_ceil(3) * 4 } as u64;
             assert_eq!(
-                out.byte_size,
-                expected_len,
+                out.byte_size, expected_len,
                 "base64 length formula failed for input len {n}: got {}, expected {expected_len}",
                 out.byte_size
             );
@@ -316,7 +321,10 @@ mod tests {
             &mut store,
             &LogProgressSink,
         );
-        assert_eq!(out.byte_size, 0, "empty source must produce zero-size output");
+        assert_eq!(
+            out.byte_size, 0,
+            "empty source must produce zero-size output"
+        );
     }
 
     #[test]
@@ -334,7 +342,10 @@ mod tests {
                 &mut store,
                 &LogProgressSink,
             );
-            assert!(out.byte_size > 0, "known format {fmt} must produce non-empty output");
+            assert!(
+                out.byte_size > 0,
+                "known format {fmt} must produce non-empty output"
+            );
         }
     }
 
@@ -377,7 +388,10 @@ mod tests {
                 &mut store,
                 &LogProgressSink,
             );
-            assert_eq!(out.format, fmt, "output.format must echo input.output_format");
+            assert_eq!(
+                out.format, fmt,
+                "output.format must echo input.output_format"
+            );
         }
     }
 
@@ -431,10 +445,15 @@ mod tests {
             &sink,
         );
         let events = sink.take();
-        let completed = events.iter().find(|e| matches!(e, ComposeEvent::Completed { .. }));
+        let completed = events
+            .iter()
+            .find(|e| matches!(e, ComposeEvent::Completed { .. }));
         assert!(completed.is_some(), "must emit Completed event");
         if let Some(ComposeEvent::Completed { byte_size, .. }) = completed {
-            assert_eq!(*byte_size, out.byte_size, "Completed event byte_size must match output");
+            assert_eq!(
+                *byte_size, out.byte_size,
+                "Completed event byte_size must match output"
+            );
         }
     }
 

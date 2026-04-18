@@ -349,7 +349,10 @@ mod tests {
         state.current_match = 2;
         state.next_match();
         // Should wrap around to index 0
-        assert_eq!(state.current_match, 0, "next_match wraps from last to first");
+        assert_eq!(
+            state.current_match, 0,
+            "next_match wraps from last to first"
+        );
     }
 
     #[test]
@@ -360,7 +363,10 @@ mod tests {
         assert_eq!(state.matches.len(), 3);
         state.current_match = 0;
         state.prev_match();
-        assert_eq!(state.current_match, 2, "prev_match wraps from first to last");
+        assert_eq!(
+            state.current_match, 2,
+            "prev_match wraps from first to last"
+        );
     }
 
     #[test]
@@ -371,7 +377,10 @@ mod tests {
         assert_eq!(state.matches.len(), 1);
         state.current_match = 0;
         state.next_match();
-        assert_eq!(state.current_match, 0, "single match: next_match stays at 0");
+        assert_eq!(
+            state.current_match, 0,
+            "single match: next_match stays at 0"
+        );
     }
 
     #[test]
@@ -447,7 +456,8 @@ mod tests {
     fn undo_buffer_depth_cap_at_100() {
         // Simulate a bounded undo ring of capacity 100.
         let cap = 100usize;
-        let mut ring: std::collections::VecDeque<String> = std::collections::VecDeque::with_capacity(cap);
+        let mut ring: std::collections::VecDeque<String> =
+            std::collections::VecDeque::with_capacity(cap);
         for i in 0..150 {
             if ring.len() == cap {
                 ring.pop_front();
@@ -496,7 +506,7 @@ mod tests {
         let text = "line one\nline two\nline three";
         // Range starting at end of line 1 into line 2: bytes 5..13
         let start = 5usize; // "one\n" start
-        let end = 13usize;  // into "line two"
+        let end = 13usize; // into "line two"
         let slice = &text[start..end];
         assert!(slice.contains('\n'), "range must span a newline");
         assert!(slice.starts_with("one"), "slice starts mid-line-1");
@@ -735,7 +745,7 @@ mod tests {
         let mut state = FindState::new();
         state.query = "x".to_string();
         state.find_in_text("xax bx c"); // "x" at 0, 2, 5
-        // positions: 0, 2, 5
+                                        // positions: 0, 2, 5
         assert_eq!(state.matches.len(), 3);
         assert_eq!(state.matches[0].start, 0);
         assert_eq!(state.matches[1].start, 2);

@@ -291,7 +291,10 @@ mod tests {
     fn exec_node_comparison_different_ids_are_distinct() {
         let n1 = ExecNode::new("alpha", "verb");
         let n2 = ExecNode::new("beta", "verb");
-        assert_ne!(n1.id, n2.id, "nodes with different ids must have different id fields");
+        assert_ne!(
+            n1.id, n2.id,
+            "nodes with different ids must have different id fields"
+        );
     }
 
     // ------------------------------------------------------------------

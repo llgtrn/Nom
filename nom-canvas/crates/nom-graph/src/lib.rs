@@ -17,5 +17,5 @@ pub use execution::ExecutionEngine;
 pub use graph_mode::{GraphLayout, GraphModeState, GraphViewMode};
 pub use graph_rag::{cosine_sim, node_vec, GraphRagRetriever, QueryVec, RetrievedNode};
 pub use node::{ExecNode, IsChanged, NodeId, NodeState, Port, PortDirection};
-pub use sandbox::{eval_expr, sanitize, BinOpKind, EvalContext, Expr, SandboxError, SandboxValue};
 pub use nom_graph::{NomGraph, NomtuRef};
+pub use sandbox::{eval_expr, sanitize, BinOpKind, EvalContext, Expr, SandboxError, SandboxValue};

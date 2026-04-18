@@ -326,32 +326,54 @@ mod tests {
 
     #[test]
     fn styled_opacity_clamps_above_one() {
-        let s = S { style: StyleRefinement::default() }.opacity(2.0);
-        assert!((s.style.opacity.unwrap() - 1.0).abs() < 1e-6, "opacity above 1.0 must clamp to 1.0");
+        let s = S {
+            style: StyleRefinement::default(),
+        }
+        .opacity(2.0);
+        assert!(
+            (s.style.opacity.unwrap() - 1.0).abs() < 1e-6,
+            "opacity above 1.0 must clamp to 1.0"
+        );
     }
 
     #[test]
     fn styled_opacity_clamps_below_zero() {
-        let s = S { style: StyleRefinement::default() }.opacity(-0.5);
-        assert!((s.style.opacity.unwrap() - 0.0).abs() < 1e-6, "opacity below 0.0 must clamp to 0.0");
+        let s = S {
+            style: StyleRefinement::default(),
+        }
+        .opacity(-0.5);
+        assert!(
+            (s.style.opacity.unwrap() - 0.0).abs() < 1e-6,
+            "opacity below 0.0 must clamp to 0.0"
+        );
     }
 
     #[test]
     fn styled_overflow_hidden_sets_flag() {
-        let s = S { style: StyleRefinement::default() }.overflow_hidden();
+        let s = S {
+            style: StyleRefinement::default(),
+        }
+        .overflow_hidden();
         assert_eq!(s.style.overflow_hidden, Some(true));
     }
 
     #[test]
     fn styled_width_and_height() {
-        let s = S { style: StyleRefinement::default() }.w(320.0_f32).h(240.0_f32);
+        let s = S {
+            style: StyleRefinement::default(),
+        }
+        .w(320.0_f32)
+        .h(240.0_f32);
         assert!((s.style.width.unwrap() - 320.0).abs() < 1e-5);
         assert!((s.style.height.unwrap() - 240.0).abs() < 1e-5);
     }
 
     #[test]
     fn styled_flex_grow_sets_one() {
-        let s = S { style: StyleRefinement::default() }.flex_grow();
+        let s = S {
+            style: StyleRefinement::default(),
+        }
+        .flex_grow();
         assert!((s.style.flex_grow.unwrap() - 1.0).abs() < 1e-6);
     }
 
@@ -369,14 +391,20 @@ mod tests {
     #[test]
     fn styled_border_color() {
         let color = Hsla::new(0.0, 1.0, 0.5, 1.0);
-        let s = S { style: StyleRefinement::default() }.border_color(color);
+        let s = S {
+            style: StyleRefinement::default(),
+        }
+        .border_color(color);
         assert_eq!(s.style.border_color, Some(color));
     }
 
     #[test]
     fn styled_text_color() {
         let color = Hsla::new(240.0, 0.5, 0.3, 0.9);
-        let s = S { style: StyleRefinement::default() }.text_color(color);
+        let s = S {
+            style: StyleRefinement::default(),
+        }
+        .text_color(color);
         assert_eq!(s.style.text_color, Some(color));
     }
 
@@ -420,14 +448,16 @@ mod tests {
 
     #[test]
     fn styled_chain_all_visual_properties() {
-        let s = S { style: StyleRefinement::default() }
-            .bg(Hsla::white())
-            .border_color(Hsla::black())
-            .border(Pixels(1.0))
-            .rounded(Pixels(4.0))
-            .text_color(Hsla::new(0.0, 0.0, 0.5, 1.0))
-            .opacity(0.8)
-            .overflow_hidden();
+        let s = S {
+            style: StyleRefinement::default(),
+        }
+        .bg(Hsla::white())
+        .border_color(Hsla::black())
+        .border(Pixels(1.0))
+        .rounded(Pixels(4.0))
+        .text_color(Hsla::new(0.0, 0.0, 0.5, 1.0))
+        .opacity(0.8)
+        .overflow_hidden();
         assert!(s.style.background.is_some());
         assert!(s.style.border_color.is_some());
         assert!(s.style.border_widths.is_some());
@@ -444,7 +474,7 @@ mod tests {
         base.opacity = Some(0.3);
 
         let mut patch = StyleRefinement::default();
-        patch.opacity = Some(1.0);  // reset to opaque
+        patch.opacity = Some(1.0); // reset to opaque
 
         base.merge(&patch);
         assert!((base.opacity.unwrap() - 1.0).abs() < 1e-6);

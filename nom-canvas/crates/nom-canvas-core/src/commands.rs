@@ -393,7 +393,11 @@ mod tests {
         let r3 = stack.redo().unwrap();
         assert_eq!(r3.description, "add gamma");
         assert!(!stack.can_redo(), "nothing left to redo");
-        assert_eq!(stack.len(), 3, "history must have 3 entries after full redo chain");
+        assert_eq!(
+            stack.len(),
+            3,
+            "history must have 3 entries after full redo chain"
+        );
     }
 
     /// Simulate bounded behaviour: push 6 commands into a manually trimmed stack
@@ -455,7 +459,7 @@ mod tests {
         stack.push(move_cmd("C", 3.0, 0.0));
         stack.undo(); // C → future
         stack.undo(); // B → future
-        // Redo B then C
+                      // Redo B then C
         let rb = stack.redo().unwrap();
         assert_eq!(rb.description, "move B");
         let rc = stack.redo().unwrap();

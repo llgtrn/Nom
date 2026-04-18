@@ -146,9 +146,7 @@ mod tests {
 
     #[test]
     fn pressed_to_idle_on_release() {
-        let s = PointerState::Idle
-            .on_press("elem", (5.0, 5.0))
-            .on_release();
+        let s = PointerState::Idle.on_press("elem", (5.0, 5.0)).on_release();
         assert!(s.is_idle());
     }
 
@@ -180,7 +178,7 @@ mod tests {
     fn drag_delta_updates_on_successive_moves() {
         let s = PointerState::Idle
             .on_press("el", (0.0, 0.0))
-            .on_move((5.0, 5.0))  // first move: delta (5, 5)
+            .on_move((5.0, 5.0)) // first move: delta (5, 5)
             .on_move((15.0, 3.0)); // second move: delta from start still measured
         let delta = s.drag_delta().unwrap();
         assert!((delta.0 - 15.0).abs() < 1e-6, "dx={}", delta.0);
@@ -192,7 +190,10 @@ mod tests {
     #[test]
     fn idle_on_move_stays_idle() {
         let s = PointerState::Idle.on_move((100.0, 200.0));
-        assert!(s.is_idle(), "idle state must not change on move without press");
+        assert!(
+            s.is_idle(),
+            "idle state must not change on move without press"
+        );
     }
 
     // ── press on different element while already pressed ─────────────────────
@@ -252,7 +253,10 @@ mod tests {
     fn cannot_go_idle_to_dragging_directly() {
         // A move from Idle must not produce a Dragging state.
         let s = PointerState::Idle.on_move((5.0, 5.0));
-        assert!(!s.is_dragging(), "Idle→move must not produce Dragging state");
+        assert!(
+            !s.is_dragging(),
+            "Idle→move must not produce Dragging state"
+        );
         assert!(s.is_idle());
     }
 }

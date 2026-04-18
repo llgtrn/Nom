@@ -630,7 +630,10 @@ mod tests {
         let text = "hello world foo";
         let offset = 0usize;
         // Find next space then skip it
-        let next_space = text[offset..].find(' ').map(|p| offset + p + 1).unwrap_or(text.len());
+        let next_space = text[offset..]
+            .find(' ')
+            .map(|p| offset + p + 1)
+            .unwrap_or(text.len());
         assert_eq!(next_space, 6); // 'w' in 'world'
         let sel = Selection::caret(next_space);
         assert_eq!(sel.head(), 6);
@@ -660,7 +663,10 @@ mod tests {
     fn cursor_end_goes_to_line_end() {
         let text = "hello\nworld\nfoo";
         let offset = 8usize; // 'r' in 'world'
-        let line_end = text[offset..].find('\n').map(|p| offset + p).unwrap_or(text.len());
+        let line_end = text[offset..]
+            .find('\n')
+            .map(|p| offset + p)
+            .unwrap_or(text.len());
         assert_eq!(line_end, 11);
         let sel = Selection::caret(line_end);
         assert_eq!(sel.head(), 11);
@@ -731,7 +737,7 @@ mod tests {
     fn cursor_select_word_at_position() {
         let text = "hello world foo";
         let offset = 2usize; // inside "hello"
-        // word start: scan backwards to find boundary
+                             // word start: scan backwards to find boundary
         let word_start = text[..offset]
             .rfind(|c: char| !c.is_alphanumeric() && c != '_')
             .map(|p| p + 1)
@@ -750,7 +756,10 @@ mod tests {
         let text = "hello\nworld\nfoo";
         let offset = 8usize; // inside "world"
         let line_start = text[..offset].rfind('\n').map(|p| p + 1).unwrap_or(0);
-        let line_end = text[offset..].find('\n').map(|p| offset + p).unwrap_or(text.len());
+        let line_end = text[offset..]
+            .find('\n')
+            .map(|p| offset + p)
+            .unwrap_or(text.len());
         let line = &text[line_start..line_end];
         assert_eq!(line, "world");
     }
@@ -781,7 +790,10 @@ mod tests {
             .map(|p| p)
             .unwrap_or(0);
         let contracted = Selection::range(sel.min_offset(), new_end);
-        assert_eq!(&text[contracted.min_offset()..contracted.max_offset()], "hello");
+        assert_eq!(
+            &text[contracted.min_offset()..contracted.max_offset()],
+            "hello"
+        );
     }
 
     #[test]
@@ -816,7 +828,7 @@ mod tests {
         // When moving down through a short line, column is preserved (clamped to line len)
         let lines = ["hello world", "hi", "back to long"];
         let col = 6usize; // column 6 (past end of "hi")
-        // on line "hi" (len=2), col clamps to 2
+                          // on line "hi" (len=2), col clamps to 2
         let clamped = col.min(lines[1].len());
         assert_eq!(clamped, 2);
         // on next long line, col is restored to original 6
@@ -890,7 +902,7 @@ mod tests {
         let mut cs = CursorSet::single(0);
         cs.selections[0] = Selection::range(2, 6);
         cs.add(Selection::range(0, 10)); // contains 2..6
-        // The smaller range is absorbed; only one entry remains.
+                                         // The smaller range is absorbed; only one entry remains.
         assert_eq!(cs.len(), 1);
         assert_eq!(cs.selections[0].min_offset(), 0);
         assert_eq!(cs.selections[0].max_offset(), 10);
@@ -941,9 +953,9 @@ mod tests {
         let mut cs = CursorSet::single(0);
         cs.add(Selection::caret(10));
         let insert_len = 1usize; // one character typed
-        // Simulate: each cursor moves right by insert_len after the character is inserted.
-        // Cursors before the insert point shift by insert_len for each cursor that is before them.
-        // For simplicity: apply independently (no adjustment for cursor ordering here).
+                                 // Simulate: each cursor moves right by insert_len after the character is inserted.
+                                 // Cursors before the insert point shift by insert_len for each cursor that is before them.
+                                 // For simplicity: apply independently (no adjustment for cursor ordering here).
         let updated: Vec<Selection> = cs
             .selections
             .iter()
@@ -1102,10 +1114,7 @@ mod tests {
     /// Clicking on the first breadcrumb segment navigates to the file root (offset 0).
     #[test]
     fn breadcrumb_click_first_segment_navigates_to_root() {
-        let segments: Vec<(&str, usize)> = vec![
-            ("file.nom", 0),
-            ("summarize", 42),
-        ];
+        let segments: Vec<(&str, usize)> = vec![("file.nom", 0), ("summarize", 42)];
         // Click index 0 → navigate to offset 0
         let (_, offset) = segments[0];
         assert_eq!(offset, 0);
@@ -1114,11 +1123,7 @@ mod tests {
     /// Clicking on the second breadcrumb segment navigates to the function start.
     #[test]
     fn breadcrumb_click_second_segment_navigates_to_scope() {
-        let segments: Vec<(&str, usize)> = vec![
-            ("file.nom", 0),
-            ("render", 128),
-            ("inner", 256),
-        ];
+        let segments: Vec<(&str, usize)> = vec![("file.nom", 0), ("render", 128), ("inner", 256)];
         // Click index 1 → navigate to the "render" function start
         let (_, offset) = segments[1];
         assert_eq!(offset, 128);
@@ -1158,7 +1163,7 @@ mod tests {
         // "hello\nworld": line 0 ends at offset 5 ('\n'), next line starts at offset 6.
         let text = "hello\nworld";
         let line0_end = 5usize; // position of '\n'
-        // Moving right from the end of line 0 advances by 1 → lands on '\n', then +1 → start of line 1.
+                                // Moving right from the end of line 0 advances by 1 → lands on '\n', then +1 → start of line 1.
         let after_newline = line0_end + 1;
         let sel = Selection::caret(after_newline);
         assert_eq!(sel.head(), 6);
@@ -1192,7 +1197,10 @@ mod tests {
     fn cursor_selection_reversed_when_anchor_greater_than_head() {
         // range(anchor, head) where anchor=15 > head=5 → reversed.
         let sel = Selection::range(15, 5);
-        assert!(sel.reversed, "selection must be reversed when anchor > head");
+        assert!(
+            sel.reversed,
+            "selection must be reversed when anchor > head"
+        );
         // head is at the lower offset (5) for a reversed selection.
         assert_eq!(sel.head(), 5);
         assert_eq!(sel.tail(), 15);

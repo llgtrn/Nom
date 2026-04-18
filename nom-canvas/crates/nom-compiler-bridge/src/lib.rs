@@ -9,7 +9,7 @@ pub mod ui_tier;
 pub use adapters::lsp::CompilerLspProvider;
 pub use background_tier::BackgroundTierOps;
 pub use interactive_tier::InteractiveTierOps;
-pub use shared::{GrammarKind, PipelineOutput, SharedState};
+pub use shared::{GrammarKind, KindStatus, PipelineOutput, SharedState};
 pub use sqlite_dict::SqliteDictReader;
 pub use ui_tier::UiTierOps;
 
@@ -84,6 +84,7 @@ mod tests {
         let kind = GrammarKind {
             name: "verb".into(),
             description: "an action word".into(),
+            status: KindStatus::Transient,
         };
         assert_eq!(kind.name, "verb");
         assert_eq!(kind.description, "an action word");
@@ -148,6 +149,7 @@ mod tests {
         let kind = GrammarKind {
             name: "transform".into(),
             description: "converts one form to another".into(),
+            status: KindStatus::Transient,
         };
         let cloned = kind.clone();
         assert_eq!(cloned.name, kind.name);
@@ -159,6 +161,7 @@ mod tests {
         let kind = GrammarKind {
             name: "emit".into(),
             description: "outputs a value".into(),
+            status: KindStatus::Transient,
         };
         let debug_str = format!("{:?}", kind);
         // Debug impl produces a non-empty string and doesn't panic

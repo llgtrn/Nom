@@ -88,7 +88,8 @@ impl InteractiveTier {
     /// Request tokenization asynchronously
     pub async fn tokenize(&self, source: String) -> Vec<TokenSpan> {
         let (tx, rx) = tokio::sync::oneshot::channel();
-        self.pending.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.pending
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let _ = self
             .sender
             .send(InteractiveRequest::Tokenize { source, reply: tx })
@@ -343,10 +344,12 @@ mod tests {
             crate::shared::GrammarKind {
                 name: "fn_run".into(),
                 description: "run action".into(),
+                status: crate::shared::KindStatus::Transient,
             },
             crate::shared::GrammarKind {
                 name: "fn_emit".into(),
                 description: "emit action".into(),
+                status: crate::shared::KindStatus::Transient,
             },
         ]);
         let worker = InteractiveWorker::new(state);
@@ -398,9 +401,11 @@ mod tests {
     #[test]
     fn interactive_tier_ops_classify_kind_found() {
         let state = SharedState::new("a.db", "b.db");
-        state.update_grammar_kinds(vec![
-            crate::shared::GrammarKind { name: "action".into(), description: "".into() },
-        ]);
+        state.update_grammar_kinds(vec![crate::shared::GrammarKind {
+            name: "action".into(),
+            description: "".into(),
+            status: crate::shared::KindStatus::Transient,
+        }]);
         let ops = InteractiveTierOps::new(&state);
         let kind = ops.classify_kind("action");
         assert_eq!(kind, Some("action".to_string()));
@@ -409,9 +414,11 @@ mod tests {
     #[test]
     fn interactive_tier_ops_classify_kind_not_found() {
         let state = SharedState::new("a.db", "b.db");
-        state.update_grammar_kinds(vec![
-            crate::shared::GrammarKind { name: "action".into(), description: "".into() },
-        ]);
+        state.update_grammar_kinds(vec![crate::shared::GrammarKind {
+            name: "action".into(),
+            description: "".into(),
+            status: crate::shared::KindStatus::Transient,
+        }]);
         let ops = InteractiveTierOps::new(&state);
         let kind = ops.classify_kind("nonexistent");
         assert!(kind.is_none());
@@ -461,8 +468,16 @@ mod tests {
     fn interactive_tier_complete_prefix_empty_prefix_all_match() {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
         state.update_grammar_kinds(vec![
-            crate::shared::GrammarKind { name: "emit".into(), description: "".into() },
-            crate::shared::GrammarKind { name: "flow".into(), description: "".into() },
+            crate::shared::GrammarKind {
+                name: "emit".into(),
+                description: "".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            crate::shared::GrammarKind {
+                name: "flow".into(),
+                description: "".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
         ]);
         let worker = InteractiveWorker::new(state);
         let items = worker.do_complete("", None);
@@ -472,9 +487,11 @@ mod tests {
     #[test]
     fn interactive_tier_complete_prefix_no_match() {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
-        state.update_grammar_kinds(vec![
-            crate::shared::GrammarKind { name: "emit".into(), description: "".into() },
-        ]);
+        state.update_grammar_kinds(vec![crate::shared::GrammarKind {
+            name: "emit".into(),
+            description: "".into(),
+            status: crate::shared::KindStatus::Transient,
+        }]);
         let worker = InteractiveWorker::new(state);
         let items = worker.do_complete("zzz", None);
         assert!(items.is_empty());
@@ -486,8 +503,16 @@ mod tests {
     fn interactive_complete_returns_completions() {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
         state.update_grammar_kinds(vec![
-            crate::shared::GrammarKind { name: "define".into(), description: "keyword".into() },
-            crate::shared::GrammarKind { name: "result".into(), description: "keyword".into() },
+            crate::shared::GrammarKind {
+                name: "define".into(),
+                description: "keyword".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            crate::shared::GrammarKind {
+                name: "result".into(),
+                description: "keyword".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
         ]);
         let worker = InteractiveWorker::new(state);
         let items = worker.do_complete("de", None);
@@ -499,9 +524,21 @@ mod tests {
     fn interactive_complete_empty_prefix_returns_all() {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
         state.update_grammar_kinds(vec![
-            crate::shared::GrammarKind { name: "alpha".into(), description: "".into() },
-            crate::shared::GrammarKind { name: "beta".into(), description: "".into() },
-            crate::shared::GrammarKind { name: "gamma".into(), description: "".into() },
+            crate::shared::GrammarKind {
+                name: "alpha".into(),
+                description: "".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            crate::shared::GrammarKind {
+                name: "beta".into(),
+                description: "".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            crate::shared::GrammarKind {
+                name: "gamma".into(),
+                description: "".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
         ]);
         let worker = InteractiveWorker::new(state);
         let items = worker.do_complete("", None);
@@ -513,9 +550,21 @@ mod tests {
         // Items returned from do_complete are in the order they appear in grammar_kinds
         let state = Arc::new(SharedState::new("a.db", "b.db"));
         state.update_grammar_kinds(vec![
-            crate::shared::GrammarKind { name: "aaa".into(), description: "".into() },
-            crate::shared::GrammarKind { name: "aab".into(), description: "".into() },
-            crate::shared::GrammarKind { name: "aac".into(), description: "".into() },
+            crate::shared::GrammarKind {
+                name: "aaa".into(),
+                description: "".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            crate::shared::GrammarKind {
+                name: "aab".into(),
+                description: "".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            crate::shared::GrammarKind {
+                name: "aac".into(),
+                description: "".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
         ]);
         let worker = InteractiveWorker::new(state);
         let items = worker.do_complete("aa", None);
@@ -530,9 +579,11 @@ mod tests {
     fn interactive_score_valid_word_positive() {
         // A word that matches a known grammar kind produces a non-empty completion
         let state = Arc::new(SharedState::new("a.db", "b.db"));
-        state.update_grammar_kinds(vec![
-            crate::shared::GrammarKind { name: "define".into(), description: "keyword".into() },
-        ]);
+        state.update_grammar_kinds(vec![crate::shared::GrammarKind {
+            name: "define".into(),
+            description: "keyword".into(),
+            status: crate::shared::KindStatus::Transient,
+        }]);
         let worker = InteractiveWorker::new(state);
         let items = worker.do_complete("define", None);
         assert!(!items.is_empty(), "known word must score positively");
@@ -542,9 +593,11 @@ mod tests {
     fn interactive_score_invalid_word_zero_or_negative() {
         // A word that does not match any kind produces empty completions
         let state = Arc::new(SharedState::new("a.db", "b.db"));
-        state.update_grammar_kinds(vec![
-            crate::shared::GrammarKind { name: "define".into(), description: "".into() },
-        ]);
+        state.update_grammar_kinds(vec![crate::shared::GrammarKind {
+            name: "define".into(),
+            description: "".into(),
+            status: crate::shared::KindStatus::Transient,
+        }]);
         let worker = InteractiveWorker::new(state);
         let items = worker.do_complete("unknown_xyz", None);
         assert!(items.is_empty(), "unknown word must score zero (no match)");
@@ -636,13 +689,25 @@ mod tests {
         // No duplicate names in grammar_kinds → no duplicate completions
         let state = Arc::new(SharedState::new("a.db", "b.db"));
         state.update_grammar_kinds(vec![
-            crate::shared::GrammarKind { name: "alpha".into(), description: "".into() },
-            crate::shared::GrammarKind { name: "beta".into(), description: "".into() },
+            crate::shared::GrammarKind {
+                name: "alpha".into(),
+                description: "".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            crate::shared::GrammarKind {
+                name: "beta".into(),
+                description: "".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
         ]);
         let worker = InteractiveWorker::new(state);
         let items = worker.do_complete("", None);
         let labels: std::collections::HashSet<_> = items.iter().map(|i| &i.label).collect();
-        assert_eq!(labels.len(), items.len(), "no duplicate labels in completions");
+        assert_eq!(
+            labels.len(),
+            items.len(),
+            "no duplicate labels in completions"
+        );
     }
 
     #[test]
@@ -653,6 +718,7 @@ mod tests {
             .map(|i| crate::shared::GrammarKind {
                 name: format!("kk_{i:02}"),
                 description: "".into(),
+                status: crate::shared::KindStatus::Transient,
             })
             .collect();
         state.update_grammar_kinds(kinds);
@@ -669,6 +735,7 @@ mod tests {
             .map(|i| crate::shared::GrammarKind {
                 name: format!("word_{i}"),
                 description: "".into(),
+                status: crate::shared::KindStatus::Transient,
             })
             .collect();
         state.update_grammar_kinds(kinds);
@@ -691,7 +758,11 @@ mod tests {
         // All chars in the source must appear in some span's text
         let source = "define result";
         let spans = simple_tokenize_stub(source);
-        let all_text: String = spans.iter().map(|s| s.text.as_str()).collect::<Vec<_>>().join(" ");
+        let all_text: String = spans
+            .iter()
+            .map(|s| s.text.as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
         // Both words should appear
         assert!(all_text.contains("define"));
         assert!(all_text.contains("result"));
@@ -709,10 +780,26 @@ mod tests {
     fn interactive_complete_prefix_filters_results() {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
         state.update_grammar_kinds(vec![
-            crate::shared::GrammarKind { name: "stream".into(), description: "".into() },
-            crate::shared::GrammarKind { name: "string".into(), description: "".into() },
-            crate::shared::GrammarKind { name: "select".into(), description: "".into() },
-            crate::shared::GrammarKind { name: "reduce".into(), description: "".into() },
+            crate::shared::GrammarKind {
+                name: "stream".into(),
+                description: "".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            crate::shared::GrammarKind {
+                name: "string".into(),
+                description: "".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            crate::shared::GrammarKind {
+                name: "select".into(),
+                description: "".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            crate::shared::GrammarKind {
+                name: "reduce".into(),
+                description: "".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
         ]);
         let worker = InteractiveWorker::new(state);
         let items = worker.do_complete("str", None);
@@ -729,13 +816,24 @@ mod tests {
     fn interactive_complete_fuzzy_match() {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
         state.update_grammar_kinds(vec![
-            crate::shared::GrammarKind { name: "nomturef".into(), description: "reference".into() },
-            crate::shared::GrammarKind { name: "other".into(), description: "not a match".into() },
+            crate::shared::GrammarKind {
+                name: "nomturef".into(),
+                description: "reference".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            crate::shared::GrammarKind {
+                name: "other".into(),
+                description: "not a match".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
         ]);
         let worker = InteractiveWorker::new(state);
         let items = worker.do_complete("nom", None);
         assert!(!items.is_empty(), "prefix 'nom' must match 'nomturef'");
-        assert!(items.iter().any(|i| i.label == "nomturef"), "'nomturef' must appear in results");
+        assert!(
+            items.iter().any(|i| i.label == "nomturef"),
+            "'nomturef' must appear in results"
+        );
     }
 
     /// Exact match "nomturef" ranks above non-exact match "nomtu" for prefix "nomturef".
@@ -743,13 +841,24 @@ mod tests {
     fn interactive_complete_rank_exact_above_fuzzy() {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
         state.update_grammar_kinds(vec![
-            crate::shared::GrammarKind { name: "nomturef".into(), description: "exact".into() },
-            crate::shared::GrammarKind { name: "nomtu_extended".into(), description: "longer".into() },
+            crate::shared::GrammarKind {
+                name: "nomturef".into(),
+                description: "exact".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            crate::shared::GrammarKind {
+                name: "nomtu_extended".into(),
+                description: "longer".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
         ]);
         let worker = InteractiveWorker::new(state);
         let items = worker.do_complete("nomturef", None);
         // Exact match must be present
-        assert!(items.iter().any(|i| i.label == "nomturef"), "'nomturef' must appear");
+        assert!(
+            items.iter().any(|i| i.label == "nomturef"),
+            "'nomturef' must appear"
+        );
     }
 
     /// interactive_highlight_token_spans_nonoverlapping: spans from tokenizer don't overlap.
@@ -761,7 +870,8 @@ mod tests {
             assert!(
                 spans[i - 1].end <= spans[i].start,
                 "span[{i}-1].end={} must be <= span[{i}].start={}",
-                spans[i - 1].end, spans[i].start
+                spans[i - 1].end,
+                spans[i].start
             );
         }
     }
@@ -778,7 +888,10 @@ mod tests {
     fn interactive_format_adds_trailing_newline() {
         let source = "define x that is 42";
         let formatted = format!("{source}\n");
-        assert!(formatted.ends_with('\n'), "formatted source must end with newline");
+        assert!(
+            formatted.ends_with('\n'),
+            "formatted source must end with newline"
+        );
     }
 
     /// interactive_semantic_tokens_count_matches_words: token count equals word count.
@@ -797,7 +910,10 @@ mod tests {
         let ops = InteractiveTierOps::new(&state);
         let result = ops.hover_info("define");
         assert!(result.is_some(), "hover_info must always return Some");
-        assert!(result.unwrap().contains("define"), "hover must mention the word");
+        assert!(
+            result.unwrap().contains("define"),
+            "hover must mention the word"
+        );
     }
 
     /// InteractiveTierOps tokenize_line with 3 words returns 3 tokens.
@@ -806,19 +922,28 @@ mod tests {
         let state = SharedState::new("a.db", "b.db");
         let ops = InteractiveTierOps::new(&state);
         let tokens = ops.tokenize_line("alpha beta gamma");
-        assert_eq!(tokens.len(), 3, "tokenize_line must return 3 tokens for 3 words");
+        assert_eq!(
+            tokens.len(),
+            3,
+            "tokenize_line must return 3 tokens for 3 words"
+        );
     }
 
     /// background_verify_correct_word_no_diagnostic: a known word produces a completion (no diagnostic).
     #[test]
     fn background_verify_correct_word_no_diagnostic() {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
-        state.update_grammar_kinds(vec![
-            crate::shared::GrammarKind { name: "known_word".into(), description: "a known word".into() },
-        ]);
+        state.update_grammar_kinds(vec![crate::shared::GrammarKind {
+            name: "known_word".into(),
+            description: "a known word".into(),
+            status: crate::shared::KindStatus::Transient,
+        }]);
         let worker = InteractiveWorker::new(state);
         let items = worker.do_complete("known_word", None);
-        assert!(!items.is_empty(), "known word must produce a completion (no missing-word diagnostic)");
+        assert!(
+            !items.is_empty(),
+            "known word must produce a completion (no missing-word diagnostic)"
+        );
     }
 
     /// InteractiveWorker do_complete with kind_filter None returns all prefix matches.
@@ -826,9 +951,21 @@ mod tests {
     fn interactive_complete_with_kind_filter() {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
         state.update_grammar_kinds(vec![
-            crate::shared::GrammarKind { name: "filter_a".into(), description: "".into() },
-            crate::shared::GrammarKind { name: "filter_b".into(), description: "".into() },
-            crate::shared::GrammarKind { name: "other_c".into(), description: "".into() },
+            crate::shared::GrammarKind {
+                name: "filter_a".into(),
+                description: "".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            crate::shared::GrammarKind {
+                name: "filter_b".into(),
+                description: "".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            crate::shared::GrammarKind {
+                name: "other_c".into(),
+                description: "".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
         ]);
         let worker = InteractiveWorker::new(state);
         // kind_filter=None: no kind constraint, prefix "filter" matches filter_a and filter_b
@@ -859,8 +996,14 @@ mod tests {
     #[test]
     fn code_action_organize_imports_kind_is_dotted() {
         let kind = "source.organizeImports";
-        assert!(kind.contains('.'), "organizeImports kind must contain a dot separator");
-        assert!(kind.starts_with("source."), "organizeImports kind must start with 'source.'");
+        assert!(
+            kind.contains('.'),
+            "organizeImports kind must contain a dot separator"
+        );
+        assert!(
+            kind.starts_with("source."),
+            "organizeImports kind must start with 'source.'"
+        );
     }
 
     /// code_action_three_known_kinds_are_distinct: all three standard kinds differ.
@@ -868,7 +1011,11 @@ mod tests {
     fn code_action_three_known_kinds_are_distinct() {
         let kinds = ["quickfix", "refactor", "source.organizeImports"];
         let set: std::collections::HashSet<&&str> = kinds.iter().collect();
-        assert_eq!(set.len(), 3, "all three standard code action kinds must be distinct");
+        assert_eq!(
+            set.len(),
+            3,
+            "all three standard code action kinds must be distinct"
+        );
     }
 
     /// code_action_empty_title_detected: empty title differs from non-empty title.
@@ -965,7 +1112,10 @@ mod tests {
         let r2 = (3usize, 6usize);
         // Overlap condition: r1.end > r2.start → 3 > 3 is false
         let overlapping = r1.1 > r2.0;
-        assert!(!overlapping, "adjacent ranges must not be detected as overlapping");
+        assert!(
+            !overlapping,
+            "adjacent ranges must not be detected as overlapping"
+        );
     }
 
     /// diff_roundtrip_apply_reverts: applying reverse diff restores original.
@@ -994,7 +1144,11 @@ mod tests {
         // Position 7 is inside "myVar" (bytes 7..12)
         let pos = 7usize;
         let word = find_word_at(source, pos);
-        assert_eq!(word, Some("myVar"), "prepare_rename must return word at position");
+        assert_eq!(
+            word,
+            Some("myVar"),
+            "prepare_rename must return word at position"
+        );
     }
 
     /// prepare_rename at whitespace position returns None.
@@ -1045,8 +1199,13 @@ mod tests {
         let word = find_word_at(source, pos);
         // "42" should be found but classified as a number literal
         assert_eq!(word, Some("42"));
-        let is_number = word.map(|w| w.chars().all(|c| c.is_ascii_digit())).unwrap_or(false);
-        assert!(is_number, "number literal must be detected and excluded from rename");
+        let is_number = word
+            .map(|w| w.chars().all(|c| c.is_ascii_digit()))
+            .unwrap_or(false);
+        assert!(
+            is_number,
+            "number literal must be detected and excluded from rename"
+        );
     }
 
     /// rename: replaces all occurrences of old name with new name.
@@ -1064,7 +1223,10 @@ mod tests {
     #[test]
     fn lsp_rename_empty_new_name_is_invalid() {
         let new_name = "";
-        assert!(new_name.is_empty(), "empty new_name must be detected as invalid rename");
+        assert!(
+            new_name.is_empty(),
+            "empty new_name must be detected as invalid rename"
+        );
     }
 
     /// rename preserves non-matching identifiers.
@@ -1072,8 +1234,14 @@ mod tests {
     fn lsp_rename_preserves_non_matching_identifiers() {
         let source = "define alpha that is beta + gamma";
         let result = source.replace("alpha", "omega");
-        assert!(result.contains("beta"), "non-matching 'beta' must be preserved");
-        assert!(result.contains("gamma"), "non-matching 'gamma' must be preserved");
+        assert!(
+            result.contains("beta"),
+            "non-matching 'beta' must be preserved"
+        );
+        assert!(
+            result.contains("gamma"),
+            "non-matching 'gamma' must be preserved"
+        );
         assert!(!result.contains("alpha"), "'alpha' must be replaced");
     }
 
@@ -1082,9 +1250,18 @@ mod tests {
     fn lsp_rename_is_case_sensitive() {
         let source = "define camelCase that is camelcase";
         let result = source.replace("camelCase", "PascalCase");
-        assert!(result.contains("PascalCase"), "'camelCase' must be renamed to 'PascalCase'");
-        assert!(result.contains("camelcase"), "'camelcase' (lowercase) must be preserved");
-        assert!(!result.contains("camelCase"), "original 'camelCase' must be gone");
+        assert!(
+            result.contains("PascalCase"),
+            "'camelCase' must be renamed to 'PascalCase'"
+        );
+        assert!(
+            result.contains("camelcase"),
+            "'camelcase' (lowercase) must be preserved"
+        );
+        assert!(
+            !result.contains("camelCase"),
+            "original 'camelCase' must be gone"
+        );
     }
 
     /// rename produces an edit list with correct ranges.
@@ -1115,8 +1292,14 @@ mod tests {
         let result_a = source.replace("alpha", "x");
         let result_b = source.replace("beta", "y");
         // Neither rename touches the other's target
-        assert!(result_a.contains("beta"), "first rename must not touch 'beta'");
-        assert!(result_b.contains("alpha"), "second rename must not touch 'alpha'");
+        assert!(
+            result_a.contains("beta"),
+            "first rename must not touch 'beta'"
+        );
+        assert!(
+            result_b.contains("alpha"),
+            "second rename must not touch 'alpha'"
+        );
     }
 
     /// prepare_rename followed by rename uses the correct source version.
@@ -1136,9 +1319,11 @@ mod tests {
     #[test]
     fn concurrent_bridge_rapid_queries_no_panic() {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
-        state.update_grammar_kinds(vec![
-            crate::shared::GrammarKind { name: "rapid".into(), description: "".into() },
-        ]);
+        state.update_grammar_kinds(vec![crate::shared::GrammarKind {
+            name: "rapid".into(),
+            description: "".into(),
+            status: crate::shared::KindStatus::Transient,
+        }]);
         let worker = InteractiveWorker::new(state);
         // 100 rapid queries — none must panic
         for _ in 0..100 {
@@ -1186,7 +1371,11 @@ mod tests {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
         let (mut tier, _rx) = InteractiveTier::new(state);
         tier.cancel_all();
-        assert_eq!(tier.pending_count(), 0, "cancel_all must reset pending count to 0");
+        assert_eq!(
+            tier.pending_count(),
+            0,
+            "cancel_all must reset pending count to 0"
+        );
     }
 
     #[test]
@@ -1240,7 +1429,11 @@ mod tests {
         tier.pending.store(5, std::sync::atomic::Ordering::Relaxed);
         assert_eq!(tier.pending_count(), 5);
         tier.cancel_all();
-        assert_eq!(tier.pending_count(), 0, "cancel_all must reset pending from 5 to 0");
+        assert_eq!(
+            tier.pending_count(),
+            0,
+            "cancel_all must reset pending from 5 to 0"
+        );
     }
 
     #[test]

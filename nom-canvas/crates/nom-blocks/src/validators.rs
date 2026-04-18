@@ -517,11 +517,8 @@ mod tests {
                 description: String::new(),
             }],
         );
-        let mut block = BlockModel::new(
-            "bM",
-            NomtuRef::new("eM", "run", "verb"),
-            "affine:paragraph",
-        );
+        let mut block =
+            BlockModel::new("bM", NomtuRef::new("eM", "run", "verb"), "affine:paragraph");
         block.set_slot("unknown_a", crate::slot::SlotValue::Bool(true));
         block.set_slot("unknown_b", crate::slot::SlotValue::Bool(false));
         let errors = SlotShapeValidator.validate(&block, &dict);
@@ -557,11 +554,7 @@ mod tests {
     fn grammar_derivation_error_span_matches_kind_length() {
         let dict = StubDictReader::new();
         let kind = "very_long_unknown_kind_name";
-        let block = BlockModel::new(
-            "bL",
-            NomtuRef::new("eL", "w", kind),
-            "affine:note",
-        );
+        let block = BlockModel::new("bL", NomtuRef::new("eL", "w", kind), "affine:note");
         let errors = GrammarDerivationValidator.validate(&block, &dict);
         assert_eq!(errors.len(), 1);
         assert_eq!(errors[0].span.end as usize, kind.len());
@@ -573,7 +566,11 @@ mod tests {
     #[test]
     fn validator_kind_known_returns_ok() {
         let dict = StubDictReader::new();
-        let block = BlockModel::new("b1", NomtuRef::new("e1", "compose", "verb"), "affine:paragraph");
+        let block = BlockModel::new(
+            "b1",
+            NomtuRef::new("e1", "compose", "verb"),
+            "affine:paragraph",
+        );
         let errors = validate_block(&block, &dict);
         assert!(errors.is_empty(), "known kind must return no errors");
     }
@@ -582,7 +579,11 @@ mod tests {
     #[test]
     fn validator_kind_unknown_returns_error() {
         let dict = StubDictReader::new();
-        let block = BlockModel::new("b2", NomtuRef::new("e2", "x", "not_a_real_kind"), "affine:note");
+        let block = BlockModel::new(
+            "b2",
+            NomtuRef::new("e2", "x", "not_a_real_kind"),
+            "affine:note",
+        );
         let errors = validate_block(&block, &dict);
         assert!(!errors.is_empty());
         assert_eq!(errors[0].severity, Severity::Error);
@@ -603,9 +604,16 @@ mod tests {
     #[test]
     fn validator_word_nonempty_ok() {
         let dict = StubDictReader::new();
-        let block = BlockModel::new("b4", NomtuRef::new("e4", "nonempty", "concept"), "affine:note");
+        let block = BlockModel::new(
+            "b4",
+            NomtuRef::new("e4", "nonempty", "concept"),
+            "affine:note",
+        );
         let errors = validate_block(&block, &dict);
-        assert!(errors.is_empty(), "non-empty word with known kind must pass");
+        assert!(
+            errors.is_empty(),
+            "non-empty word with known kind must pass"
+        );
     }
 
     /// validate_block with an empty word still passes if kind is known (word not validated by these validators).
@@ -617,7 +625,10 @@ mod tests {
         let errors = validate_block(&block, &dict);
         // GrammarDerivationValidator passes (kind is known); SlotShapeValidator passes (no slots)
         // So this should be clean — the word field is not validated by these validators
-        assert!(errors.is_empty(), "empty word with known kind must still pass kind validation");
+        assert!(
+            errors.is_empty(),
+            "empty word with known kind must still pass kind validation"
+        );
     }
 
     /// validate_block with a very long word does not produce errors (no length limit in these validators).
@@ -625,7 +636,11 @@ mod tests {
     fn validator_word_too_long_returns_error() {
         let dict = StubDictReader::new();
         let long_word = "a".repeat(1000);
-        let block = BlockModel::new("b6", NomtuRef::new("e6", long_word, "verb"), "affine:paragraph");
+        let block = BlockModel::new(
+            "b6",
+            NomtuRef::new("e6", long_word, "verb"),
+            "affine:paragraph",
+        );
         let errors = validate_block(&block, &dict);
         // No length limit in GrammarDerivationValidator or SlotShapeValidator
         assert!(errors.is_empty(), "long word with valid kind must pass");
@@ -649,19 +664,30 @@ mod tests {
         let block = BlockModel::new("b8", ref_, "affine:paragraph");
         let errors = validate_block(&block, &dict);
         // noun is a known kind, empty word is not checked → should pass
-        assert!(errors.is_empty(), "empty word with known kind passes these validators");
+        assert!(
+            errors.is_empty(),
+            "empty word with known kind passes these validators"
+        );
     }
 
     /// Validate two blocks where both source and target kinds are known — both pass.
     #[test]
     fn validator_connector_both_ends_known() {
         let dict = StubDictReader::new();
-        let src_block = BlockModel::new("src", NomtuRef::new("es", "fetch", "verb"), "affine:paragraph");
-        let dst_block = BlockModel::new("dst", NomtuRef::new("ed", "plan", "concept"), "affine:note");
+        let src_block = BlockModel::new(
+            "src",
+            NomtuRef::new("es", "fetch", "verb"),
+            "affine:paragraph",
+        );
+        let dst_block =
+            BlockModel::new("dst", NomtuRef::new("ed", "plan", "concept"), "affine:note");
         let src_errors = validate_block(&src_block, &dict);
         let dst_errors = validate_block(&dst_block, &dict);
         assert!(src_errors.is_empty(), "source block must validate clean");
-        assert!(dst_errors.is_empty(), "destination block must validate clean");
+        assert!(
+            dst_errors.is_empty(),
+            "destination block must validate clean"
+        );
     }
 
     /// Validate a block with an unknown source kind — produces an error.
@@ -674,7 +700,10 @@ mod tests {
             "affine:paragraph",
         );
         let errors = validate_block(&src_block, &dict);
-        assert!(!errors.is_empty(), "unknown source kind must produce an error");
+        assert!(
+            !errors.is_empty(),
+            "unknown source kind must produce an error"
+        );
         assert_eq!(errors[0].severity, Severity::Error);
         assert!(errors[0].message.contains("mystery_kind"));
     }
@@ -689,7 +718,10 @@ mod tests {
             "affine:note",
         );
         let errors = validate_block(&dst_block, &dict);
-        assert!(!errors.is_empty(), "unknown target kind must produce an error");
+        assert!(
+            !errors.is_empty(),
+            "unknown target kind must produce an error"
+        );
         assert_eq!(errors[0].severity, Severity::Error);
         assert!(errors[0].message.contains("ghost_kind"));
     }

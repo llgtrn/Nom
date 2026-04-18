@@ -304,8 +304,10 @@ mod tests {
     #[test]
     fn file_node_collapsed_shows_only_self() {
         let mut node = FileNode::dir("src", 0);
-        node.children.push(FileNode::file("a.nom", 1, FileNodeKind::NomFile));
-        node.children.push(FileNode::file("b.nom", 1, FileNodeKind::NomFile));
+        node.children
+            .push(FileNode::file("a.nom", 1, FileNodeKind::NomFile));
+        node.children
+            .push(FileNode::file("b.nom", 1, FileNodeKind::NomFile));
         // collapsed: visible_nodes returns only the dir itself
         let visible = node.visible_nodes();
         assert_eq!(visible.len(), 1, "collapsed dir shows only itself");
@@ -314,8 +316,10 @@ mod tests {
     #[test]
     fn file_node_expanded_shows_children() {
         let mut node = FileNode::dir("src", 0);
-        node.children.push(FileNode::file("a.nom", 1, FileNodeKind::NomFile));
-        node.children.push(FileNode::file("b.nom", 1, FileNodeKind::NomFile));
+        node.children
+            .push(FileNode::file("a.nom", 1, FileNodeKind::NomFile));
+        node.children
+            .push(FileNode::file("b.nom", 1, FileNodeKind::NomFile));
         node.is_expanded = true;
         let visible = node.visible_nodes();
         assert_eq!(visible.len(), 3, "expanded dir shows self + 2 children");
@@ -334,8 +338,12 @@ mod tests {
     #[test]
     fn collapsible_section_closed_visible_count_is_zero() {
         let mut section = CollapsibleSection::new("ws", "Workspace");
-        section.nodes.push(FileNode::file("a.nom", 0, FileNodeKind::NomFile));
-        section.nodes.push(FileNode::file("b.nom", 0, FileNodeKind::NomFile));
+        section
+            .nodes
+            .push(FileNode::file("a.nom", 0, FileNodeKind::NomFile));
+        section
+            .nodes
+            .push(FileNode::file("b.nom", 0, FileNodeKind::NomFile));
         section.is_open = false;
         assert_eq!(section.visible_count(), 0);
     }
@@ -344,7 +352,11 @@ mod tests {
     fn collapsible_section_open_shows_all_nodes() {
         let mut section = CollapsibleSection::new("ws", "Workspace");
         for i in 0..5 {
-            section.nodes.push(FileNode::file(format!("f{i}.nom"), 0, FileNodeKind::NomFile));
+            section.nodes.push(FileNode::file(
+                format!("f{i}.nom"),
+                0,
+                FileNodeKind::NomFile,
+            ));
         }
         assert!(section.is_open);
         assert_eq!(section.visible_count(), 5);
@@ -363,7 +375,8 @@ mod tests {
         //   lib/
         //     types.nom
         let mut lib = FileNode::dir("lib", 1);
-        lib.children.push(FileNode::file("types.nom", 2, FileNodeKind::NomFile));
+        lib.children
+            .push(FileNode::file("types.nom", 2, FileNodeKind::NomFile));
         lib.is_expanded = true;
         let mut src = FileNode::dir("src", 0);
         src.children.push(lib);
@@ -380,7 +393,8 @@ mod tests {
     fn file_node_nested_parent_collapsed() {
         // When parent is collapsed, children are hidden even if children are expanded.
         let mut lib = FileNode::dir("lib", 1);
-        lib.children.push(FileNode::file("types.nom", 2, FileNodeKind::NomFile));
+        lib.children
+            .push(FileNode::file("types.nom", 2, FileNodeKind::NomFile));
         lib.is_expanded = true; // lib would show types.nom if expanded
         let mut src = FileNode::dir("src", 0);
         src.children.push(lib);
@@ -416,7 +430,11 @@ mod tests {
         a.is_expanded = true;
         let visible = a.visible_nodes();
         // a + b + c + d + leaf = 5
-        assert_eq!(visible.len(), 5, "5-level fully expanded tree should show 5 nodes");
+        assert_eq!(
+            visible.len(),
+            5,
+            "5-level fully expanded tree should show 5 nodes"
+        );
     }
 
     #[test]
@@ -444,7 +462,8 @@ mod tests {
     fn file_tree_five_levels_depth_values_correct() {
         let mut d3 = FileNode::dir("d3", 3);
         d3.is_expanded = true;
-        d3.children.push(FileNode::file("f4.nom", 4, FileNodeKind::NomFile));
+        d3.children
+            .push(FileNode::file("f4.nom", 4, FileNodeKind::NomFile));
         let mut d2 = FileNode::dir("d2", 2);
         d2.is_expanded = true;
         d2.children.push(d3);
@@ -515,20 +534,48 @@ mod tests {
             FileNode::dir("src", 0),
         ];
         // Sort: directories first, then files
-        nodes.sort_by_key(|n| if n.kind == FileNodeKind::Directory { 0u8 } else { 1u8 });
-        assert_eq!(nodes[0].kind, FileNodeKind::Directory, "first entry must be a directory");
-        assert_eq!(nodes[1].kind, FileNodeKind::Directory, "second entry must be a directory");
-        assert_eq!(nodes[2].kind, FileNodeKind::NomFile, "third entry must be a file");
+        nodes.sort_by_key(|n| {
+            if n.kind == FileNodeKind::Directory {
+                0u8
+            } else {
+                1u8
+            }
+        });
+        assert_eq!(
+            nodes[0].kind,
+            FileNodeKind::Directory,
+            "first entry must be a directory"
+        );
+        assert_eq!(
+            nodes[1].kind,
+            FileNodeKind::Directory,
+            "second entry must be a directory"
+        );
+        assert_eq!(
+            nodes[2].kind,
+            FileNodeKind::NomFile,
+            "third entry must be a file"
+        );
     }
 
     #[test]
     fn sort_order_dirs_before_files_within_section() {
         let mut section = CollapsibleSection::new("ws", "Workspace");
-        section.nodes.push(FileNode::file("main.nom", 0, FileNodeKind::NomFile));
+        section
+            .nodes
+            .push(FileNode::file("main.nom", 0, FileNodeKind::NomFile));
         section.nodes.push(FileNode::dir("src", 0));
-        section.nodes.push(FileNode::file("config.nom", 0, FileNodeKind::NomFile));
+        section
+            .nodes
+            .push(FileNode::file("config.nom", 0, FileNodeKind::NomFile));
         section.nodes.push(FileNode::dir("tests", 0));
-        section.nodes.sort_by_key(|n| if n.kind == FileNodeKind::Directory { 0u8 } else { 1u8 });
+        section.nodes.sort_by_key(|n| {
+            if n.kind == FileNodeKind::Directory {
+                0u8
+            } else {
+                1u8
+            }
+        });
         assert_eq!(section.nodes[0].name, "src");
         assert_eq!(section.nodes[1].name, "tests");
     }
@@ -578,10 +625,16 @@ mod tests {
         let mut section = CollapsibleSection::new("ws", "WS");
         section.nodes.push(root);
 
-        let panel = FileTreePanel { sections: vec![section], selected_id: None };
+        let panel = FileTreePanel {
+            sections: vec![section],
+            selected_id: None,
+        };
         let mut scene = nom_gpui::scene::Scene::new();
         panel.paint_scene(248.0, 600.0, &mut scene);
         // background + alternating BG2 rows (5 nodes → rows 1,3 get BG2 = 2 extra)
-        assert!(scene.quads.len() >= 3, "deep tree should emit background + row quads");
+        assert!(
+            scene.quads.len() >= 3,
+            "deep tree should emit background + row quads"
+        );
     }
 }

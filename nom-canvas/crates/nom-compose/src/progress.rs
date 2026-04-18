@@ -257,13 +257,29 @@ mod tests {
     #[test]
     fn progress_zero_to_half_to_full_in_order() {
         let sink = VecProgressSink::new();
-        sink.emit(ComposeEvent::Progress { percent: 0.0, stage: "start".into() });
-        sink.emit(ComposeEvent::Progress { percent: 0.5, stage: "mid".into() });
-        sink.emit(ComposeEvent::Progress { percent: 1.0, stage: "end".into() });
+        sink.emit(ComposeEvent::Progress {
+            percent: 0.0,
+            stage: "start".into(),
+        });
+        sink.emit(ComposeEvent::Progress {
+            percent: 0.5,
+            stage: "mid".into(),
+        });
+        sink.emit(ComposeEvent::Progress {
+            percent: 1.0,
+            stage: "end".into(),
+        });
         let events = sink.take();
-        let percents: Vec<f32> = events.iter().filter_map(|e| {
-            if let ComposeEvent::Progress { percent, .. } = e { Some(*percent) } else { None }
-        }).collect();
+        let percents: Vec<f32> = events
+            .iter()
+            .filter_map(|e| {
+                if let ComposeEvent::Progress { percent, .. } = e {
+                    Some(*percent)
+                } else {
+                    None
+                }
+            })
+            .collect();
         assert_eq!(percents.len(), 3);
         assert!((percents[0] - 0.0).abs() < 1e-5);
         assert!((percents[1] - 0.5).abs() < 1e-5);
@@ -276,13 +292,29 @@ mod tests {
     fn progress_out_of_order_values_are_stored_as_emitted() {
         // The sink does not clamp or reorder — it stores whatever is emitted.
         let sink = VecProgressSink::new();
-        sink.emit(ComposeEvent::Progress { percent: 0.8, stage: "a".into() });
-        sink.emit(ComposeEvent::Progress { percent: 0.3, stage: "b".into() }); // out-of-order
-        sink.emit(ComposeEvent::Progress { percent: 1.2, stage: "c".into() }); // over 1.0
+        sink.emit(ComposeEvent::Progress {
+            percent: 0.8,
+            stage: "a".into(),
+        });
+        sink.emit(ComposeEvent::Progress {
+            percent: 0.3,
+            stage: "b".into(),
+        }); // out-of-order
+        sink.emit(ComposeEvent::Progress {
+            percent: 1.2,
+            stage: "c".into(),
+        }); // over 1.0
         let events = sink.take();
-        let percents: Vec<f32> = events.iter().filter_map(|e| {
-            if let ComposeEvent::Progress { percent, .. } = e { Some(*percent) } else { None }
-        }).collect();
+        let percents: Vec<f32> = events
+            .iter()
+            .filter_map(|e| {
+                if let ComposeEvent::Progress { percent, .. } = e {
+                    Some(*percent)
+                } else {
+                    None
+                }
+            })
+            .collect();
         // All three stored as-emitted; sink does not clamp.
         assert_eq!(percents, vec![0.8, 0.3, 1.2]);
     }
@@ -293,9 +325,16 @@ mod tests {
         let sink = VecProgressSink::new();
         let count = 7;
         for i in 0..count {
-            sink.emit(ComposeEvent::Progress { percent: i as f32 / count as f32, stage: format!("s{i}") });
+            sink.emit(ComposeEvent::Progress {
+                percent: i as f32 / count as f32,
+                stage: format!("s{i}"),
+            });
         }
-        assert_eq!(sink.take().len(), count, "callback must be invoked once per emit");
+        assert_eq!(
+            sink.take().len(),
+            count,
+            "callback must be invoked once per emit"
+        );
     }
 
     #[test]
@@ -303,7 +342,10 @@ mod tests {
         let sink = VecProgressSink::new();
         let stages = ["init", "validate", "encode", "finalize"];
         for (i, stage) in stages.iter().enumerate() {
-            sink.emit(ComposeEvent::Progress { percent: i as f32 / stages.len() as f32, stage: (*stage).into() });
+            sink.emit(ComposeEvent::Progress {
+                percent: i as f32 / stages.len() as f32,
+                stage: (*stage).into(),
+            });
         }
         let events = sink.take();
         for (i, event) in events.iter().enumerate() {
@@ -322,7 +364,10 @@ mod tests {
     #[test]
     fn progress_event_percent_stored_with_f32_precision() {
         let sink = VecProgressSink::new();
-        sink.emit(ComposeEvent::Progress { percent: 0.333_333_3, stage: "third".into() });
+        sink.emit(ComposeEvent::Progress {
+            percent: 0.333_333_3,
+            stage: "third".into(),
+        });
         let events = sink.take();
         if let ComposeEvent::Progress { percent, .. } = events[0] {
             assert!((percent - 0.333_333_3_f32).abs() < 1e-6);
@@ -333,8 +378,14 @@ mod tests {
     fn progress_multiple_started_events_all_stored() {
         // Emit two Started events — sink stores both without deduplication.
         let sink = VecProgressSink::new();
-        sink.emit(ComposeEvent::Started { backend: "video".into(), entity_id: "a".into() });
-        sink.emit(ComposeEvent::Started { backend: "audio".into(), entity_id: "b".into() });
+        sink.emit(ComposeEvent::Started {
+            backend: "video".into(),
+            entity_id: "a".into(),
+        });
+        sink.emit(ComposeEvent::Started {
+            backend: "audio".into(),
+            entity_id: "b".into(),
+        });
         let events = sink.take();
         assert_eq!(events.len(), 2);
         assert!(matches!(events[0], ComposeEvent::Started { .. }));
@@ -347,11 +398,17 @@ mod tests {
     fn progress_initial_emit_can_be_zero() {
         // A backend conventionally emits percent=0.0 at the start of progress.
         let sink = VecProgressSink::new();
-        sink.emit(ComposeEvent::Progress { percent: 0.0, stage: "start".into() });
+        sink.emit(ComposeEvent::Progress {
+            percent: 0.0,
+            stage: "start".into(),
+        });
         let events = sink.take();
         assert_eq!(events.len(), 1);
         if let ComposeEvent::Progress { percent, .. } = events[0] {
-            assert!((percent - 0.0).abs() < f32::EPSILON, "initial progress must be 0.0");
+            assert!(
+                (percent - 0.0).abs() < f32::EPSILON,
+                "initial progress must be 0.0"
+            );
         } else {
             panic!("expected Progress event");
         }
@@ -361,10 +418,16 @@ mod tests {
     fn progress_final_emit_at_one_signals_completion() {
         // A backend conventionally emits percent=1.0 when finished.
         let sink = VecProgressSink::new();
-        sink.emit(ComposeEvent::Progress { percent: 1.0, stage: "done".into() });
+        sink.emit(ComposeEvent::Progress {
+            percent: 1.0,
+            stage: "done".into(),
+        });
         let events = sink.take();
         if let ComposeEvent::Progress { percent, .. } = events[0] {
-            assert!((percent - 1.0).abs() < f32::EPSILON, "final progress must be 1.0");
+            assert!(
+                (percent - 1.0).abs() < f32::EPSILON,
+                "final progress must be 1.0"
+            );
         }
     }
 
@@ -374,7 +437,10 @@ mod tests {
         let sink = VecProgressSink::new();
         let values = [0.0f32, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0];
         for v in values {
-            sink.emit(ComposeEvent::Progress { percent: v, stage: "step".into() });
+            sink.emit(ComposeEvent::Progress {
+                percent: v,
+                stage: "step".into(),
+            });
         }
         let events = sink.take();
         for (i, event) in events.iter().enumerate() {
@@ -398,14 +464,21 @@ mod tests {
                 stage: format!("s{i}"),
             });
         }
-        assert_eq!(sink.take().len(), n, "observer must receive exactly n updates");
+        assert_eq!(
+            sink.take().len(),
+            n,
+            "observer must receive exactly n updates"
+        );
     }
 
     #[test]
     fn progress_percentage_fifty_percent_stored_as_half() {
         // 50% progress is stored as 0.5 in the f32 percent field.
         let sink = VecProgressSink::new();
-        sink.emit(ComposeEvent::Progress { percent: 0.5, stage: "halfway".into() });
+        sink.emit(ComposeEvent::Progress {
+            percent: 0.5,
+            stage: "halfway".into(),
+        });
         let events = sink.take();
         if let ComposeEvent::Progress { percent, .. } = events[0] {
             assert!(
@@ -419,7 +492,10 @@ mod tests {
     fn progress_stage_label_at_zero_percent() {
         // Stage label at 0% must be preserved.
         let sink = VecProgressSink::new();
-        sink.emit(ComposeEvent::Progress { percent: 0.0, stage: "initialising".into() });
+        sink.emit(ComposeEvent::Progress {
+            percent: 0.0,
+            stage: "initialising".into(),
+        });
         let events = sink.take();
         if let ComposeEvent::Progress { stage, percent } = &events[0] {
             assert_eq!(stage, "initialising");
@@ -431,7 +507,10 @@ mod tests {
     fn progress_stage_label_at_full_percent() {
         // Stage label at 100% must be preserved.
         let sink = VecProgressSink::new();
-        sink.emit(ComposeEvent::Progress { percent: 1.0, stage: "complete".into() });
+        sink.emit(ComposeEvent::Progress {
+            percent: 1.0,
+            stage: "complete".into(),
+        });
         let events = sink.take();
         if let ComposeEvent::Progress { stage, percent } = &events[0] {
             assert_eq!(stage, "complete");
@@ -445,7 +524,10 @@ mod tests {
         let sink = VecProgressSink::new();
         let steps = [0.0f32, 0.25, 0.5, 0.75, 1.0];
         for v in steps {
-            sink.emit(ComposeEvent::Progress { percent: v, stage: "m".into() });
+            sink.emit(ComposeEvent::Progress {
+                percent: v,
+                stage: "m".into(),
+            });
         }
         let events = sink.take();
         assert_eq!(events.len(), 5);
@@ -461,7 +543,10 @@ mod tests {
             .collect();
         assert_eq!(percents.len(), 5);
         for w in percents.windows(2) {
-            assert!(w[0] <= w[1], "monotone sequence must be non-decreasing in storage");
+            assert!(
+                w[0] <= w[1],
+                "monotone sequence must be non-decreasing in storage"
+            );
         }
     }
 
@@ -470,11 +555,17 @@ mod tests {
         // Two separate VecProgressSink instances must not share event storage.
         let sink_a = VecProgressSink::new();
         let sink_b = VecProgressSink::new();
-        sink_a.emit(ComposeEvent::Progress { percent: 0.5, stage: "a".into() });
+        sink_a.emit(ComposeEvent::Progress {
+            percent: 0.5,
+            stage: "a".into(),
+        });
         // sink_b receives nothing.
         let events_a = sink_a.take();
         let events_b = sink_b.take();
         assert_eq!(events_a.len(), 1);
-        assert!(events_b.is_empty(), "sink_b must not see events emitted to sink_a");
+        assert!(
+            events_b.is_empty(),
+            "sink_b must not see events emitted to sink_a"
+        );
     }
 }

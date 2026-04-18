@@ -1104,10 +1104,7 @@ mod tests {
         for icon in Icon::all() {
             let path = icon_path(*icon);
             for &(_cx, _cy, r) in path.circles {
-                assert!(
-                    r > 0.0,
-                    "{icon:?} has a circle with radius <= 0 ({r})"
-                );
+                assert!(r > 0.0, "{icon:?} has a circle with radius <= 0 ({r})");
             }
         }
     }
@@ -1194,8 +1191,16 @@ mod tests {
     fn icon_set_ten_specific_icons_present() {
         // Verify at least 10 specific named icons exist.
         let required = [
-            Icon::Plus, Icon::Minus, Icon::X, Icon::Search, Icon::Settings,
-            Icon::Brain, Icon::Network, Icon::File, Icon::Folder, Icon::Play,
+            Icon::Plus,
+            Icon::Minus,
+            Icon::X,
+            Icon::Search,
+            Icon::Settings,
+            Icon::Brain,
+            Icon::Network,
+            Icon::File,
+            Icon::Folder,
+            Icon::Play,
         ];
         let all = Icon::all();
         for icon in required {
@@ -1220,28 +1225,44 @@ mod tests {
     fn mixed_case_lookup_exact_lowercase() {
         // "search" → Icon::Search
         let result = find_icon_by_name_case_insensitive("search");
-        assert_eq!(result, Some(Icon::Search), "lowercase 'search' must find Icon::Search");
+        assert_eq!(
+            result,
+            Some(Icon::Search),
+            "lowercase 'search' must find Icon::Search"
+        );
     }
 
     #[test]
     fn mixed_case_lookup_all_uppercase() {
         // "SEARCH" → Icon::Search (case-insensitive)
         let result = find_icon_by_name_case_insensitive("SEARCH");
-        assert_eq!(result, Some(Icon::Search), "uppercase 'SEARCH' must find Icon::Search");
+        assert_eq!(
+            result,
+            Some(Icon::Search),
+            "uppercase 'SEARCH' must find Icon::Search"
+        );
     }
 
     #[test]
     fn mixed_case_lookup_title_case() {
         // "Search" → Icon::Search
         let result = find_icon_by_name_case_insensitive("Search");
-        assert_eq!(result, Some(Icon::Search), "title-case 'Search' must find Icon::Search");
+        assert_eq!(
+            result,
+            Some(Icon::Search),
+            "title-case 'Search' must find Icon::Search"
+        );
     }
 
     #[test]
     fn mixed_case_lookup_mixed() {
         // "sEaRcH" → Icon::Search
         let result = find_icon_by_name_case_insensitive("sEaRcH");
-        assert_eq!(result, Some(Icon::Search), "mixed-case 'sEaRcH' must find Icon::Search");
+        assert_eq!(
+            result,
+            Some(Icon::Search),
+            "mixed-case 'sEaRcH' must find Icon::Search"
+        );
     }
 
     #[test]
@@ -1360,34 +1381,52 @@ mod tests {
 
     #[test]
     fn icon_file_exists_in_set() {
-        assert!(Icon::all().contains(&Icon::File), "Icon::File must be in the set");
+        assert!(
+            Icon::all().contains(&Icon::File),
+            "Icon::File must be in the set"
+        );
     }
 
     #[test]
     fn icon_search_exists_in_set() {
-        assert!(Icon::all().contains(&Icon::Search), "Icon::Search must be in the set");
+        assert!(
+            Icon::all().contains(&Icon::Search),
+            "Icon::Search must be in the set"
+        );
     }
 
     #[test]
     fn icon_settings_exists_in_set() {
-        assert!(Icon::all().contains(&Icon::Settings), "Icon::Settings must be in the set");
+        assert!(
+            Icon::all().contains(&Icon::Settings),
+            "Icon::Settings must be in the set"
+        );
     }
 
     #[test]
     fn icon_git_exists_in_set() {
-        assert!(Icon::all().contains(&Icon::GitBranch), "Icon::GitBranch must be in the set");
+        assert!(
+            Icon::all().contains(&Icon::GitBranch),
+            "Icon::GitBranch must be in the set"
+        );
     }
 
     #[test]
     fn icon_close_exists_in_set() {
         // Icon::X is the close/dismiss icon.
-        assert!(Icon::all().contains(&Icon::X), "Icon::X (close) must be in the set");
+        assert!(
+            Icon::all().contains(&Icon::X),
+            "Icon::X (close) must be in the set"
+        );
     }
 
     #[test]
     fn icon_add_exists_in_set() {
         // Icon::Plus is the add/create icon.
-        assert!(Icon::all().contains(&Icon::Plus), "Icon::Plus (add) must be in the set");
+        assert!(
+            Icon::all().contains(&Icon::Plus),
+            "Icon::Plus (add) must be in the set"
+        );
     }
 
     // --- Case-insensitive name lookup ---
@@ -1399,7 +1438,10 @@ mod tests {
         let upper = find_icon_by_name_case_insensitive("FILE");
         assert_eq!(lower, Some(Icon::File), "'file' must resolve to Icon::File");
         assert_eq!(upper, Some(Icon::File), "'FILE' must resolve to Icon::File");
-        assert_eq!(lower, upper, "lowercase and uppercase lookups must return the same icon");
+        assert_eq!(
+            lower, upper,
+            "lowercase and uppercase lookups must return the same icon"
+        );
     }
 
     // --- Unknown name returns None ---
@@ -1429,7 +1471,10 @@ mod tests {
     #[test]
     fn icon_count_at_least_10() {
         let count = Icon::all().len();
-        assert!(count >= 10, "icon set must have at least 10 icons, got {count}");
+        assert!(
+            count >= 10,
+            "icon set must have at least 10 icons, got {count}"
+        );
     }
 
     // --- No duplicate names ---
@@ -1561,10 +1606,7 @@ mod tests {
             "Icon::Copy must exist in the icon set"
         );
         let path = icon_path(Icon::Copy);
-        assert!(
-            !path.lines.is_empty(),
-            "Icon::Copy must have line geometry"
-        );
+        assert!(!path.lines.is_empty(), "Icon::Copy must have line geometry");
     }
 
     #[test]
@@ -1581,7 +1623,10 @@ mod tests {
         // Icon::Trash or Icon::Minus represents a destructive/cut operation.
         // Verify either is available for cut-like interaction.
         let has_cut = Icon::all().contains(&Icon::Trash) || Icon::all().contains(&Icon::Minus);
-        assert!(has_cut, "a cut/remove action icon (Trash or Minus) must exist");
+        assert!(
+            has_cut,
+            "a cut/remove action icon (Trash or Minus) must exist"
+        );
     }
 
     #[test]
@@ -1597,8 +1642,14 @@ mod tests {
             }
             for &(cx, cy, r) in path.circles {
                 assert!(r > 0.0, "{icon:?} circle radius must be positive");
-                assert!(cx >= r && cx <= 1.0 - r, "{icon:?} circle x out of viewport");
-                assert!(cy >= r && cy <= 1.0 - r, "{icon:?} circle y out of viewport");
+                assert!(
+                    cx >= r && cx <= 1.0 - r,
+                    "{icon:?} circle x out of viewport"
+                );
+                assert!(
+                    cy >= r && cy <= 1.0 - r,
+                    "{icon:?} circle y out of viewport"
+                );
             }
         }
     }
@@ -1607,7 +1658,10 @@ mod tests {
     fn icon_copy_has_expected_line_count() {
         // Copy icon: two overlapping rectangles drawn as line segments (8 lines).
         let path = icon_path(Icon::Copy);
-        assert!(path.lines.len() >= 4, "Icon::Copy must have at least 4 lines");
+        assert!(
+            path.lines.len() >= 4,
+            "Icon::Copy must have at least 4 lines"
+        );
     }
 
     #[test]
@@ -1615,14 +1669,23 @@ mod tests {
         // Trash represents the delete/cut action.
         assert!(Icon::all().contains(&Icon::Trash), "Icon::Trash must exist");
         let path = icon_path(Icon::Trash);
-        assert!(!path.lines.is_empty(), "Icon::Trash must have line geometry");
+        assert!(
+            !path.lines.is_empty(),
+            "Icon::Trash must have line geometry"
+        );
     }
 
     #[test]
     fn icon_edit2_has_geometry() {
         let path = icon_path(Icon::Edit2);
-        assert!(!path.lines.is_empty(), "Icon::Edit2 must have line geometry");
-        assert!(path.circles.is_empty(), "Icon::Edit2 must not have circle geometry");
+        assert!(
+            !path.lines.is_empty(),
+            "Icon::Edit2 must have line geometry"
+        );
+        assert!(
+            path.circles.is_empty(),
+            "Icon::Edit2 must not have circle geometry"
+        );
     }
 
     #[test]
@@ -1641,8 +1704,14 @@ mod tests {
     fn icon_set_contains_navigation_icons() {
         // Navigation icons (chevrons) must be available.
         let all = Icon::all();
-        assert!(all.contains(&Icon::ChevronRight), "ChevronRight must be present");
-        assert!(all.contains(&Icon::ChevronDown), "ChevronDown must be present");
+        assert!(
+            all.contains(&Icon::ChevronRight),
+            "ChevronRight must be present"
+        );
+        assert!(
+            all.contains(&Icon::ChevronDown),
+            "ChevronDown must be present"
+        );
     }
 
     #[test]
@@ -1660,7 +1729,10 @@ mod tests {
         // Status icons must be present.
         let all = Icon::all();
         assert!(all.contains(&Icon::Check), "Check must be present");
-        assert!(all.contains(&Icon::AlertCircle), "AlertCircle must be present");
+        assert!(
+            all.contains(&Icon::AlertCircle),
+            "AlertCircle must be present"
+        );
         assert!(all.contains(&Icon::Info), "Info must be present");
     }
 }

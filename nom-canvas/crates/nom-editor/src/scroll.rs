@@ -245,7 +245,7 @@ mod tests {
     fn ensure_visible_cursor_below_viewport_scrolls_down() {
         let mut pos = ScrollPosition::default(); // top_row = 0
         pos.ensure_visible(20, 5); // cursor at row 20, viewport 5 rows
-        // top_row = 20 + 1 - 5 = 16
+                                   // top_row = 20 + 1 - 5 = 16
         assert_eq!(pos.top_row, 16);
     }
 
@@ -325,7 +325,10 @@ mod tests {
         let viewport = 5usize;
         pos.scroll_to_line(new_line, viewport);
         // line 1 is within [0, 5) → already visible, top_row stays 0.
-        assert_eq!(pos.top_row, 0, "top_row must not change when cursor is already visible");
+        assert_eq!(
+            pos.top_row, 0,
+            "top_row must not change when cursor is already visible"
+        );
         assert_eq!(pos.anchor_row, 1);
     }
 
@@ -335,9 +338,15 @@ mod tests {
         // Viewport [0, 5). Cursor moves from line 4 to line 5.
         let mut pos = ScrollPosition::default();
         pos.scroll_to_line(5, 5); // line 5 is first invisible line
-        // top_row = 5 + 1 - 5 = 1
-        assert_eq!(pos.top_row, 1, "viewport must scroll when cursor moves beyond bottom edge");
-        assert!(pos.top_row <= 5 && 5 < pos.top_row + 5, "cursor must be visible after scroll");
+                                  // top_row = 5 + 1 - 5 = 1
+        assert_eq!(
+            pos.top_row, 1,
+            "viewport must scroll when cursor moves beyond bottom edge"
+        );
+        assert!(
+            pos.top_row <= 5 && 5 < pos.top_row + 5,
+            "cursor must be visible after scroll"
+        );
     }
 
     /// Cursor at line N, viewport = 10; moving down 1 to N+1 when N+1 is still in viewport.
@@ -347,7 +356,10 @@ mod tests {
         let new_line = 14usize; // still within [5, 15)
         pos.scroll_to_line(new_line, 10);
         // line 14 < 5 + 10 = 15, so still visible.
-        assert_eq!(pos.top_row, 5, "top_row must stay when cursor is in viewport");
+        assert_eq!(
+            pos.top_row, 5,
+            "top_row must stay when cursor is in viewport"
+        );
         assert_eq!(pos.anchor_row, 14);
     }
 
@@ -379,7 +391,7 @@ mod tests {
         let viewport = 5usize;
         let mut pos = ScrollPosition::with_anchor(0, 0); // [0, 5)
         pos.ensure_visible(5, viewport); // line 5 is outside
-        // top_row = 5 + 1 - 5 = 1
+                                         // top_row = 5 + 1 - 5 = 1
         assert_eq!(pos.top_row, 1);
     }
 
@@ -406,7 +418,7 @@ mod tests {
     fn scroll_cursor_down_1_single_line_viewport() {
         let mut pos = ScrollPosition::default(); // top_row = 0
         pos.scroll_to_line(1, 1); // viewport of 1 line, cursor at line 1
-        // top_row = 1 + 1 - 1 = 1
+                                  // top_row = 1 + 1 - 1 = 1
         assert_eq!(pos.top_row, 1);
         assert_eq!(pos.anchor_row, 1);
     }

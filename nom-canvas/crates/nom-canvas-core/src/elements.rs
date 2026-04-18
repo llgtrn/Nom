@@ -1001,7 +1001,10 @@ mod tests {
             rotation: 0.0,
             z_index: 0,
         };
-        assert!((r.corner_radius - 8.0).abs() < 1e-6, "corner_radius must be 8.0");
+        assert!(
+            (r.corner_radius - 8.0).abs() < 1e-6,
+            "corner_radius must be 8.0"
+        );
     }
 
     /// CanvasRect: fill and stroke colours are accessible.
@@ -1018,8 +1021,14 @@ mod tests {
         };
         assert!(r.fill.is_some(), "fill must be set");
         assert!(r.stroke.is_some(), "stroke must be set");
-        assert!((r.fill.unwrap()[0] - 1.0).abs() < 1e-6, "fill R must be 1.0");
-        assert!((r.stroke.unwrap()[2] - 1.0).abs() < 1e-6, "stroke B must be 1.0");
+        assert!(
+            (r.fill.unwrap()[0] - 1.0).abs() < 1e-6,
+            "fill R must be 1.0"
+        );
+        assert!(
+            (r.stroke.unwrap()[2] - 1.0).abs() < 1e-6,
+            "stroke B must be 1.0"
+        );
     }
 
     /// GraphNodeElement: bounding_box returns correct bottom-right corner.
@@ -1034,8 +1043,16 @@ mod tests {
             confidence: 0.5,
         };
         let (_, br) = bounding_box(&node);
-        assert!((br[0] - 70.0).abs() < 1e-6, "br.x = 10+60 = 70, got {}", br[0]);
-        assert!((br[1] - 50.0).abs() < 1e-6, "br.y = 20+30 = 50, got {}", br[1]);
+        assert!(
+            (br[0] - 70.0).abs() < 1e-6,
+            "br.x = 10+60 = 70, got {}",
+            br[0]
+        );
+        assert!(
+            (br[1] - 50.0).abs() < 1e-6,
+            "br.y = 20+30 = 50, got {}",
+            br[1]
+        );
     }
 
     /// WireElement: wire_midpoint with no waypoints gives correct straight-line midpoint.
@@ -1049,8 +1066,16 @@ mod tests {
             waypoints: vec![],
         };
         let mid = wire_midpoint(&wire, [0.0, 0.0], [200.0, 100.0]);
-        assert!((mid[0] - 100.0).abs() < 1e-6, "mid.x must be 100, got {}", mid[0]);
-        assert!((mid[1] - 50.0).abs() < 1e-6, "mid.y must be 50, got {}", mid[1]);
+        assert!(
+            (mid[0] - 100.0).abs() < 1e-6,
+            "mid.x must be 100, got {}",
+            mid[0]
+        );
+        assert!(
+            (mid[1] - 50.0).abs() < 1e-6,
+            "mid.y must be 50, got {}",
+            mid[1]
+        );
     }
 
     /// CanvasConnector: bounds_aabb with a single point returns a degenerate AABB.
@@ -1104,10 +1129,26 @@ mod tests {
         r.bounds.0[0] += 15.0;
         r.bounds.0[1] -= 5.0;
         let aabb = r.bounds_aabb();
-        assert!((aabb.min[0] - 25.0).abs() < 1e-6, "min.x after move: {}", aabb.min[0]);
-        assert!((aabb.min[1] - 15.0).abs() < 1e-6, "min.y after move: {}", aabb.min[1]);
-        assert!((aabb.max[0] - 75.0).abs() < 1e-6, "max.x after move: {}", aabb.max[0]);
-        assert!((aabb.max[1] - 45.0).abs() < 1e-6, "max.y after move: {}", aabb.max[1]);
+        assert!(
+            (aabb.min[0] - 25.0).abs() < 1e-6,
+            "min.x after move: {}",
+            aabb.min[0]
+        );
+        assert!(
+            (aabb.min[1] - 15.0).abs() < 1e-6,
+            "min.y after move: {}",
+            aabb.min[1]
+        );
+        assert!(
+            (aabb.max[0] - 75.0).abs() < 1e-6,
+            "max.x after move: {}",
+            aabb.max[0]
+        );
+        assert!(
+            (aabb.max[1] - 45.0).abs() < 1e-6,
+            "max.y after move: {}",
+            aabb.max[1]
+        );
     }
 
     /// After resizing an element (changing its size), the AABB reflects the new extents.
@@ -1125,20 +1166,38 @@ mod tests {
         // Resize to 200×120.
         r.bounds.1 = [200.0, 120.0];
         let aabb = r.bounds_aabb();
-        assert!((aabb.max[0] - 200.0).abs() < 1e-6, "max.x after resize: {}", aabb.max[0]);
-        assert!((aabb.max[1] - 120.0).abs() < 1e-6, "max.y after resize: {}", aabb.max[1]);
+        assert!(
+            (aabb.max[0] - 200.0).abs() < 1e-6,
+            "max.x after resize: {}",
+            aabb.max[0]
+        );
+        assert!(
+            (aabb.max[1] - 120.0).abs() < 1e-6,
+            "max.y after resize: {}",
+            aabb.max[1]
+        );
     }
 
     /// An element with z_index=2 is "above" one with z_index=1.
     #[test]
     fn element_z_index_ordering() {
         let r1 = CanvasRect {
-            id: 1, bounds: ([0.0, 0.0], [10.0, 10.0]),
-            fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 1,
+            id: 1,
+            bounds: ([0.0, 0.0], [10.0, 10.0]),
+            fill: None,
+            stroke: None,
+            corner_radius: 0.0,
+            rotation: 0.0,
+            z_index: 1,
         };
         let r2 = CanvasRect {
-            id: 2, bounds: ([0.0, 0.0], [10.0, 10.0]),
-            fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 2,
+            id: 2,
+            bounds: ([0.0, 0.0], [10.0, 10.0]),
+            fill: None,
+            stroke: None,
+            corner_radius: 0.0,
+            rotation: 0.0,
+            z_index: 2,
         };
         assert!(r2.z_index > r1.z_index, "z_index=2 must be above z_index=1");
     }
@@ -1149,9 +1208,13 @@ mod tests {
         // CanvasRect does not have a dedicated `visible` field, so we test that
         // fill=None (transparent) can serve as a "hidden" convention.
         let mut r = CanvasRect {
-            id: 3, bounds: ([0.0, 0.0], [50.0, 50.0]),
+            id: 3,
+            bounds: ([0.0, 0.0], [50.0, 50.0]),
             fill: Some([1.0, 1.0, 1.0, 1.0]),
-            stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 0,
+            stroke: None,
+            corner_radius: 0.0,
+            rotation: 0.0,
+            z_index: 0,
         };
         assert!(r.fill.is_some(), "visible: fill is set");
         // "Hide" by clearing fill.
@@ -1187,7 +1250,10 @@ mod tests {
         // "Ungroup" = drain the waypoints.
         let extracted: Vec<[f32; 2]> = wire.waypoints.drain(..).collect();
         assert_eq!(extracted.len(), 2, "ungroup must return 2 children");
-        assert!(wire.waypoints.is_empty(), "wire must have no waypoints after ungroup");
+        assert!(
+            wire.waypoints.is_empty(),
+            "wire must have no waypoints after ungroup"
+        );
     }
 
     /// After rotation is applied, the AABB (conservative, ignoring rotation) is still valid.
@@ -1197,7 +1263,8 @@ mod tests {
         let r = CanvasRect {
             id: 20,
             bounds: ([0.0, 0.0], [100.0, 50.0]),
-            fill: None, stroke: None,
+            fill: None,
+            stroke: None,
             corner_radius: 0.0,
             rotation: FRAC_PI_4,
             z_index: 0,
@@ -1205,9 +1272,15 @@ mod tests {
         // The conservative AABB still covers the original origin+size.
         let aabb = r.bounds_aabb();
         assert!((aabb.min[0]).abs() < 1e-6, "AABB min.x must still be 0");
-        assert!((aabb.max[0] - 100.0).abs() < 1e-6, "AABB max.x must still be 100");
+        assert!(
+            (aabb.max[0] - 100.0).abs() < 1e-6,
+            "AABB max.x must still be 100"
+        );
         // The rotation field itself is stored correctly.
-        assert!((r.rotation - FRAC_PI_4).abs() < 1e-6, "rotation must be stored");
+        assert!(
+            (r.rotation - FRAC_PI_4).abs() < 1e-6,
+            "rotation must be stored"
+        );
     }
 
     /// Scale from centre: new size = 2× original, origin shifted to keep same centre.
@@ -1222,10 +1295,26 @@ mod tests {
         let new_h = h * scale; // 40
         let new_ox = cx - new_w / 2.0; // 30 - 40 = -10
         let new_oy = cy - new_h / 2.0; // 20 - 20 = 0
-        assert!((new_ox - (-10.0)).abs() < 1e-6, "new origin.x after scale: {}", new_ox);
-        assert!((new_oy).abs() < 1e-6, "new origin.y after scale: {}", new_oy);
-        assert!((new_w - 80.0).abs() < 1e-6, "new width after scale: {}", new_w);
-        assert!((new_h - 40.0).abs() < 1e-6, "new height after scale: {}", new_h);
+        assert!(
+            (new_ox - (-10.0)).abs() < 1e-6,
+            "new origin.x after scale: {}",
+            new_ox
+        );
+        assert!(
+            (new_oy).abs() < 1e-6,
+            "new origin.y after scale: {}",
+            new_oy
+        );
+        assert!(
+            (new_w - 80.0).abs() < 1e-6,
+            "new width after scale: {}",
+            new_w
+        );
+        assert!(
+            (new_h - 40.0).abs() < 1e-6,
+            "new height after scale: {}",
+            new_h
+        );
     }
 
     /// Snap to grid: origin is adjusted to nearest grid intersection (GRID_SIZE=20).
@@ -1242,13 +1331,41 @@ mod tests {
     #[test]
     fn element_stacking_order_preserved() {
         let mut rects: Vec<CanvasRect> = vec![
-            CanvasRect { id: 3, bounds: ([0.0,0.0],[1.0,1.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 30 },
-            CanvasRect { id: 1, bounds: ([0.0,0.0],[1.0,1.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 10 },
-            CanvasRect { id: 2, bounds: ([0.0,0.0],[1.0,1.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 20 },
+            CanvasRect {
+                id: 3,
+                bounds: ([0.0, 0.0], [1.0, 1.0]),
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: 30,
+            },
+            CanvasRect {
+                id: 1,
+                bounds: ([0.0, 0.0], [1.0, 1.0]),
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: 10,
+            },
+            CanvasRect {
+                id: 2,
+                bounds: ([0.0, 0.0], [1.0, 1.0]),
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: 20,
+            },
         ];
         rects.sort_by_key(|r| r.z_index);
         let ids: Vec<u64> = rects.iter().map(|r| r.id).collect();
-        assert_eq!(ids, vec![1, 2, 3], "stacking order must be ascending z_index");
+        assert_eq!(
+            ids,
+            vec![1, 2, 3],
+            "stacking order must be ascending z_index"
+        );
     }
 
     /// Deep clone: modifying the clone must not affect the original.
@@ -1267,10 +1384,16 @@ mod tests {
         cloned.bounds.0[0] = 100.0; // move clone
         cloned.z_index = 99;
         // Original must be unchanged.
-        assert!((original.bounds.0[0] - 5.0).abs() < 1e-6, "original.x must be 5");
+        assert!(
+            (original.bounds.0[0] - 5.0).abs() < 1e-6,
+            "original.x must be 5"
+        );
         assert_eq!(original.z_index, 5, "original.z_index must be 5");
         // Clone must have new values.
-        assert!((cloned.bounds.0[0] - 100.0).abs() < 1e-6, "clone.x must be 100");
+        assert!(
+            (cloned.bounds.0[0] - 100.0).abs() < 1e-6,
+            "clone.x must be 100"
+        );
         assert_eq!(cloned.z_index, 99, "clone.z_index must be 99");
     }
 
@@ -1324,24 +1447,42 @@ mod tests {
             CanvasRect {
                 id: 1,
                 bounds: ([0.0, 0.0], [50.0, 30.0]),
-                fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 0,
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: 0,
             },
             CanvasRect {
                 id: 2,
                 bounds: ([40.0, 20.0], [60.0, 50.0]),
-                fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 0,
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: 0,
             },
             CanvasRect {
                 id: 3,
                 bounds: ([-10.0, -5.0], [20.0, 15.0]),
-                fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 0,
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: 0,
             },
         ];
         let aabbs: Vec<ElementBounds> = rects.iter().map(|r| r.bounds_aabb()).collect();
         let min_x = aabbs.iter().map(|b| b.min[0]).fold(f32::INFINITY, f32::min);
         let min_y = aabbs.iter().map(|b| b.min[1]).fold(f32::INFINITY, f32::min);
-        let max_x = aabbs.iter().map(|b| b.max[0]).fold(f32::NEG_INFINITY, f32::max);
-        let max_y = aabbs.iter().map(|b| b.max[1]).fold(f32::NEG_INFINITY, f32::max);
+        let max_x = aabbs
+            .iter()
+            .map(|b| b.max[0])
+            .fold(f32::NEG_INFINITY, f32::max);
+        let max_y = aabbs
+            .iter()
+            .map(|b| b.max[1])
+            .fold(f32::NEG_INFINITY, f32::max);
         assert!((min_x - (-10.0)).abs() < 1e-5, "group min_x={min_x}");
         assert!((min_y - (-5.0)).abs() < 1e-5, "group min_y={min_y}");
         assert!((max_x - 100.0).abs() < 1e-5, "group max_x={max_x}");
@@ -1354,7 +1495,11 @@ mod tests {
         let r = CanvasRect {
             id: 7,
             bounds: ([5.0, 10.0], [40.0, 20.0]),
-            fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 0,
+            fill: None,
+            stroke: None,
+            corner_radius: 0.0,
+            rotation: 0.0,
+            z_index: 0,
         };
         let aabb = r.bounds_aabb();
         assert!((aabb.min[0] - 5.0).abs() < 1e-5);
@@ -1369,18 +1514,32 @@ mod tests {
         let rect_aabb = CanvasRect {
             id: 1,
             bounds: ([0.0, 0.0], [100.0, 50.0]),
-            fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 0,
-        }.bounds_aabb();
+            fill: None,
+            stroke: None,
+            corner_radius: 0.0,
+            rotation: 0.0,
+            z_index: 0,
+        }
+        .bounds_aabb();
         let ellipse_aabb = CanvasEllipse {
             id: 2,
             bounds: ([80.0, 30.0], [40.0, 40.0]),
-            fill: None, stroke: None, z_index: 0,
-        }.bounds_aabb();
+            fill: None,
+            stroke: None,
+            z_index: 0,
+        }
+        .bounds_aabb();
         let aabbs = [rect_aabb, ellipse_aabb];
         let min_x = aabbs.iter().map(|b| b.min[0]).fold(f32::INFINITY, f32::min);
         let min_y = aabbs.iter().map(|b| b.min[1]).fold(f32::INFINITY, f32::min);
-        let max_x = aabbs.iter().map(|b| b.max[0]).fold(f32::NEG_INFINITY, f32::max);
-        let max_y = aabbs.iter().map(|b| b.max[1]).fold(f32::NEG_INFINITY, f32::max);
+        let max_x = aabbs
+            .iter()
+            .map(|b| b.max[0])
+            .fold(f32::NEG_INFINITY, f32::max);
+        let max_y = aabbs
+            .iter()
+            .map(|b| b.max[1])
+            .fold(f32::NEG_INFINITY, f32::max);
         assert!((min_x).abs() < 1e-5, "min_x={min_x}");
         assert!((min_y).abs() < 1e-5, "min_y={min_y}");
         assert!((max_x - 120.0).abs() < 1e-5, "max_x={max_x}");
@@ -1392,12 +1551,17 @@ mod tests {
     /// move_to_front: after bringing element to front, it has the highest z_index.
     #[test]
     fn z_order_move_to_front_gives_highest() {
-        let mut rects: Vec<CanvasRect> = (0..4).map(|i| CanvasRect {
-            id: i,
-            bounds: ([0.0, 0.0], [10.0, 10.0]),
-            fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0,
-            z_index: i as u32,
-        }).collect();
+        let mut rects: Vec<CanvasRect> = (0..4)
+            .map(|i| CanvasRect {
+                id: i,
+                bounds: ([0.0, 0.0], [10.0, 10.0]),
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: i as u32,
+            })
+            .collect();
         // Bring element 0 (lowest) to front.
         let max_z = rects.iter().map(|r| r.z_index).max().unwrap_or(0);
         rects.iter_mut().find(|r| r.id == 0).unwrap().z_index = max_z + 1;
@@ -1413,24 +1577,57 @@ mod tests {
     #[test]
     fn z_order_sort_by_z_index() {
         let mut rects: Vec<CanvasRect> = vec![
-            CanvasRect { id: 3, bounds: ([0.0,0.0],[10.0,10.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 30 },
-            CanvasRect { id: 1, bounds: ([0.0,0.0],[10.0,10.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 10 },
-            CanvasRect { id: 2, bounds: ([0.0,0.0],[10.0,10.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 20 },
+            CanvasRect {
+                id: 3,
+                bounds: ([0.0, 0.0], [10.0, 10.0]),
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: 30,
+            },
+            CanvasRect {
+                id: 1,
+                bounds: ([0.0, 0.0], [10.0, 10.0]),
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: 10,
+            },
+            CanvasRect {
+                id: 2,
+                bounds: ([0.0, 0.0], [10.0, 10.0]),
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: 20,
+            },
         ];
         rects.sort_by_key(|r| r.z_index);
         let ids: Vec<u64> = rects.iter().map(|r| r.id).collect();
-        assert_eq!(ids, vec![1, 2, 3], "sort by z_index must produce ascending id order");
+        assert_eq!(
+            ids,
+            vec![1, 2, 3],
+            "sort by z_index must produce ascending id order"
+        );
     }
 
     /// z-order: bring-to-front does not change other elements' z_index values.
     #[test]
     fn z_order_bring_to_front_preserves_others() {
-        let mut rects: Vec<CanvasRect> = (1u64..=5).map(|i| CanvasRect {
-            id: i,
-            bounds: ([0.0, 0.0], [10.0, 10.0]),
-            fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0,
-            z_index: i as u32,
-        }).collect();
+        let mut rects: Vec<CanvasRect> = (1u64..=5)
+            .map(|i| CanvasRect {
+                id: i,
+                bounds: ([0.0, 0.0], [10.0, 10.0]),
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: i as u32,
+            })
+            .collect();
         let max_z = rects.iter().map(|r| r.z_index).max().unwrap();
         rects.iter_mut().find(|r| r.id == 1).unwrap().z_index = max_z + 1;
         // Every other element must retain its original z_index.
@@ -1466,12 +1663,16 @@ mod tests {
             waypoints: vec![[5.0, 5.0], [10.0, 10.0], [20.0, 20.0], [30.0, 30.0]],
         };
         // Inner wire has 2 waypoints; outer wire contains the inner wire's points.
-        assert!(outer_wire.waypoints.len() > inner_wire.waypoints.len(),
-            "outer group must have more points than inner");
+        assert!(
+            outer_wire.waypoints.len() > inner_wire.waypoints.len(),
+            "outer group must have more points than inner"
+        );
         // Check that all inner points exist in outer waypoints.
         for pt in &inner_wire.waypoints {
-            assert!(outer_wire.waypoints.contains(pt),
-                "outer group must contain all inner points");
+            assert!(
+                outer_wire.waypoints.contains(pt),
+                "outer group must contain all inner points"
+            );
         }
     }
 
@@ -1479,18 +1680,38 @@ mod tests {
     #[test]
     fn element_group_flatten_returns_all_leaves() {
         let wires = vec![
-            WireElement { id: 1, from_node: 1, to_node: 2, confidence: 1.0,
-                waypoints: vec![[1.0, 1.0], [2.0, 2.0]] },
-            WireElement { id: 2, from_node: 2, to_node: 3, confidence: 1.0,
-                waypoints: vec![[3.0, 3.0]] },
-            WireElement { id: 3, from_node: 3, to_node: 4, confidence: 1.0,
-                waypoints: vec![[4.0, 4.0], [5.0, 5.0], [6.0, 6.0]] },
+            WireElement {
+                id: 1,
+                from_node: 1,
+                to_node: 2,
+                confidence: 1.0,
+                waypoints: vec![[1.0, 1.0], [2.0, 2.0]],
+            },
+            WireElement {
+                id: 2,
+                from_node: 2,
+                to_node: 3,
+                confidence: 1.0,
+                waypoints: vec![[3.0, 3.0]],
+            },
+            WireElement {
+                id: 3,
+                from_node: 3,
+                to_node: 4,
+                confidence: 1.0,
+                waypoints: vec![[4.0, 4.0], [5.0, 5.0], [6.0, 6.0]],
+            },
         ];
         // Flatten = collect all waypoints from all wires.
-        let all_points: Vec<[f32; 2]> = wires.iter()
+        let all_points: Vec<[f32; 2]> = wires
+            .iter()
             .flat_map(|w| w.waypoints.iter().copied())
             .collect();
-        assert_eq!(all_points.len(), 6, "flatten must return all 6 leaf waypoints");
+        assert_eq!(
+            all_points.len(),
+            6,
+            "flatten must return all 6 leaf waypoints"
+        );
         assert_eq!(all_points[0], [1.0, 1.0]);
         assert_eq!(all_points[5], [6.0, 6.0]);
     }
@@ -1507,22 +1728,56 @@ mod tests {
         };
         // Ungroup outer by draining its waypoints.
         let ungrouped: Vec<[f32; 2]> = outer.waypoints.drain(..).collect();
-        assert_eq!(ungrouped.len(), 3, "ungrouping must return 3 children from outer");
-        assert!(outer.waypoints.is_empty(), "outer wire must have no waypoints after ungroup");
+        assert_eq!(
+            ungrouped.len(),
+            3,
+            "ungrouping must return 3 children from outer"
+        );
+        assert!(
+            outer.waypoints.is_empty(),
+            "outer wire must have no waypoints after ungroup"
+        );
     }
 
     /// Layer assignment: z_index determines layer membership.
     #[test]
     fn element_layer_assignment() {
         // Layer 0: background; Layer 1: content; Layer 2: overlay.
-        let bg = CanvasRect { id: 1, bounds: ([0.0,0.0],[100.0,100.0]),
-            fill: Some([0.9,0.9,0.9,1.0]), stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 0 };
-        let content = CanvasRect { id: 2, bounds: ([10.0,10.0],[50.0,50.0]),
-            fill: Some([1.0,0.0,0.0,1.0]), stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 1 };
-        let overlay = CanvasRect { id: 3, bounds: ([0.0,0.0],[100.0,100.0]),
-            fill: Some([0.0,0.0,0.0,0.5]), stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 2 };
-        assert!(bg.z_index < content.z_index, "background must be below content");
-        assert!(content.z_index < overlay.z_index, "content must be below overlay");
+        let bg = CanvasRect {
+            id: 1,
+            bounds: ([0.0, 0.0], [100.0, 100.0]),
+            fill: Some([0.9, 0.9, 0.9, 1.0]),
+            stroke: None,
+            corner_radius: 0.0,
+            rotation: 0.0,
+            z_index: 0,
+        };
+        let content = CanvasRect {
+            id: 2,
+            bounds: ([10.0, 10.0], [50.0, 50.0]),
+            fill: Some([1.0, 0.0, 0.0, 1.0]),
+            stroke: None,
+            corner_radius: 0.0,
+            rotation: 0.0,
+            z_index: 1,
+        };
+        let overlay = CanvasRect {
+            id: 3,
+            bounds: ([0.0, 0.0], [100.0, 100.0]),
+            fill: Some([0.0, 0.0, 0.0, 0.5]),
+            stroke: None,
+            corner_radius: 0.0,
+            rotation: 0.0,
+            z_index: 2,
+        };
+        assert!(
+            bg.z_index < content.z_index,
+            "background must be below content"
+        );
+        assert!(
+            content.z_index < overlay.z_index,
+            "content must be below overlay"
+        );
         assert_eq!(bg.z_index, 0, "background layer is z_index=0");
         assert_eq!(overlay.z_index, 2, "overlay layer is z_index=2");
     }
@@ -1530,12 +1785,17 @@ mod tests {
     /// Send to back: element gets z_index 0 (below all others).
     #[test]
     fn element_send_to_back() {
-        let mut rects: Vec<CanvasRect> = (1..=5).map(|i| CanvasRect {
-            id: i,
-            bounds: ([0.0,0.0],[10.0,10.0]),
-            fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0,
-            z_index: i as u32 * 10,
-        }).collect();
+        let mut rects: Vec<CanvasRect> = (1..=5)
+            .map(|i| CanvasRect {
+                id: i,
+                bounds: ([0.0, 0.0], [10.0, 10.0]),
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: i as u32 * 10,
+            })
+            .collect();
         // Send element id=5 to back.
         rects.iter_mut().find(|r| r.id == 5).unwrap().z_index = 0;
         let back = rects.iter().min_by_key(|r| r.z_index).unwrap();
@@ -1546,12 +1806,17 @@ mod tests {
     /// Bring to front: element gets z_index higher than all others.
     #[test]
     fn element_bring_to_front() {
-        let mut rects: Vec<CanvasRect> = (1..=5).map(|i| CanvasRect {
-            id: i,
-            bounds: ([0.0,0.0],[10.0,10.0]),
-            fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0,
-            z_index: i as u32 * 10,
-        }).collect();
+        let mut rects: Vec<CanvasRect> = (1..=5)
+            .map(|i| CanvasRect {
+                id: i,
+                bounds: ([0.0, 0.0], [10.0, 10.0]),
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: i as u32 * 10,
+            })
+            .collect();
         let max_z = rects.iter().map(|r| r.z_index).max().unwrap();
         // Bring element id=1 to front.
         rects.iter_mut().find(|r| r.id == 1).unwrap().z_index = max_z + 1;
@@ -1565,13 +1830,20 @@ mod tests {
     fn element_send_backward_one_step() {
         let mut r = CanvasRect {
             id: 10,
-            bounds: ([0.0,0.0],[50.0,50.0]),
-            fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0,
+            bounds: ([0.0, 0.0], [50.0, 50.0]),
+            fill: None,
+            stroke: None,
+            corner_radius: 0.0,
+            rotation: 0.0,
             z_index: 5,
         };
         let original_z = r.z_index;
         r.z_index = r.z_index.saturating_sub(1);
-        assert_eq!(r.z_index, original_z - 1, "send-backward must decrement z_index by 1");
+        assert_eq!(
+            r.z_index,
+            original_z - 1,
+            "send-backward must decrement z_index by 1"
+        );
     }
 
     /// Bring forward one step: element's z_index increments by 1.
@@ -1579,27 +1851,70 @@ mod tests {
     fn element_bring_forward_one_step() {
         let mut r = CanvasRect {
             id: 11,
-            bounds: ([0.0,0.0],[50.0,50.0]),
-            fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0,
+            bounds: ([0.0, 0.0], [50.0, 50.0]),
+            fill: None,
+            stroke: None,
+            corner_radius: 0.0,
+            rotation: 0.0,
             z_index: 3,
         };
         let original_z = r.z_index;
         r.z_index += 1;
-        assert_eq!(r.z_index, original_z + 1, "bring-forward must increment z_index by 1");
+        assert_eq!(
+            r.z_index,
+            original_z + 1,
+            "bring-forward must increment z_index by 1"
+        );
     }
 
     /// Layer order array: sorting elements by z_index gives the correct render order.
     #[test]
     fn element_layer_order_array_correct() {
         let mut elements: Vec<CanvasRect> = vec![
-            CanvasRect { id: 3, bounds: ([0.0,0.0],[1.0,1.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 30 },
-            CanvasRect { id: 1, bounds: ([0.0,0.0],[1.0,1.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 10 },
-            CanvasRect { id: 4, bounds: ([0.0,0.0],[1.0,1.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 40 },
-            CanvasRect { id: 2, bounds: ([0.0,0.0],[1.0,1.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 20 },
+            CanvasRect {
+                id: 3,
+                bounds: ([0.0, 0.0], [1.0, 1.0]),
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: 30,
+            },
+            CanvasRect {
+                id: 1,
+                bounds: ([0.0, 0.0], [1.0, 1.0]),
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: 10,
+            },
+            CanvasRect {
+                id: 4,
+                bounds: ([0.0, 0.0], [1.0, 1.0]),
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: 40,
+            },
+            CanvasRect {
+                id: 2,
+                bounds: ([0.0, 0.0], [1.0, 1.0]),
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: 20,
+            },
         ];
         elements.sort_by_key(|r| r.z_index);
         let ids: Vec<u64> = elements.iter().map(|r| r.id).collect();
-        assert_eq!(ids, vec![1, 2, 3, 4], "sorted by z_index must give ascending id order [1,2,3,4]");
+        assert_eq!(
+            ids,
+            vec![1, 2, 3, 4],
+            "sorted by z_index must give ascending id order [1,2,3,4]"
+        );
     }
 
     /// Locked element (z_index=0 by convention) is excluded from reordering candidates.
@@ -1607,23 +1922,38 @@ mod tests {
     fn element_locked_cannot_be_reordered() {
         let locked = CanvasRect {
             id: 99,
-            bounds: ([0.0,0.0],[100.0,100.0]),
-            fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0,
+            bounds: ([0.0, 0.0], [100.0, 100.0]),
+            fill: None,
+            stroke: None,
+            corner_radius: 0.0,
+            rotation: 0.0,
             z_index: 0, // locked = z_index 0 by convention
         };
-        let others: Vec<CanvasRect> = (1..=3).map(|i| CanvasRect {
-            id: i,
-            bounds: ([0.0,0.0],[10.0,10.0]),
-            fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0,
-            z_index: i as u32,
-        }).collect();
+        let others: Vec<CanvasRect> = (1..=3)
+            .map(|i| CanvasRect {
+                id: i,
+                bounds: ([0.0, 0.0], [10.0, 10.0]),
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: i as u32,
+            })
+            .collect();
         // Filter out locked elements before reordering.
         let reorderable: Vec<&CanvasRect> = std::iter::once(&locked)
             .chain(others.iter())
             .filter(|r| r.z_index > 0)
             .collect();
-        assert_eq!(reorderable.len(), 3, "locked element must be excluded from reorderable set");
-        assert!(reorderable.iter().all(|r| r.id != 99), "locked element must not be in reorderable set");
+        assert_eq!(
+            reorderable.len(),
+            3,
+            "locked element must be excluded from reorderable set"
+        );
+        assert!(
+            reorderable.iter().all(|r| r.id != 99),
+            "locked element must not be in reorderable set"
+        );
     }
 
     /// Visibility: a hidden element (fill=None) is excluded from hit-test results.
@@ -1632,20 +1962,27 @@ mod tests {
         use crate::hit_test::hit_test_rect;
         let hidden = CanvasRect {
             id: 77,
-            bounds: ([0.0,0.0],[100.0,100.0]),
+            bounds: ([0.0, 0.0], [100.0, 100.0]),
             fill: None, // hidden
-            stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 5,
+            stroke: None,
+            corner_radius: 0.0,
+            rotation: 0.0,
+            z_index: 5,
         };
         let visible = CanvasRect {
             id: 88,
-            bounds: ([0.0,0.0],[100.0,100.0]),
-            fill: Some([1.0,0.0,0.0,1.0]), // visible
-            stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 3,
+            bounds: ([0.0, 0.0], [100.0, 100.0]),
+            fill: Some([1.0, 0.0, 0.0, 1.0]), // visible
+            stroke: None,
+            corner_radius: 0.0,
+            rotation: 0.0,
+            z_index: 3,
         };
         let pt = [50.0, 50.0];
         // Simulate: only hit-test elements with fill set (visible).
         let candidates = [hidden, visible];
-        let hit = candidates.iter()
+        let hit = candidates
+            .iter()
             .filter(|r| r.fill.is_some() && hit_test_rect(pt, r, 0.0))
             .max_by_key(|r| r.z_index);
         assert!(hit.is_some(), "visible element must be hit");
@@ -1665,9 +2002,25 @@ mod tests {
             z_index: 0,
         };
         let aabb = conn.bounds_aabb().unwrap();
-        assert!((aabb.min[0]).abs() < 1e-5, "connector min_x={}", aabb.min[0]);
-        assert!((aabb.min[1]).abs() < 1e-5, "connector min_y={}", aabb.min[1]);
-        assert!((aabb.max[0] - 200.0).abs() < 1e-5, "connector max_x={}", aabb.max[0]);
-        assert!((aabb.max[1] - 150.0).abs() < 1e-5, "connector max_y={}", aabb.max[1]);
+        assert!(
+            (aabb.min[0]).abs() < 1e-5,
+            "connector min_x={}",
+            aabb.min[0]
+        );
+        assert!(
+            (aabb.min[1]).abs() < 1e-5,
+            "connector min_y={}",
+            aabb.min[1]
+        );
+        assert!(
+            (aabb.max[0] - 200.0).abs() < 1e-5,
+            "connector max_x={}",
+            aabb.max[0]
+        );
+        assert!(
+            (aabb.max[1] - 150.0).abs() < 1e-5,
+            "connector max_y={}",
+            aabb.max[1]
+        );
     }
 }

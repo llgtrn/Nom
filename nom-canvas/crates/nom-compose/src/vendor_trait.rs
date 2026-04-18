@@ -1,7 +1,5 @@
 #![deny(unsafe_code)]
 
-use crate::dispatch::BackendKind;
-
 /// Cost estimate for a vendor API call (in microcents for precision).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CostEstimate {
@@ -39,13 +37,13 @@ pub struct VendorCapability {
 /// Trait for any backend vendor (9router pattern).
 pub trait MediaVendor: Send + Sync {
     fn name(&self) -> &'static str;
-    fn supports(&self, kind: &BackendKind) -> bool;
+    fn supports(&self, kind: &str) -> bool;
     fn capability(&self) -> VendorCapability;
     fn cost_estimate(&self) -> CostEstimate;
     /// Execute a compose call. Returns Ok(output) or Err(reason).
     fn compose(
         &self,
-        kind: &BackendKind,
+        kind: &str,
         input: &str,
         progress: &dyn Fn(f32),
     ) -> Result<String, String>;
@@ -54,15 +52,15 @@ pub trait MediaVendor: Send + Sync {
 /// A stub vendor for testing.
 pub struct StubVendor {
     pub name: &'static str,
-    pub kind: BackendKind,
+    pub kind: String,
 }
 
 impl MediaVendor for StubVendor {
     fn name(&self) -> &'static str {
         self.name
     }
-    fn supports(&self, k: &BackendKind) -> bool {
-        k == &self.kind
+    fn supports(&self, k: &str) -> bool {
+        k == self.kind
     }
     fn capability(&self) -> VendorCapability {
         VendorCapability {
@@ -77,7 +75,7 @@ impl MediaVendor for StubVendor {
     }
     fn compose(
         &self,
-        _kind: &BackendKind,
+        _kind: &str,
         input: &str,
         progress: &dyn Fn(f32),
     ) -> Result<String, String> {
@@ -89,15 +87,15 @@ impl MediaVendor for StubVendor {
 /// A vendor that always succeeds, returning "stub_output".
 pub struct StubMediaVendor {
     pub name: &'static str,
-    pub kind: BackendKind,
+    pub kind: String,
 }
 
 impl MediaVendor for StubMediaVendor {
     fn name(&self) -> &'static str {
         self.name
     }
-    fn supports(&self, k: &BackendKind) -> bool {
-        k == &self.kind
+    fn supports(&self, k: &str) -> bool {
+        k == self.kind
     }
     fn capability(&self) -> VendorCapability {
         VendorCapability {
@@ -112,7 +110,7 @@ impl MediaVendor for StubMediaVendor {
     }
     fn compose(
         &self,
-        _kind: &BackendKind,
+        _kind: &str,
         _input: &str,
         progress: &dyn Fn(f32),
     ) -> Result<String, String> {
@@ -124,15 +122,15 @@ impl MediaVendor for StubMediaVendor {
 /// A vendor that always fails with "error".
 pub struct FailingVendor {
     pub name: &'static str,
-    pub kind: BackendKind,
+    pub kind: String,
 }
 
 impl MediaVendor for FailingVendor {
     fn name(&self) -> &'static str {
         self.name
     }
-    fn supports(&self, k: &BackendKind) -> bool {
-        k == &self.kind
+    fn supports(&self, k: &str) -> bool {
+        k == self.kind
     }
     fn capability(&self) -> VendorCapability {
         VendorCapability::default()
@@ -142,7 +140,7 @@ impl MediaVendor for FailingVendor {
     }
     fn compose(
         &self,
-        _kind: &BackendKind,
+        _kind: &str,
         _input: &str,
         _progress: &dyn Fn(f32),
     ) -> Result<String, String> {
@@ -157,10 +155,10 @@ mod tests {
     fn stub_vendor_supports_its_kind() {
         let v = StubVendor {
             name: "test",
-            kind: BackendKind::Video,
+            kind: "video".to_string(),
         };
-        assert!(v.supports(&BackendKind::Video));
-        assert!(!v.supports(&BackendKind::Audio));
+        assert!(v.supports("video"));
+        assert!(!v.supports("audio"));
     }
     #[test]
     fn cost_estimate_free_is_zero() {
@@ -178,9 +176,9 @@ mod tests {
     fn stub_vendor_compose_returns_ok() {
         let v = StubMediaVendor {
             name: "media_stub",
-            kind: BackendKind::Image,
+            kind: "image".to_string(),
         };
-        let result = v.compose(&BackendKind::Image, "payload", &|_| {});
+        let result = v.compose("image", "payload", &|_| {});
         assert_eq!(result, Ok("stub_output".to_string()));
     }
 
@@ -188,20 +186,20 @@ mod tests {
     fn stub_vendor_kind_is_stub() {
         let v = StubMediaVendor {
             name: "media_stub",
-            kind: BackendKind::Audio,
+            kind: "audio".to_string(),
         };
         assert_eq!(v.name(), "media_stub");
-        assert!(v.supports(&BackendKind::Audio));
-        assert!(!v.supports(&BackendKind::Video));
+        assert!(v.supports("audio"));
+        assert!(!v.supports("video"));
     }
 
     #[test]
     fn stub_vendor_compose_echoes_with_stub_prefix() {
         let v = StubVendor {
             name: "echo",
-            kind: BackendKind::Data,
+            kind: "data".to_string(),
         };
-        let result = v.compose(&BackendKind::Data, "my_payload", &|_| {});
+        let result = v.compose("data", "my_payload", &|_| {});
         assert_eq!(result, Ok("stub:my_payload".to_string()));
     }
 
@@ -209,9 +207,9 @@ mod tests {
     fn failing_vendor_always_errors() {
         let v = FailingVendor {
             name: "broken",
-            kind: BackendKind::Video,
+            kind: "video".to_string(),
         };
-        let result = v.compose(&BackendKind::Video, "anything", &|_| {});
+        let result = v.compose("video", "anything", &|_| {});
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), "error");
     }
@@ -220,10 +218,10 @@ mod tests {
     fn failing_vendor_supports_its_kind() {
         let v = FailingVendor {
             name: "broken",
-            kind: BackendKind::Export,
+            kind: "export".to_string(),
         };
-        assert!(v.supports(&BackendKind::Export));
-        assert!(!v.supports(&BackendKind::Image));
+        assert!(v.supports("export"));
+        assert!(!v.supports("image"));
     }
 
     #[test]
@@ -248,10 +246,10 @@ mod tests {
         use std::cell::Cell;
         let v = StubMediaVendor {
             name: "v",
-            kind: BackendKind::Render,
+            kind: "render".to_string(),
         };
         let max_p = Cell::new(0.0f32);
-        v.compose(&BackendKind::Render, "x", &|p| {
+        v.compose("render", "x", &|p| {
             if p > max_p.get() {
                 max_p.set(p);
             }

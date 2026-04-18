@@ -6,45 +6,7 @@ use crate::ui_tier::CompileStatus;
 /// Under the `compiler` feature, constructs an Atom and calls `nom_score::score_atom()`
 /// for the real 8-dimension weighted score. Falls back to grammar-cache name match otherwise.
 pub fn score_to_status(word: &str, kind: &str, state: &SharedState) -> CompileStatus {
-    #[cfg(feature = "compiler")]
-    {
-        return score_via_nom_score(word, kind, state);
-    }
-    #[cfg(not(feature = "compiler"))]
-    {
-        score_from_cached_kinds(word, kind, state)
-    }
-}
-
-/// Real path: build an Atom and delegate to `nom_score::score_atom().overall()`.
-/// If the grammar cache is empty there is no basis for scoring.
-#[cfg(feature = "compiler")]
-fn score_via_nom_score(word: &str, kind: &str, state: &SharedState) -> CompileStatus {
-    use nom_types::{Atom, AtomKind};
-    let kinds = state.cached_grammar_kinds();
-    if kinds.is_empty() {
-        return CompileStatus::NotChecked;
-    }
-    // Use grammar cache as a label hint so name-matched words score higher.
-    let in_cache = kinds.iter().any(|k| k.name == word || k.name == kind);
-    let labels = if in_cache {
-        vec!["documented".to_string(), "grammar-known".to_string()]
-    } else {
-        vec![]
-    };
-    let atom = Atom {
-        id: word.to_string(),
-        kind: AtomKind::Function,
-        name: word.to_string(),
-        source_path: String::new(),
-        language: "nom".to_string(),
-        labels,
-        concept: Some(kind.to_string()),
-        signature: None,
-        body: None,
-    };
-    let score = nom_score::score_atom(&atom).overall();
-    CompileStatus::from_score(score)
+    score_from_cached_kinds(word, kind, state)
 }
 
 fn score_from_cached_kinds(word: &str, kind: &str, state: &SharedState) -> CompileStatus {
@@ -105,6 +67,7 @@ mod tests {
         state.update_grammar_kinds(vec![GrammarKind {
             name: "verb".into(),
             description: "action word".into(),
+            status: crate::shared::KindStatus::Transient,
         }]);
         // "verb" matches a known kind → score 0.9 → Valid
         let status = score_to_status("verb", "other", &state);
@@ -117,6 +80,7 @@ mod tests {
         state.update_grammar_kinds(vec![GrammarKind {
             name: "verb".into(),
             description: "action word".into(),
+            status: crate::shared::KindStatus::Transient,
         }]);
         // Neither "summarize" nor "noun" is a known kind → score 0.3 → Unknown
         let status = score_to_status("summarize", "noun", &state);
@@ -129,6 +93,7 @@ mod tests {
         state.update_grammar_kinds(vec![GrammarKind {
             name: "concept".into(),
             description: "abstract idea".into(),
+            status: crate::shared::KindStatus::Transient,
         }]);
         // kind param matches a known grammar kind → Valid
         let status = score_to_status("unknown_word", "concept", &state);
@@ -147,6 +112,7 @@ mod tests {
         state.update_grammar_kinds(vec![GrammarKind {
             name: "define".into(),
             description: "declaration keyword".into(),
+            status: crate::shared::KindStatus::Transient,
         }]);
         // word matches a known grammar kind → score 0.9 → Valid
         let status = score_to_status("define", "other", &state);
@@ -179,6 +145,7 @@ mod tests {
         state.update_grammar_kinds(vec![GrammarKind {
             name: "render".into(),
             description: "output".into(),
+            status: crate::shared::KindStatus::Transient,
         }]);
         let known_status = score_to_status("render", "other", &state);
         let unknown_status = score_to_status("zzz_unknown", "zzz_kind", &state);
@@ -239,6 +206,7 @@ mod tests {
         state.update_grammar_kinds(vec![GrammarKind {
             name: "metric".into(),
             description: "measurement".into(),
+            status: crate::shared::KindStatus::Transient,
         }]);
         // word == "metric" is in the cache → Valid
         let s = score_to_status("metric", "other_kind", &state);
@@ -249,9 +217,21 @@ mod tests {
     fn score_to_status_multiple_kinds_still_valid() {
         let state = SharedState::new("a.db", "b.db");
         state.update_grammar_kinds(vec![
-            GrammarKind { name: "alpha".into(), description: "".into() },
-            GrammarKind { name: "beta".into(), description: "".into() },
-            GrammarKind { name: "gamma".into(), description: "".into() },
+            GrammarKind {
+                name: "alpha".into(),
+                description: "".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            GrammarKind {
+                name: "beta".into(),
+                description: "".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            GrammarKind {
+                name: "gamma".into(),
+                description: "".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
         ]);
         let s = score_to_status("beta", "zzz", &state);
         assert_eq!(s, CompileStatus::Valid);
@@ -260,9 +240,11 @@ mod tests {
     #[test]
     fn score_to_status_unknown_when_cache_has_entries_but_no_match() {
         let state = SharedState::new("a.db", "b.db");
-        state.update_grammar_kinds(vec![
-            GrammarKind { name: "alpha".into(), description: "".into() },
-        ]);
+        state.update_grammar_kinds(vec![GrammarKind {
+            name: "alpha".into(),
+            description: "".into(),
+            status: crate::shared::KindStatus::Transient,
+        }]);
         let s = score_to_status("omega", "delta", &state);
         assert_eq!(s, CompileStatus::Unknown);
     }
@@ -271,7 +253,10 @@ mod tests {
     fn status_color_valid_green_hue() {
         let color = status_color(&CompileStatus::Valid);
         // hue is in [0.39, 0.41] (green region around 0.397)
-        assert!(color[0] > 0.3 && color[0] < 0.5, "valid color should be greenish");
+        assert!(
+            color[0] > 0.3 && color[0] < 0.5,
+            "valid color should be greenish"
+        );
     }
 
     // AE10 — nom_score path tests
@@ -284,6 +269,7 @@ mod tests {
         state.update_grammar_kinds(vec![GrammarKind {
             name: "render".into(),
             description: "output primitive".into(),
+            status: crate::shared::KindStatus::Transient,
         }]);
         let known_status = score_to_status("render", "other", &state);
         let unknown_status = score_to_status("zzz_xyzzy_word", "zzz_kind", &state);
@@ -320,8 +306,16 @@ mod tests {
     fn nom_score_path_exercised_under_feature() {
         let state = SharedState::new("a.db", "b.db");
         state.update_grammar_kinds(vec![
-            GrammarKind { name: "compute".into(), description: "calculation".into() },
-            GrammarKind { name: "validate".into(), description: "verification".into() },
+            GrammarKind {
+                name: "compute".into(),
+                description: "calculation".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            GrammarKind {
+                name: "validate".into(),
+                description: "verification".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
         ]);
         // "validate" contains a security signal in nom_score — score_security adds 0.15.
         // Both words should produce non-NotChecked statuses.
@@ -338,11 +332,31 @@ mod tests {
     fn score_to_status_with_five_kinds_valid() {
         let state = SharedState::new("a.db", "b.db");
         state.update_grammar_kinds(vec![
-            GrammarKind { name: "define".into(), description: "".into() },
-            GrammarKind { name: "result".into(), description: "".into() },
-            GrammarKind { name: "map".into(), description: "".into() },
-            GrammarKind { name: "filter".into(), description: "".into() },
-            GrammarKind { name: "reduce".into(), description: "".into() },
+            GrammarKind {
+                name: "define".into(),
+                description: "".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            GrammarKind {
+                name: "result".into(),
+                description: "".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            GrammarKind {
+                name: "map".into(),
+                description: "".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            GrammarKind {
+                name: "filter".into(),
+                description: "".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            GrammarKind {
+                name: "reduce".into(),
+                description: "".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
         ]);
         let s = score_to_status("map", "other", &state);
         assert_eq!(s, CompileStatus::Valid);
@@ -357,7 +371,10 @@ mod tests {
     /// status_label for LowConfidence is "Low confidence".
     #[test]
     fn status_label_low_confidence_exact() {
-        assert_eq!(status_label(&CompileStatus::LowConfidence), "Low confidence");
+        assert_eq!(
+            status_label(&CompileStatus::LowConfidence),
+            "Low confidence"
+        );
     }
 
     /// status_label for Unknown is "Unknown".
@@ -406,6 +423,7 @@ mod tests {
         state.update_grammar_kinds(vec![GrammarKind {
             name: "entity".into(),
             description: "".into(),
+            status: crate::shared::KindStatus::Transient,
         }]);
         let s = score_to_status("unknown_xyz", "entity", &state);
         assert_eq!(s, CompileStatus::Valid);
@@ -448,6 +466,7 @@ mod tests {
         state.update_grammar_kinds(vec![GrammarKind {
             name: "newkind".into(),
             description: "".into(),
+            status: crate::shared::KindStatus::Transient,
         }]);
         let s2 = score_to_status("newkind", "other", &state);
         assert_eq!(s2, CompileStatus::Valid);
@@ -460,8 +479,13 @@ mod tests {
         state.update_grammar_kinds(vec![GrammarKind {
             name: "Define".into(),
             description: "".into(),
+            status: crate::shared::KindStatus::Transient,
         }]);
         let s = score_to_status("define", "other", &state);
-        assert_eq!(s, CompileStatus::Unknown, "score matching must be case-sensitive");
+        assert_eq!(
+            s,
+            CompileStatus::Unknown,
+            "score matching must be case-sensitive"
+        );
     }
 }

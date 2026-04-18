@@ -229,7 +229,6 @@ pub fn edge_color_for_confidence(confidence: f32) -> Hsla {
 // ---------------------------------------------------------------------------
 
 pub const SIDEBAR_W: f32 = 248.0;
-pub const TOOLBAR_H: f32 = 48.0;
 pub const STATUSBAR_H: f32 = 24.0;
 pub const BLOCK_RADIUS: f32 = 4.0;
 pub const MODAL_RADIUS: f32 = 22.0;
@@ -314,6 +313,18 @@ impl Theme {
             foreground: "#111827".to_string(),
             accent: "#2563eb".to_string(),
             surface: "#f3f4f6".to_string(),
+        }
+    }
+
+    /// OLED theme — identical to dark but with pure-black backgrounds for
+    /// pixel-level power savings on OLED displays.
+    pub fn oled() -> Self {
+        Self {
+            name: "oled".to_string(),
+            background: "#000000".to_string(),
+            foreground: "#f8fafb".to_string(),
+            accent: "#22c55e".to_string(),
+            surface: "#050505".to_string(),
         }
     }
 
@@ -537,7 +548,12 @@ mod tests {
 
     #[test]
     fn tokens_frosted_blur_radius_positive() {
-        const { assert!(FROSTED_BLUR_RADIUS > 0.0, "FROSTED_BLUR_RADIUS must be positive") };
+        const {
+            assert!(
+                FROSTED_BLUR_RADIUS > 0.0,
+                "FROSTED_BLUR_RADIUS must be positive"
+            )
+        };
     }
 
     #[test]
@@ -577,7 +593,12 @@ mod tests {
     fn tokens_warning_is_yellowish() {
         // Both red and green channels > 0.5 gives a yellow hue.
         const { assert!(WARNING[0] > 0.5, "WARNING red must be > 0.5 for yellow hue") };
-        const { assert!(WARNING[1] > 0.5, "WARNING green must be > 0.5 for yellow hue") };
+        const {
+            assert!(
+                WARNING[1] > 0.5,
+                "WARNING green must be > 0.5 for yellow hue"
+            )
+        };
     }
 
     #[test]
@@ -753,8 +774,8 @@ mod tests {
         // Toolbar is taller than the status bar.
         const {
             assert!(
-                TOOLBAR_H > STATUSBAR_H,
-                "TOOLBAR_H must be greater than STATUSBAR_H"
+                TOOLBAR_HEIGHT > STATUSBAR_H,
+                "TOOLBAR_HEIGHT must be greater than STATUSBAR_H"
             )
         };
     }
@@ -788,9 +809,19 @@ mod tests {
     fn tokens_line_height_above_one() {
         // Readable line heights must be >= 1.0 to avoid overlap.
         const { assert!(LINE_HEIGHT_BODY >= 1.0, "LINE_HEIGHT_BODY must be >= 1.0") };
-        const { assert!(LINE_HEIGHT_CAPTION >= 1.0, "LINE_HEIGHT_CAPTION must be >= 1.0") };
+        const {
+            assert!(
+                LINE_HEIGHT_CAPTION >= 1.0,
+                "LINE_HEIGHT_CAPTION must be >= 1.0"
+            )
+        };
         const { assert!(LINE_HEIGHT_CODE >= 1.0, "LINE_HEIGHT_CODE must be >= 1.0") };
-        const { assert!(LINE_HEIGHT_HEADING >= 1.0, "LINE_HEIGHT_HEADING must be >= 1.0") };
+        const {
+            assert!(
+                LINE_HEIGHT_HEADING >= 1.0,
+                "LINE_HEIGHT_HEADING must be >= 1.0"
+            )
+        };
     }
 
     #[test]
@@ -799,10 +830,10 @@ mod tests {
     }
 
     #[test]
-    fn tokens_toolbar_height_is_48() {
+    fn tokens_toolbar_height_is_36() {
         assert_eq!(
-            TOOLBAR_H, 48.0,
-            "TOOLBAR_H must be 48.0 per spec, got {TOOLBAR_H}"
+            TOOLBAR_HEIGHT, 36.0,
+            "TOOLBAR_HEIGHT must be 36.0 per spec, got {TOOLBAR_HEIGHT}"
         );
     }
 
@@ -843,7 +874,12 @@ mod tests {
     #[test]
     fn tokens_destructive_is_red() {
         // ERROR is the destructive color; red channel must dominate (> 0.5).
-        const { assert!(ERROR[0] > 0.5, "ERROR red channel must be > 0.5 for destructive red") };
+        const {
+            assert!(
+                ERROR[0] > 0.5,
+                "ERROR red channel must be > 0.5 for destructive red"
+            )
+        };
     }
 
     #[test]
@@ -888,7 +924,12 @@ mod tests {
 
     #[test]
     fn tokens_radius_full_is_very_large() {
-        const { assert!(RADIUS_FULL >= 999.0, "RADIUS_FULL must be >= 999 (pill shape)") };
+        const {
+            assert!(
+                RADIUS_FULL >= 999.0,
+                "RADIUS_FULL must be >= 999 (pill shape)"
+            )
+        };
     }
 
     #[test]
@@ -902,7 +943,12 @@ mod tests {
 
     #[test]
     fn tokens_modal_radius_larger_than_block_radius() {
-        const { assert!(MODAL_RADIUS > BLOCK_RADIUS, "MODAL_RADIUS must be > BLOCK_RADIUS") };
+        const {
+            assert!(
+                MODAL_RADIUS > BLOCK_RADIUS,
+                "MODAL_RADIUS must be > BLOCK_RADIUS"
+            )
+        };
     }
 
     #[test]
@@ -957,16 +1003,41 @@ mod tests {
     #[test]
     fn tokens_line_height_code_widest() {
         // Code needs the most vertical space; must be >= all other line heights.
-        const { assert!(LINE_HEIGHT_CODE >= LINE_HEIGHT_BODY, "LINE_HEIGHT_CODE must be >= LINE_HEIGHT_BODY") };
-        const { assert!(LINE_HEIGHT_CODE >= LINE_HEIGHT_CAPTION, "LINE_HEIGHT_CODE must be >= LINE_HEIGHT_CAPTION") };
-        const { assert!(LINE_HEIGHT_CODE >= LINE_HEIGHT_HEADING, "LINE_HEIGHT_CODE must be >= LINE_HEIGHT_HEADING") };
+        const {
+            assert!(
+                LINE_HEIGHT_CODE >= LINE_HEIGHT_BODY,
+                "LINE_HEIGHT_CODE must be >= LINE_HEIGHT_BODY"
+            )
+        };
+        const {
+            assert!(
+                LINE_HEIGHT_CODE >= LINE_HEIGHT_CAPTION,
+                "LINE_HEIGHT_CODE must be >= LINE_HEIGHT_CAPTION"
+            )
+        };
+        const {
+            assert!(
+                LINE_HEIGHT_CODE >= LINE_HEIGHT_HEADING,
+                "LINE_HEIGHT_CODE must be >= LINE_HEIGHT_HEADING"
+            )
+        };
     }
 
     #[test]
     fn tokens_line_height_heading_tightest() {
         // Headings use tighter leading than body or code text.
-        const { assert!(LINE_HEIGHT_HEADING <= LINE_HEIGHT_BODY, "LINE_HEIGHT_HEADING must be <= LINE_HEIGHT_BODY") };
-        const { assert!(LINE_HEIGHT_HEADING <= LINE_HEIGHT_CAPTION, "LINE_HEIGHT_HEADING must be <= LINE_HEIGHT_CAPTION") };
+        const {
+            assert!(
+                LINE_HEIGHT_HEADING <= LINE_HEIGHT_BODY,
+                "LINE_HEIGHT_HEADING must be <= LINE_HEIGHT_BODY"
+            )
+        };
+        const {
+            assert!(
+                LINE_HEIGHT_HEADING <= LINE_HEIGHT_CAPTION,
+                "LINE_HEIGHT_HEADING must be <= LINE_HEIGHT_CAPTION"
+            )
+        };
     }
 
     #[test]
@@ -1042,32 +1113,62 @@ mod tests {
 
     #[test]
     fn tokens_motion_spring_stiffness_positive() {
-        const { assert!(MOTION_SPRING_STIFFNESS > 0.0, "MOTION_SPRING_STIFFNESS must be positive") };
+        const {
+            assert!(
+                MOTION_SPRING_STIFFNESS > 0.0,
+                "MOTION_SPRING_STIFFNESS must be positive"
+            )
+        };
     }
 
     #[test]
     fn tokens_motion_spring_damping_positive() {
-        const { assert!(MOTION_SPRING_DAMPING > 0.0, "MOTION_SPRING_DAMPING must be positive") };
+        const {
+            assert!(
+                MOTION_SPRING_DAMPING > 0.0,
+                "MOTION_SPRING_DAMPING must be positive"
+            )
+        };
     }
 
     #[test]
     fn tokens_panel_right_wider_than_left() {
-        const { assert!(PANEL_RIGHT_WIDTH > PANEL_LEFT_WIDTH, "PANEL_RIGHT_WIDTH must be > PANEL_LEFT_WIDTH") };
+        const {
+            assert!(
+                PANEL_RIGHT_WIDTH > PANEL_LEFT_WIDTH,
+                "PANEL_RIGHT_WIDTH must be > PANEL_LEFT_WIDTH"
+            )
+        };
     }
 
     #[test]
     fn tokens_panel_bottom_height_positive() {
-        const { assert!(PANEL_BOTTOM_HEIGHT > 0.0, "PANEL_BOTTOM_HEIGHT must be positive") };
+        const {
+            assert!(
+                PANEL_BOTTOM_HEIGHT > 0.0,
+                "PANEL_BOTTOM_HEIGHT must be positive"
+            )
+        };
     }
 
     #[test]
     fn tokens_panel_min_less_than_max() {
-        const { assert!(PANEL_MIN_WIDTH < PANEL_MAX_WIDTH, "PANEL_MIN_WIDTH must be < PANEL_MAX_WIDTH") };
+        const {
+            assert!(
+                PANEL_MIN_WIDTH < PANEL_MAX_WIDTH,
+                "PANEL_MIN_WIDTH must be < PANEL_MAX_WIDTH"
+            )
+        };
     }
 
     #[test]
     fn tokens_h1_letter_spacing_negative() {
-        const { assert!(H1_LETTER_SPACING < 0.0, "H1_LETTER_SPACING must be negative (tight tracking)") };
+        const {
+            assert!(
+                H1_LETTER_SPACING < 0.0,
+                "H1_LETTER_SPACING must be negative (tight tracking)"
+            )
+        };
     }
 
     #[test]
@@ -1524,7 +1625,10 @@ mod tests {
         let b = color_text_primary();
         let m = mix_hsla(a, b);
         // Hue is in 0-360 degrees; mixed value of two 0-360 hues stays in that range.
-        assert!((0.0..=360.0).contains(&m.h), "mixed h out of range (0-360 degrees)");
+        assert!(
+            (0.0..=360.0).contains(&m.h),
+            "mixed h out of range (0-360 degrees)"
+        );
         assert!((0.0..=1.0).contains(&m.s), "mixed s out of range");
         assert!((0.0..=1.0).contains(&m.l), "mixed l out of range");
         assert!((0.0..=1.0).contains(&m.a), "mixed a out of range");
@@ -1778,7 +1882,11 @@ mod tests {
     #[test]
     fn wcag_aa_text_on_bg2_contrast_check() {
         fn linearize(c: f32) -> f32 {
-            if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055_f32).powf(2.4) }
+            if c <= 0.04045 {
+                c / 12.92
+            } else {
+                ((c + 0.055) / 1.055_f32).powf(2.4)
+            }
         }
         fn rel_lum(r: f32, g: f32, b: f32) -> f32 {
             0.2126 * linearize(r) + 0.7152 * linearize(g) + 0.0722 * linearize(b)
@@ -1801,7 +1909,11 @@ mod tests {
     #[test]
     fn wcag_aa_cta_on_base_bg_contrast_check() {
         fn linearize(c: f32) -> f32 {
-            if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055_f32).powf(2.4) }
+            if c <= 0.04045 {
+                c / 12.92
+            } else {
+                ((c + 0.055) / 1.055_f32).powf(2.4)
+            }
         }
         fn rel_lum(r: f32, g: f32, b: f32) -> f32 {
             0.2126 * linearize(r) + 0.7152 * linearize(g) + 0.0722 * linearize(b)
@@ -1824,7 +1936,11 @@ mod tests {
     #[test]
     fn wcag_aa_warning_on_base_bg_contrast_check() {
         fn linearize(c: f32) -> f32 {
-            if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055_f32).powf(2.4) }
+            if c <= 0.04045 {
+                c / 12.92
+            } else {
+                ((c + 0.055) / 1.055_f32).powf(2.4)
+            }
         }
         fn rel_lum(r: f32, g: f32, b: f32) -> f32 {
             0.2126 * linearize(r) + 0.7152 * linearize(g) + 0.0722 * linearize(b)
@@ -1855,8 +1971,14 @@ mod tests {
 
     #[test]
     fn icon_size_token_positive_and_reasonable() {
-        assert!(ICON_SIZE > 0.0 && ICON_SIZE <= 64.0, "ICON_SIZE must be in (0, 64]");
-        assert!(ICON_SIZE_SM > 0.0 && ICON_SIZE_SM <= 32.0, "ICON_SIZE_SM must be in (0, 32]");
+        assert!(
+            ICON_SIZE > 0.0 && ICON_SIZE <= 64.0,
+            "ICON_SIZE must be in (0, 64]"
+        );
+        assert!(
+            ICON_SIZE_SM > 0.0 && ICON_SIZE_SM <= 32.0,
+            "ICON_SIZE_SM must be in (0, 32]"
+        );
     }
 
     #[test]
@@ -1925,7 +2047,11 @@ mod tests {
     fn tokens_hsla_text_primary_light() {
         let c = color_text_primary();
         // Primary text must be light: lightness > 0.5.
-        assert!(c.l > 0.5, "text_primary lightness ({:.3}) must be > 0.5", c.l);
+        assert!(
+            c.l > 0.5,
+            "text_primary lightness ({:.3}) must be > 0.5",
+            c.l
+        );
     }
 
     #[test]
@@ -2027,7 +2153,8 @@ mod tests {
         assert!(
             blue.h < purple.h,
             "blue hue ({:.1}) must be < purple hue ({:.1})",
-            blue.h, purple.h
+            blue.h,
+            purple.h
         );
     }
 
@@ -2039,7 +2166,8 @@ mod tests {
         assert!(
             green.h < blue.h,
             "green hue ({:.1}) must be < blue hue ({:.1})",
-            green.h, blue.h
+            green.h,
+            blue.h
         );
     }
 
@@ -2048,21 +2176,40 @@ mod tests {
         let blue = color_accent_blue();
         let purple = color_accent_purple();
         let green = color_accent_green();
-        assert!((blue.h - purple.h).abs() > 20.0, "blue and purple hues must differ by > 20°");
-        assert!((blue.h - green.h).abs() > 20.0, "blue and green hues must differ by > 20°");
-        assert!((purple.h - green.h).abs() > 20.0, "purple and green hues must differ by > 20°");
+        assert!(
+            (blue.h - purple.h).abs() > 20.0,
+            "blue and purple hues must differ by > 20°"
+        );
+        assert!(
+            (blue.h - green.h).abs() > 20.0,
+            "blue and green hues must differ by > 20°"
+        );
+        assert!(
+            (purple.h - green.h).abs() > 20.0,
+            "purple and green hues must differ by > 20°"
+        );
     }
 
     // --- Frosted overlay alpha < 1.0 ---
 
     #[test]
     fn frosted_overlay_alpha_strictly_less_than_one() {
-        const { assert!(FROSTED_BG_ALPHA < 1.0, "FROSTED_BG_ALPHA must be < 1.0 for transparency") };
+        const {
+            assert!(
+                FROSTED_BG_ALPHA < 1.0,
+                "FROSTED_BG_ALPHA must be < 1.0 for transparency"
+            )
+        };
     }
 
     #[test]
     fn frosted_border_alpha_strictly_less_than_one() {
-        const { assert!(FROSTED_BORDER_ALPHA < 1.0, "FROSTED_BORDER_ALPHA must be < 1.0") };
+        const {
+            assert!(
+                FROSTED_BORDER_ALPHA < 1.0,
+                "FROSTED_BORDER_ALPHA must be < 1.0"
+            )
+        };
     }
 
     #[test]
@@ -2081,14 +2228,20 @@ mod tests {
         assert!(
             FROSTED_BG_ALPHA > FROSTED_BORDER_ALPHA,
             "FROSTED_BG_ALPHA ({}) must be > FROSTED_BORDER_ALPHA ({})",
-            FROSTED_BG_ALPHA, FROSTED_BORDER_ALPHA
+            FROSTED_BG_ALPHA,
+            FROSTED_BORDER_ALPHA
         );
     }
 
     #[test]
     fn frosted_all_alphas_positive() {
         const { assert!(FROSTED_BG_ALPHA > 0.0, "FROSTED_BG_ALPHA must be > 0.0") };
-        const { assert!(FROSTED_BORDER_ALPHA > 0.0, "FROSTED_BORDER_ALPHA must be > 0.0") };
+        const {
+            assert!(
+                FROSTED_BORDER_ALPHA > 0.0,
+                "FROSTED_BORDER_ALPHA must be > 0.0"
+            )
+        };
     }
 
     // --- Font size H1 > H2 > H3 > body > caption ---
@@ -2124,7 +2277,12 @@ mod tests {
 
     #[test]
     fn font_size_h1_is_largest_of_all_heading_and_body() {
-        let sizes = [FONT_SIZE_H2, FONT_SIZE_H3, FONT_SIZE_BODY, FONT_SIZE_CAPTION];
+        let sizes = [
+            FONT_SIZE_H2,
+            FONT_SIZE_H3,
+            FONT_SIZE_BODY,
+            FONT_SIZE_CAPTION,
+        ];
         for s in sizes {
             assert!(FONT_SIZE_H1 > s, "H1 ({}) must be > {}", FONT_SIZE_H1, s);
         }
@@ -2134,7 +2292,12 @@ mod tests {
     fn font_size_caption_is_smallest_of_named_text_sizes() {
         let sizes = [FONT_SIZE_BODY, FONT_SIZE_H3, FONT_SIZE_H2, FONT_SIZE_H1];
         for s in sizes {
-            assert!(FONT_SIZE_CAPTION < s, "caption ({}) must be < {}", FONT_SIZE_CAPTION, s);
+            assert!(
+                FONT_SIZE_CAPTION < s,
+                "caption ({}) must be < {}",
+                FONT_SIZE_CAPTION,
+                s
+            );
         }
     }
 
@@ -2151,7 +2314,8 @@ mod tests {
         assert!(
             FONT_SIZE_CAPTION < FONT_SIZE_CODE,
             "type xs ({}) must be < sm ({})",
-            FONT_SIZE_CAPTION, FONT_SIZE_CODE
+            FONT_SIZE_CAPTION,
+            FONT_SIZE_CODE
         );
     }
 
@@ -2161,7 +2325,8 @@ mod tests {
         assert!(
             FONT_SIZE_CODE < FONT_SIZE_BODY,
             "type sm ({}) must be < base ({})",
-            FONT_SIZE_CODE, FONT_SIZE_BODY
+            FONT_SIZE_CODE,
+            FONT_SIZE_BODY
         );
     }
 
@@ -2171,7 +2336,8 @@ mod tests {
         assert!(
             FONT_SIZE_BODY < FONT_SIZE_H3,
             "type base ({}) must be < md ({})",
-            FONT_SIZE_BODY, FONT_SIZE_H3
+            FONT_SIZE_BODY,
+            FONT_SIZE_H3
         );
     }
 
@@ -2181,7 +2347,8 @@ mod tests {
         assert!(
             FONT_SIZE_H3 < FONT_SIZE_H2,
             "type md ({}) must be < lg ({})",
-            FONT_SIZE_H3, FONT_SIZE_H2
+            FONT_SIZE_H3,
+            FONT_SIZE_H2
         );
     }
 
@@ -2191,7 +2358,8 @@ mod tests {
         assert!(
             FONT_SIZE_H2 < FONT_SIZE_H1,
             "type lg ({}) must be < xl ({})",
-            FONT_SIZE_H2, FONT_SIZE_H1
+            FONT_SIZE_H2,
+            FONT_SIZE_H1
         );
     }
 
@@ -2202,7 +2370,8 @@ mod tests {
         assert!(
             FONT_SIZE_H1 > FONT_SIZE_H2,
             "xl ({}) must be the largest named scale step, exceeding lg ({})",
-            FONT_SIZE_H1, FONT_SIZE_H2
+            FONT_SIZE_H1,
+            FONT_SIZE_H2
         );
     }
 
@@ -2276,7 +2445,11 @@ mod tests {
     fn text_primary_high_contrast_on_bg() {
         // Re-verify with the full WCAG linearization that TEXT on BG meets AA (4.5:1).
         fn linearize(c: f32) -> f32 {
-            if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055_f32).powf(2.4) }
+            if c <= 0.04045 {
+                c / 12.92
+            } else {
+                ((c + 0.055) / 1.055_f32).powf(2.4)
+            }
         }
         fn lum(r: f32, g: f32, b: f32) -> f32 {
             0.2126 * linearize(r) + 0.7152 * linearize(g) + 0.0722 * linearize(b)
@@ -2301,7 +2474,8 @@ mod tests {
         assert!(
             secondary.l < primary.l,
             "text_secondary lightness ({:.3}) must be < text_primary lightness ({:.3})",
-            secondary.l, primary.l
+            secondary.l,
+            primary.l
         );
     }
 
@@ -2352,11 +2526,7 @@ mod tests {
             ("SHADOW_LG", &SHADOW_LG),
             ("SHADOW_XL", &SHADOW_XL),
         ] {
-            assert!(
-                t.blur >= 0.0,
-                "{name}.blur ({}) must be >= 0",
-                t.blur
-            );
+            assert!(t.blur >= 0.0, "{name}.blur ({}) must be >= 0", t.blur);
             assert!(
                 t.offset_y >= 0.0,
                 "{name}.offset_y ({}) must be >= 0",
@@ -2418,7 +2588,8 @@ mod tests {
         assert!(
             FROSTED_BORDER_ALPHA < FROSTED_BG_ALPHA,
             "more blur → lower alpha: FROSTED_BORDER_ALPHA ({}) must be < FROSTED_BG_ALPHA ({})",
-            FROSTED_BORDER_ALPHA, FROSTED_BG_ALPHA
+            FROSTED_BORDER_ALPHA,
+            FROSTED_BG_ALPHA
         );
     }
 
@@ -2439,7 +2610,8 @@ mod tests {
         assert!(
             FROSTED_BORDER_ALPHA < FROSTED_BG_ALPHA,
             "FROSTED_BORDER_ALPHA ({}) must be < FROSTED_BG_ALPHA ({})",
-            FROSTED_BORDER_ALPHA, FROSTED_BG_ALPHA
+            FROSTED_BORDER_ALPHA,
+            FROSTED_BG_ALPHA
         );
     }
 
@@ -2502,9 +2674,18 @@ mod tests {
     #[test]
     fn shadow_scale_monotone_increasing() {
         // offset_y and blur must both increase from SM → MD → LG → XL.
-        assert!(SHADOW_MD.offset_y > SHADOW_SM.offset_y, "SHADOW_MD.offset_y must exceed SHADOW_SM.offset_y");
-        assert!(SHADOW_LG.offset_y > SHADOW_MD.offset_y, "SHADOW_LG.offset_y must exceed SHADOW_MD.offset_y");
-        assert!(SHADOW_XL.offset_y > SHADOW_LG.offset_y, "SHADOW_XL.offset_y must exceed SHADOW_LG.offset_y");
+        assert!(
+            SHADOW_MD.offset_y > SHADOW_SM.offset_y,
+            "SHADOW_MD.offset_y must exceed SHADOW_SM.offset_y"
+        );
+        assert!(
+            SHADOW_LG.offset_y > SHADOW_MD.offset_y,
+            "SHADOW_LG.offset_y must exceed SHADOW_MD.offset_y"
+        );
+        assert!(
+            SHADOW_XL.offset_y > SHADOW_LG.offset_y,
+            "SHADOW_XL.offset_y must exceed SHADOW_LG.offset_y"
+        );
     }
 
     // ── Color semantics ───────────────────────────────────────────────────────
@@ -2538,7 +2719,9 @@ mod tests {
         assert!(
             ERROR[0] > ERROR[1] && ERROR[0] > ERROR[2],
             "ERROR must be red-dominant: R ({}) must exceed G ({}) and B ({})",
-            ERROR[0], ERROR[1], ERROR[2]
+            ERROR[0],
+            ERROR[1],
+            ERROR[2]
         );
     }
 
@@ -2548,7 +2731,8 @@ mod tests {
         assert!(
             WARNING[0] > 0.5 && WARNING[1] > 0.5,
             "WARNING must be yellow: R ({}) and G ({}) both > 0.5",
-            WARNING[0], WARNING[1]
+            WARNING[0],
+            WARNING[1]
         );
     }
 
@@ -2627,8 +2811,10 @@ mod tests {
             let path = icon_path(*icon);
             for (x1, y1, x2, y2) in path.lines {
                 assert!(
-                    (0.0..=1.0).contains(x1) && (0.0..=1.0).contains(y1)
-                        && (0.0..=1.0).contains(x2) && (0.0..=1.0).contains(y2),
+                    (0.0..=1.0).contains(x1)
+                        && (0.0..=1.0).contains(y1)
+                        && (0.0..=1.0).contains(x2)
+                        && (0.0..=1.0).contains(y2),
                     "{:?}: line ({x1},{y1})-({x2},{y2}) must be in [0,1] viewport",
                     icon
                 );
@@ -2654,14 +2840,20 @@ mod tests {
     fn icon_chevron_right_exists() {
         use crate::icons::{icon_path, Icon};
         let path = icon_path(Icon::ChevronRight);
-        assert!(!path.lines.is_empty(), "ChevronRight must have line geometry");
+        assert!(
+            !path.lines.is_empty(),
+            "ChevronRight must have line geometry"
+        );
     }
 
     #[test]
     fn icon_chevron_down_exists() {
         use crate::icons::{icon_path, Icon};
         let path = icon_path(Icon::ChevronDown);
-        assert!(!path.lines.is_empty(), "ChevronDown must have line geometry");
+        assert!(
+            !path.lines.is_empty(),
+            "ChevronDown must have line geometry"
+        );
     }
 
     #[test]
@@ -2669,7 +2861,10 @@ mod tests {
         // Search icon uses a circle primitive.
         use crate::icons::{icon_path, Icon};
         let path = icon_path(Icon::Search);
-        assert!(!path.circles.is_empty(), "Search icon must have a circle primitive");
+        assert!(
+            !path.circles.is_empty(),
+            "Search icon must have a circle primitive"
+        );
     }
 
     #[test]
@@ -2683,7 +2878,11 @@ mod tests {
     fn icon_x_close_exists() {
         use crate::icons::{icon_path, Icon};
         let path = icon_path(Icon::X);
-        assert_eq!(path.lines.len(), 2, "X (close) icon must have exactly 2 lines (cross)");
+        assert_eq!(
+            path.lines.len(),
+            2,
+            "X (close) icon must have exactly 2 lines (cross)"
+        );
     }
 
     // ── Font names ────────────────────────────────────────────────────────────
@@ -2695,13 +2894,19 @@ mod tests {
         let reg = crate::fonts::FontRegistry::placeholder();
         // inter_regular must be a valid (non-sentinel-overflow) ID.
         let _ = reg.inter_regular; // just ensure it compiles and exists
-        assert!(reg.inter_regular < u32::MAX, "inter_regular must be a valid font ID");
+        assert!(
+            reg.inter_regular < u32::MAX,
+            "inter_regular must be a valid font ID"
+        );
     }
 
     #[test]
     fn font_mono_name_nonempty() {
         let reg = crate::fonts::FontRegistry::placeholder();
-        assert!(reg.source_code_pro_regular < u32::MAX, "source_code_pro_regular must be a valid font ID");
+        assert!(
+            reg.source_code_pro_regular < u32::MAX,
+            "source_code_pro_regular must be a valid font ID"
+        );
     }
 
     #[test]
@@ -2709,11 +2914,12 @@ mod tests {
         // We don't have a named serif in the current registry; verify the registry
         // itself is non-empty (i.e., at least 2 font families are present).
         let reg = crate::fonts::FontRegistry::placeholder();
-        let ids = [
-            reg.inter_regular,
-            reg.source_code_pro_regular,
-        ];
-        assert_eq!(ids.len(), 2, "registry must expose at least two font families");
+        let ids = [reg.inter_regular, reg.source_code_pro_regular];
+        assert_eq!(
+            ids.len(),
+            2,
+            "registry must expose at least two font families"
+        );
     }
 
     // ── Token name uniqueness ─────────────────────────────────────────────────
@@ -2722,13 +2928,26 @@ mod tests {
     fn theme_token_names_unique() {
         // Verify a representative set of token name strings are all distinct.
         let names = [
-            "BG", "BG2", "TEXT", "CTA", "BORDER", "FOCUS",
-            "EDGE_HIGH", "EDGE_MED", "EDGE_LOW",
-            "BASE_BG", "BASE_FG", "ERROR", "WARNING",
+            "BG",
+            "BG2",
+            "TEXT",
+            "CTA",
+            "BORDER",
+            "FOCUS",
+            "EDGE_HIGH",
+            "EDGE_MED",
+            "EDGE_LOW",
+            "BASE_BG",
+            "BASE_FG",
+            "ERROR",
+            "WARNING",
         ];
         let mut seen = std::collections::HashSet::new();
         for n in names {
-            assert!(seen.insert(n), "token name '{n}' must be unique — duplicate detected");
+            assert!(
+                seen.insert(n),
+                "token name '{n}' must be unique — duplicate detected"
+            );
         }
     }
 
@@ -2743,16 +2962,26 @@ mod tests {
             let c = (1.0 - (2.0 * l - 1.0).abs()) * s;
             let x = c * (1.0 - ((h / 60.0) % 2.0 - 1.0).abs());
             let m = l - c / 2.0;
-            let (r, g, b) = if h < 60.0 { (c, x, 0.0) }
-                else if h < 120.0 { (x, c, 0.0) }
-                else if h < 180.0 { (0.0, c, x) }
-                else if h < 240.0 { (0.0, x, c) }
-                else if h < 300.0 { (x, 0.0, c) }
-                else { (c, 0.0, x) };
+            let (r, g, b) = if h < 60.0 {
+                (c, x, 0.0)
+            } else if h < 120.0 {
+                (x, c, 0.0)
+            } else if h < 180.0 {
+                (0.0, c, x)
+            } else if h < 240.0 {
+                (0.0, x, c)
+            } else if h < 300.0 {
+                (x, 0.0, c)
+            } else {
+                (c, 0.0, x)
+            };
             (r + m, g + m, b + m)
         }
         let (r, g, b) = hsl_to_rgb(c.h, c.s, c.l);
-        assert!((r - 1.0).abs() < 0.01, "hue 0 must be red (R≈1.0), got R={r:.3}");
+        assert!(
+            (r - 1.0).abs() < 0.01,
+            "hue 0 must be red (R≈1.0), got R={r:.3}"
+        );
         assert!(g.abs() < 0.01, "hue 0 must be red (G≈0.0), got G={g:.3}");
         assert!(b.abs() < 0.01, "hue 0 must be red (B≈0.0), got B={b:.3}");
     }
@@ -2763,18 +2992,34 @@ mod tests {
             let c = (1.0 - (2.0 * l - 1.0).abs()) * s;
             let x = c * (1.0 - ((h / 60.0) % 2.0 - 1.0).abs());
             let m = l - c / 2.0;
-            let (r, g, b) = if h < 60.0 { (c, x, 0.0) }
-                else if h < 120.0 { (x, c, 0.0) }
-                else if h < 180.0 { (0.0, c, x) }
-                else if h < 240.0 { (0.0, x, c) }
-                else if h < 300.0 { (x, 0.0, c) }
-                else { (c, 0.0, x) };
+            let (r, g, b) = if h < 60.0 {
+                (c, x, 0.0)
+            } else if h < 120.0 {
+                (x, c, 0.0)
+            } else if h < 180.0 {
+                (0.0, c, x)
+            } else if h < 240.0 {
+                (0.0, x, c)
+            } else if h < 300.0 {
+                (x, 0.0, c)
+            } else {
+                (c, 0.0, x)
+            };
             (r + m, g + m, b + m)
         }
         let (r, g, b) = hsl_to_rgb(120.0, 1.0, 0.5);
-        assert!(r.abs() < 0.01, "hue 120 must be green (R≈0.0), got R={r:.3}");
-        assert!((g - 1.0).abs() < 0.01, "hue 120 must be green (G≈1.0), got G={g:.3}");
-        assert!(b.abs() < 0.01, "hue 120 must be green (B≈0.0), got B={b:.3}");
+        assert!(
+            r.abs() < 0.01,
+            "hue 120 must be green (R≈0.0), got R={r:.3}"
+        );
+        assert!(
+            (g - 1.0).abs() < 0.01,
+            "hue 120 must be green (G≈1.0), got G={g:.3}"
+        );
+        assert!(
+            b.abs() < 0.01,
+            "hue 120 must be green (B≈0.0), got B={b:.3}"
+        );
     }
 
     #[test]
@@ -2783,18 +3028,28 @@ mod tests {
             let c = (1.0 - (2.0 * l - 1.0).abs()) * s;
             let x = c * (1.0 - ((h / 60.0) % 2.0 - 1.0).abs());
             let m = l - c / 2.0;
-            let (r, g, b) = if h < 60.0 { (c, x, 0.0) }
-                else if h < 120.0 { (x, c, 0.0) }
-                else if h < 180.0 { (0.0, c, x) }
-                else if h < 240.0 { (0.0, x, c) }
-                else if h < 300.0 { (x, 0.0, c) }
-                else { (c, 0.0, x) };
+            let (r, g, b) = if h < 60.0 {
+                (c, x, 0.0)
+            } else if h < 120.0 {
+                (x, c, 0.0)
+            } else if h < 180.0 {
+                (0.0, c, x)
+            } else if h < 240.0 {
+                (0.0, x, c)
+            } else if h < 300.0 {
+                (x, 0.0, c)
+            } else {
+                (c, 0.0, x)
+            };
             (r + m, g + m, b + m)
         }
         let (r, g, b) = hsl_to_rgb(240.0, 1.0, 0.5);
         assert!(r.abs() < 0.01, "hue 240 must be blue (R≈0.0), got R={r:.3}");
         assert!(g.abs() < 0.01, "hue 240 must be blue (G≈0.0), got G={g:.3}");
-        assert!((b - 1.0).abs() < 0.01, "hue 240 must be blue (B≈1.0), got B={b:.3}");
+        assert!(
+            (b - 1.0).abs() < 0.01,
+            "hue 240 must be blue (B≈1.0), got B={b:.3}"
+        );
     }
 
     #[test]
@@ -2803,18 +3058,31 @@ mod tests {
             let c = (1.0 - (2.0 * l - 1.0).abs()) * s;
             let x = c * (1.0 - ((h / 60.0) % 2.0 - 1.0).abs());
             let m = l - c / 2.0;
-            let (r, g, b) = if h < 60.0 { (c, x, 0.0) }
-                else if h < 120.0 { (x, c, 0.0) }
-                else if h < 180.0 { (0.0, c, x) }
-                else if h < 240.0 { (0.0, x, c) }
-                else if h < 300.0 { (x, 0.0, c) }
-                else { (c, 0.0, x) };
+            let (r, g, b) = if h < 60.0 {
+                (c, x, 0.0)
+            } else if h < 120.0 {
+                (x, c, 0.0)
+            } else if h < 180.0 {
+                (0.0, c, x)
+            } else if h < 240.0 {
+                (0.0, x, c)
+            } else if h < 300.0 {
+                (x, 0.0, c)
+            } else {
+                (c, 0.0, x)
+            };
             (r + m, g + m, b + m)
         }
         // Saturation 0 → grey: all channels equal.
         let (r, g, b) = hsl_to_rgb(180.0, 0.0, 0.5);
-        assert!((r - g).abs() < 1e-5, "S=0 must produce grey (R==G), got R={r:.4}, G={g:.4}");
-        assert!((g - b).abs() < 1e-5, "S=0 must produce grey (G==B), got G={g:.4}, B={b:.4}");
+        assert!(
+            (r - g).abs() < 1e-5,
+            "S=0 must produce grey (R==G), got R={r:.4}, G={g:.4}"
+        );
+        assert!(
+            (g - b).abs() < 1e-5,
+            "S=0 must produce grey (G==B), got G={g:.4}, B={b:.4}"
+        );
     }
 
     #[test]
@@ -2823,12 +3091,19 @@ mod tests {
             let c = (1.0 - (2.0 * l - 1.0).abs()) * s;
             let x = c * (1.0 - ((h / 60.0) % 2.0 - 1.0).abs());
             let m = l - c / 2.0;
-            let (r, g, b) = if h < 60.0 { (c, x, 0.0) }
-                else if h < 120.0 { (x, c, 0.0) }
-                else if h < 180.0 { (0.0, c, x) }
-                else if h < 240.0 { (0.0, x, c) }
-                else if h < 300.0 { (x, 0.0, c) }
-                else { (c, 0.0, x) };
+            let (r, g, b) = if h < 60.0 {
+                (c, x, 0.0)
+            } else if h < 120.0 {
+                (x, c, 0.0)
+            } else if h < 180.0 {
+                (0.0, c, x)
+            } else if h < 240.0 {
+                (0.0, x, c)
+            } else if h < 300.0 {
+                (x, 0.0, c)
+            } else {
+                (c, 0.0, x)
+            };
             (r + m, g + m, b + m)
         }
         // Lightness 0 → all channels 0 (black).
@@ -2857,8 +3132,8 @@ mod tests {
         // WCAG AA minimum contrast ratio is ~4.5:1; AAA is 7:1.
         // Proxy: near-white text (l≈0.98) against near-black bg (l≈0.11).
         // Approximate relative luminance using lightness as a rough proxy.
-        let text_l = color_text_primary().l;   // ~0.98
-        let bg_l = color_bg_primary().l;       // ~0.11
+        let text_l = color_text_primary().l; // ~0.98
+        let bg_l = color_bg_primary().l; // ~0.11
         let ratio = (text_l + 0.05) / (bg_l + 0.05);
         // Require at least 4.5:1 (WCAG AA), which the token values easily exceed.
         assert!(
@@ -2930,8 +3205,8 @@ mod tests {
     fn oled_accent_still_visible() {
         // Accent against near-black bg must have sufficient contrast to remain visible.
         // Using WCAG large-text AA threshold (3.0:1 minimum) as a conservative lower bound.
-        let accent_l = color_accent_blue().l;   // ~0.60
-        let bg_l = color_bg_primary().l;        // ~0.11
+        let accent_l = color_accent_blue().l; // ~0.60
+        let bg_l = color_bg_primary().l; // ~0.11
         let ratio = (accent_l + 0.05) / (bg_l + 0.05);
         assert!(
             ratio >= 3.0,
@@ -2977,7 +3252,10 @@ mod tests {
     fn animation_easing_linear_is_linear() {
         // Linear easing: f(t) = t for all t in [0, 1].
         // Proxy: ANIM_DEFAULT_MS and ANIM_FAST_MS represent durations; verify both > 0.
-        assert!(ANIM_DEFAULT_MS > 0.0, "default animation duration must be > 0");
+        assert!(
+            ANIM_DEFAULT_MS > 0.0,
+            "default animation duration must be > 0"
+        );
         assert!(ANIM_FAST_MS > 0.0, "fast animation duration must be > 0");
     }
 
@@ -3094,17 +3372,35 @@ mod tests {
     #[test]
     fn shadow_blur_ascending_with_size() {
         // Larger shadow tokens must have larger blur radii.
-        assert!(SHADOW_MD.blur > SHADOW_SM.blur, "MD blur must exceed SM blur");
-        assert!(SHADOW_LG.blur > SHADOW_MD.blur, "LG blur must exceed MD blur");
-        assert!(SHADOW_XL.blur > SHADOW_LG.blur, "XL blur must exceed LG blur");
+        assert!(
+            SHADOW_MD.blur > SHADOW_SM.blur,
+            "MD blur must exceed SM blur"
+        );
+        assert!(
+            SHADOW_LG.blur > SHADOW_MD.blur,
+            "LG blur must exceed MD blur"
+        );
+        assert!(
+            SHADOW_XL.blur > SHADOW_LG.blur,
+            "XL blur must exceed LG blur"
+        );
     }
 
     #[test]
     fn shadow_offset_y_ascending_with_size() {
         // Vertical offset must grow with shadow size.
-        assert!(SHADOW_MD.offset_y > SHADOW_SM.offset_y, "MD y must exceed SM y");
-        assert!(SHADOW_LG.offset_y > SHADOW_MD.offset_y, "LG y must exceed MD y");
-        assert!(SHADOW_XL.offset_y > SHADOW_LG.offset_y, "XL y must exceed LG y");
+        assert!(
+            SHADOW_MD.offset_y > SHADOW_SM.offset_y,
+            "MD y must exceed SM y"
+        );
+        assert!(
+            SHADOW_LG.offset_y > SHADOW_MD.offset_y,
+            "LG y must exceed MD y"
+        );
+        assert!(
+            SHADOW_XL.offset_y > SHADOW_LG.offset_y,
+            "XL y must exceed LG y"
+        );
     }
 
     #[test]
@@ -3125,9 +3421,18 @@ mod tests {
         let high = edge_color_high_confidence();
         let med = edge_color_medium_confidence();
         let low = edge_color_low_confidence();
-        assert!((high.a - 1.0).abs() < f32::EPSILON, "high edge color must be fully opaque");
-        assert!((med.a - 1.0).abs() < f32::EPSILON, "med edge color must be fully opaque");
-        assert!((low.a - 1.0).abs() < f32::EPSILON, "low edge color must be fully opaque");
+        assert!(
+            (high.a - 1.0).abs() < f32::EPSILON,
+            "high edge color must be fully opaque"
+        );
+        assert!(
+            (med.a - 1.0).abs() < f32::EPSILON,
+            "med edge color must be fully opaque"
+        );
+        assert!(
+            (low.a - 1.0).abs() < f32::EPSILON,
+            "low edge color must be fully opaque"
+        );
     }
 
     #[test]
@@ -3175,9 +3480,15 @@ mod tests {
         // so they can be swapped for print (inversion) use.
         let bg_lum = BASE_BG[0] + BASE_BG[1] + BASE_BG[2]; // sum of RGB channels
         let fg_lum = BASE_FG[0] + BASE_FG[1] + BASE_FG[2];
-        assert!(fg_lum > bg_lum, "BASE_FG must be lighter than BASE_BG for print inversion");
+        assert!(
+            fg_lum > bg_lum,
+            "BASE_FG must be lighter than BASE_BG for print inversion"
+        );
         // Spread must be at least 2.0 (each channel ~1.0 apart) for meaningful contrast.
-        assert!(fg_lum - bg_lum > 2.0, "luminance gap between FG and BG must exceed 2.0");
+        assert!(
+            fg_lum - bg_lum > 2.0,
+            "luminance gap between FG and BG must exceed 2.0"
+        );
     }
 
     // =========================================================================
@@ -3212,14 +3523,23 @@ mod tests {
         // In print mode, shadows use alpha 0 (removed). SHADOW_SM is the smallest shadow.
         // Verify SHADOW_SM.blur would be suppressed to 0 in print context by checking
         // that its spread is already 0 (no layout impact).
-        assert_eq!(SHADOW_SM.spread, 0.0, "SHADOW_SM.spread must be 0 — safe to suppress in print");
-        assert_eq!(SHADOW_MD.spread, 0.0, "SHADOW_MD.spread must be 0 — safe to suppress in print");
+        assert_eq!(
+            SHADOW_SM.spread, 0.0,
+            "SHADOW_SM.spread must be 0 — safe to suppress in print"
+        );
+        assert_eq!(
+            SHADOW_MD.spread, 0.0,
+            "SHADOW_MD.spread must be 0 — safe to suppress in print"
+        );
     }
 
     #[test]
     fn print_opacity_1_for_all_text() {
         // Text token has alpha = 1.0 (fully opaque — good for print).
-        assert_eq!(TEXT[3], 1.0, "TEXT alpha must be 1.0 for full print opacity");
+        assert_eq!(
+            TEXT[3], 1.0,
+            "TEXT alpha must be 1.0 for full print opacity"
+        );
     }
 
     #[test]
@@ -3240,7 +3560,10 @@ mod tests {
     fn css_var_export_bg_included() {
         // BG is a named token; its name must be exportable as a CSS variable.
         let name = "bg";
-        assert!(!name.is_empty(), "token 'bg' name must be non-empty for CSS export");
+        assert!(
+            !name.is_empty(),
+            "token 'bg' name must be non-empty for CSS export"
+        );
         // Verify value is in valid range for CSS export.
         for (i, c) in BG.iter().enumerate() {
             assert!(
@@ -3278,14 +3601,24 @@ mod tests {
             SPACING_1, SPACING_2, SPACING_3, SPACING_4, SPACING_6, SPACING_8, SPACING_12,
         ];
         for (i, s) in spacings.iter().enumerate() {
-            assert!(*s > 0.0, "spacing[{i}] = {s} must be positive for CSS export");
+            assert!(
+                *s > 0.0,
+                "spacing[{i}] = {s} must be positive for CSS export"
+            );
         }
     }
 
     #[test]
     fn css_var_export_radius_included() {
         // All radius tokens must be non-negative for CSS export.
-        let radii = [RADIUS_NONE, RADIUS_SM, RADIUS_MD, RADIUS_LG, RADIUS_XL, RADIUS_FULL];
+        let radii = [
+            RADIUS_NONE,
+            RADIUS_SM,
+            RADIUS_MD,
+            RADIUS_LG,
+            RADIUS_XL,
+            RADIUS_FULL,
+        ];
         for (i, r) in radii.iter().enumerate() {
             assert!(*r >= 0.0, "radius[{i}] = {r} must be >= 0 for CSS export");
         }
@@ -3307,12 +3640,8 @@ mod tests {
     fn css_var_values_valid_css() {
         // A valid CSS color in rgba() must have components in [0, 255] (integer scaled).
         // We verify by scaling [0,1] to [0,255] and checking the range.
-        let colors: &[(&str, [f32; 4])] = &[
-            ("BG", BG),
-            ("TEXT", TEXT),
-            ("CTA", CTA),
-            ("BORDER", BORDER),
-        ];
+        let colors: &[(&str, [f32; 4])] =
+            &[("BG", BG), ("TEXT", TEXT), ("CTA", CTA), ("BORDER", BORDER)];
         for (name, color) in colors {
             for (i, c) in color[..3].iter().enumerate() {
                 let scaled = c * 255.0;
@@ -3368,28 +3697,40 @@ mod tests {
         // Modals must stack above overlays. Simulate with numeric z-index values.
         let z_overlay: i32 = 100;
         let z_modal: i32 = 200;
-        assert!(z_modal > z_overlay, "modal z-index ({z_modal}) must be above overlay ({z_overlay})");
+        assert!(
+            z_modal > z_overlay,
+            "modal z-index ({z_modal}) must be above overlay ({z_overlay})"
+        );
     }
 
     #[test]
     fn z_index_overlay_above_content() {
         let z_content: i32 = 1;
         let z_overlay: i32 = 100;
-        assert!(z_overlay > z_content, "overlay z-index must be above content z-index");
+        assert!(
+            z_overlay > z_content,
+            "overlay z-index must be above content z-index"
+        );
     }
 
     #[test]
     fn z_index_tooltip_above_modal() {
         let z_modal: i32 = 200;
         let z_tooltip: i32 = 300;
-        assert!(z_tooltip > z_modal, "tooltip z-index ({z_tooltip}) must be above modal ({z_modal})");
+        assert!(
+            z_tooltip > z_modal,
+            "tooltip z-index ({z_tooltip}) must be above modal ({z_modal})"
+        );
     }
 
     #[test]
     fn z_index_dropdown_above_content() {
         let z_content: i32 = 1;
         let z_dropdown: i32 = 50;
-        assert!(z_dropdown > z_content, "dropdown z-index must be above content z-index");
+        assert!(
+            z_dropdown > z_content,
+            "dropdown z-index must be above content z-index"
+        );
     }
 
     // --- Opacity tokens ---
@@ -3564,7 +3905,8 @@ mod tests {
         assert!(
             MOTION_HOVER_DURATION_MS < MOTION_PANEL_RESIZE_DURATION_MS,
             "duration_fast ({}) must be < duration_normal ({})",
-            MOTION_HOVER_DURATION_MS, MOTION_PANEL_RESIZE_DURATION_MS
+            MOTION_HOVER_DURATION_MS,
+            MOTION_PANEL_RESIZE_DURATION_MS
         );
     }
 
@@ -3635,7 +3977,8 @@ mod tests {
         assert!(
             (MOTION_SPRING_STIFFNESS - MOTION_SPRING_DAMPING).abs() > f32::EPSILON,
             "easing stiffness ({}) and damping ({}) must be distinct",
-            MOTION_SPRING_STIFFNESS, MOTION_SPRING_DAMPING
+            MOTION_SPRING_STIFFNESS,
+            MOTION_SPRING_DAMPING
         );
     }
 
@@ -3658,13 +4001,19 @@ mod tests {
     fn elevation_0_is_flat_no_shadow() {
         // Elevation 0 = no shadow. Simulate: blur = 0.0.
         let blur_at_0: f32 = 0.0;
-        assert_eq!(blur_at_0, 0.0, "elevation(0) must have zero blur (flat / no shadow)");
+        assert_eq!(
+            blur_at_0, 0.0,
+            "elevation(0) must have zero blur (flat / no shadow)"
+        );
     }
 
     #[test]
     fn elevation_1_has_positive_blur() {
         // Elevation 1 = SHADOW_SM; blur must be > 0.
-        assert!(SHADOW_SM.blur > 0.0, "elevation(1) blur (SHADOW_SM) must be > 0");
+        assert!(
+            SHADOW_SM.blur > 0.0,
+            "elevation(1) blur (SHADOW_SM) must be > 0"
+        );
     }
 
     #[test]
@@ -3672,7 +4021,8 @@ mod tests {
         assert!(
             SHADOW_MD.blur > SHADOW_SM.blur,
             "elevation(2) blur ({}) must exceed elevation(1) blur ({})",
-            SHADOW_MD.blur, SHADOW_SM.blur
+            SHADOW_MD.blur,
+            SHADOW_SM.blur
         );
     }
 
@@ -3681,7 +4031,8 @@ mod tests {
         assert!(
             SHADOW_LG.blur > SHADOW_MD.blur,
             "elevation(3) blur ({}) must exceed elevation(2) blur ({})",
-            SHADOW_LG.blur, SHADOW_MD.blur
+            SHADOW_LG.blur,
+            SHADOW_MD.blur
         );
     }
 
@@ -3690,14 +4041,21 @@ mod tests {
         assert!(
             SHADOW_XL.blur > SHADOW_LG.blur,
             "elevation(4) blur ({}) must exceed elevation(3) blur ({})",
-            SHADOW_XL.blur, SHADOW_LG.blur
+            SHADOW_XL.blur,
+            SHADOW_LG.blur
         );
     }
 
     #[test]
     fn elevation_scale_has_at_least_5_levels() {
         // Levels: 0 (flat), SM, MD, LG, XL = at least 5.
-        let levels = [0.0_f32, SHADOW_SM.blur, SHADOW_MD.blur, SHADOW_LG.blur, SHADOW_XL.blur];
+        let levels = [
+            0.0_f32,
+            SHADOW_SM.blur,
+            SHADOW_MD.blur,
+            SHADOW_LG.blur,
+            SHADOW_XL.blur,
+        ];
         assert!(
             levels.len() >= 5,
             "elevation scale must have >= 5 levels, found {}",
@@ -3742,22 +4100,34 @@ mod tests {
     #[test]
     fn cursor_crosshair_value_is_crosshair() {
         let cursor = "crosshair";
-        assert_eq!(cursor, "crosshair", "cursor_crosshair() must return 'crosshair'");
+        assert_eq!(
+            cursor, "crosshair",
+            "cursor_crosshair() must return 'crosshair'"
+        );
     }
 
     #[test]
     fn cursor_default_and_text_are_distinct() {
-        assert_ne!("default", "text", "cursor_default and cursor_text must be distinct strings");
+        assert_ne!(
+            "default", "text",
+            "cursor_default and cursor_text must be distinct strings"
+        );
     }
 
     #[test]
     fn cursor_text_and_crosshair_are_distinct() {
-        assert_ne!("text", "crosshair", "cursor_text and cursor_crosshair must be distinct strings");
+        assert_ne!(
+            "text", "crosshair",
+            "cursor_text and cursor_crosshair must be distinct strings"
+        );
     }
 
     #[test]
     fn cursor_crosshair_and_default_are_distinct() {
-        assert_ne!("crosshair", "default", "cursor_crosshair and cursor_default must be distinct");
+        assert_ne!(
+            "crosshair", "default",
+            "cursor_crosshair and cursor_default must be distinct"
+        );
     }
 
     #[test]
@@ -3789,7 +4159,8 @@ mod tests {
         assert!(
             FOCUS[2] > FOCUS[0],
             "caret_color (FOCUS) must have blue dominant over red: B={} > R={}",
-            FOCUS[2], FOCUS[0]
+            FOCUS[2],
+            FOCUS[0]
         );
     }
 
@@ -3799,27 +4170,45 @@ mod tests {
     fn motion_token_hover_name_contains_motion() {
         // Token name must be identifiable as a motion token.
         let name = "motion.hover_duration_ms";
-        assert!(name.starts_with("motion."), "motion token name must start with 'motion.'");
+        assert!(
+            name.starts_with("motion."),
+            "motion token name must start with 'motion.'"
+        );
     }
 
     #[test]
     fn motion_token_panel_resize_name_contains_motion() {
         let name = "motion.panel_resize_duration_ms";
-        assert!(name.starts_with("motion."), "panel-resize token name must start with 'motion.'");
+        assert!(
+            name.starts_with("motion."),
+            "panel-resize token name must start with 'motion.'"
+        );
     }
 
     #[test]
     fn motion_token_spring_stiffness_name_valid() {
         let name = "motion.spring_stiffness";
-        assert!(!name.is_empty(), "spring stiffness token name must be non-empty");
-        assert!(name.contains("stiffness"), "spring stiffness token name must contain 'stiffness'");
+        assert!(
+            !name.is_empty(),
+            "spring stiffness token name must be non-empty"
+        );
+        assert!(
+            name.contains("stiffness"),
+            "spring stiffness token name must contain 'stiffness'"
+        );
     }
 
     #[test]
     fn motion_token_spring_damping_name_valid() {
         let name = "motion.spring_damping";
-        assert!(!name.is_empty(), "spring damping token name must be non-empty");
-        assert!(name.contains("damping"), "spring damping token name must contain 'damping'");
+        assert!(
+            !name.is_empty(),
+            "spring damping token name must be non-empty"
+        );
+        assert!(
+            name.contains("damping"),
+            "spring damping token name must contain 'damping'"
+        );
     }
 
     // --- Additional elevation/shadow checks ---
@@ -3869,17 +4258,26 @@ mod tests {
     // --- Responsive breakpoints: ordering ---
 
     /// Simulated breakpoint values (px) matching common design-system conventions.
-    fn breakpoint_sm() -> f32 { 640.0 }
-    fn breakpoint_md() -> f32 { 768.0 }
-    fn breakpoint_lg() -> f32 { 1024.0 }
-    fn breakpoint_xl() -> f32 { 1280.0 }
+    fn breakpoint_sm() -> f32 {
+        640.0
+    }
+    fn breakpoint_md() -> f32 {
+        768.0
+    }
+    fn breakpoint_lg() -> f32 {
+        1024.0
+    }
+    fn breakpoint_xl() -> f32 {
+        1280.0
+    }
 
     #[test]
     fn breakpoint_sm_less_than_md() {
         assert!(
             breakpoint_sm() < breakpoint_md(),
             "breakpoint_sm ({}) must be < breakpoint_md ({})",
-            breakpoint_sm(), breakpoint_md()
+            breakpoint_sm(),
+            breakpoint_md()
         );
     }
 
@@ -3888,7 +4286,8 @@ mod tests {
         assert!(
             breakpoint_md() < breakpoint_lg(),
             "breakpoint_md ({}) must be < breakpoint_lg ({})",
-            breakpoint_md(), breakpoint_lg()
+            breakpoint_md(),
+            breakpoint_lg()
         );
     }
 
@@ -3897,7 +4296,8 @@ mod tests {
         assert!(
             breakpoint_lg() < breakpoint_xl(),
             "breakpoint_lg ({}) must be < breakpoint_xl ({})",
-            breakpoint_lg(), breakpoint_xl()
+            breakpoint_lg(),
+            breakpoint_xl()
         );
     }
 
@@ -3920,13 +4320,21 @@ mod tests {
             ("lg", breakpoint_lg()),
             ("xl", breakpoint_xl()),
         ] {
-            assert!(v > 0.0, "breakpoint_{name} ({v}) must be positive (in pixels)");
+            assert!(
+                v > 0.0,
+                "breakpoint_{name} ({v}) must be positive (in pixels)"
+            );
         }
     }
 
     #[test]
     fn at_least_4_breakpoints_defined() {
-        let breakpoints = [breakpoint_sm(), breakpoint_md(), breakpoint_lg(), breakpoint_xl()];
+        let breakpoints = [
+            breakpoint_sm(),
+            breakpoint_md(),
+            breakpoint_lg(),
+            breakpoint_xl(),
+        ];
         assert!(
             breakpoints.len() >= 4,
             "at least 4 breakpoints must be defined, found {}",
@@ -3976,7 +4384,10 @@ mod tests {
         // Verify the scale starts at a known non-negative value.
         let spacing_zero: f32 = 0.0;
         assert_eq!(spacing_zero, 0.0, "spacing(0) must be 0");
-        assert!(SPACING_1 > spacing_zero, "spacing(1) must exceed spacing(0)");
+        assert!(
+            SPACING_1 > spacing_zero,
+            "spacing(1) must exceed spacing(0)"
+        );
     }
 
     #[test]
@@ -4027,18 +4438,25 @@ mod tests {
     // --- Grid system tokens ---
 
     /// Returns the standard grid column count.
-    fn grid_columns() -> u32 { 12 }
+    fn grid_columns() -> u32 {
+        12
+    }
 
     /// Returns the inner grid gutter width (px).
-    fn grid_gutter() -> f32 { SPACING_4 } // 16px
+    fn grid_gutter() -> f32 {
+        SPACING_4
+    } // 16px
 
     /// Returns the outer grid margin width (px).
-    fn grid_margin() -> f32 { SPACING_6 } // 24px
+    fn grid_margin() -> f32 {
+        SPACING_6
+    } // 24px
 
     #[test]
     fn grid_columns_returns_12() {
         assert_eq!(
-            grid_columns(), 12,
+            grid_columns(),
+            12,
             "grid_columns() must return 12 (standard 12-column grid)"
         );
     }
@@ -4066,7 +4484,8 @@ mod tests {
         assert!(
             grid_gutter() < grid_margin(),
             "grid_gutter ({}) must be < grid_margin ({}) — gutter is inner, margin is outer",
-            grid_gutter(), grid_margin()
+            grid_gutter(),
+            grid_margin()
         );
     }
 
@@ -4168,7 +4587,8 @@ mod tests {
         assert!(
             (grid_gutter() - SPACING_4).abs() < f32::EPSILON,
             "grid gutter ({}) must equal SPACING_4 ({})",
-            grid_gutter(), SPACING_4
+            grid_gutter(),
+            SPACING_4
         );
     }
 
@@ -4177,7 +4597,8 @@ mod tests {
         assert!(
             (grid_margin() - SPACING_6).abs() < f32::EPSILON,
             "grid margin ({}) must equal SPACING_6 ({})",
-            grid_margin(), SPACING_6
+            grid_margin(),
+            SPACING_6
         );
     }
 
@@ -4207,7 +4628,10 @@ mod tests {
             instant_ms < 200.0,
             "animation_duration_instant ({instant_ms} ms) must be < 200 ms (near-zero perceptually)"
         );
-        assert!(instant_ms > 0.0, "animation_duration_instant must be > 0 ms");
+        assert!(
+            instant_ms > 0.0,
+            "animation_duration_instant must be > 0 ms"
+        );
     }
 
     #[test]
@@ -4249,10 +4673,10 @@ mod tests {
         // The y components may exceed [0,1] for bounce/spring effects, but x components must be in [0,1].
         // Common easing curves: ease-in (0.42, 0, 1, 1), ease-out (0, 0, 0.58, 1), ease-in-out (0.42, 0, 0.58, 1).
         let easing_curves: &[(&str, f32, f32, f32, f32)] = &[
-            ("ease-in",      0.42, 0.0, 1.0, 1.0),
-            ("ease-out",     0.0,  0.0, 0.58, 1.0),
-            ("ease-in-out",  0.42, 0.0, 0.58, 1.0),
-            ("linear",       0.0,  0.0, 1.0, 1.0),
+            ("ease-in", 0.42, 0.0, 1.0, 1.0),
+            ("ease-out", 0.0, 0.0, 0.58, 1.0),
+            ("ease-in-out", 0.42, 0.0, 0.58, 1.0),
+            ("linear", 0.0, 0.0, 1.0, 1.0),
         ];
         for (name, x1, _y1, x2, _y2) in easing_curves {
             assert!(
@@ -4301,7 +4725,8 @@ mod tests {
         assert!(
             MOTION_SPRING_STIFFNESS > MOTION_SPRING_DAMPING,
             "spring_stiffness ({}) must exceed spring_damping ({}) for a well-tuned UI spring",
-            MOTION_SPRING_STIFFNESS, MOTION_SPRING_DAMPING
+            MOTION_SPRING_STIFFNESS,
+            MOTION_SPRING_DAMPING
         );
     }
 
@@ -4396,7 +4821,8 @@ mod tests {
         assert!(
             FOCUS[2] > FOCUS[0],
             "focus ring color must be blue-dominant: B ({}) must be > R ({})",
-            FOCUS[2], FOCUS[0]
+            FOCUS[2],
+            FOCUS[0]
         );
     }
 
@@ -4404,7 +4830,10 @@ mod tests {
     fn focus_ring_width_at_least_1px() {
         // The minimum effective ring must be at least 1px.
         let width: f32 = 2.0;
-        assert!(width >= 1.0, "focus ring width ({width}) must be at least 1px for visibility");
+        assert!(
+            width >= 1.0,
+            "focus ring width ({width}) must be at least 1px for visibility"
+        );
     }
 
     // --- Forced-colors tokens ---
@@ -4413,13 +4842,19 @@ mod tests {
     fn forced_colors_active_text_nonempty() {
         // In forced-colors mode, the active text token must be a non-empty CSS keyword.
         let active_text = "ButtonText"; // CSS forced-colors system color
-        assert!(!active_text.is_empty(), "forced_colors_active_text must return a non-empty string");
+        assert!(
+            !active_text.is_empty(),
+            "forced_colors_active_text must return a non-empty string"
+        );
     }
 
     #[test]
     fn forced_colors_button_face_nonempty() {
         let button_face = "ButtonFace"; // CSS forced-colors system color
-        assert!(!button_face.is_empty(), "forced_colors_button_face must return a non-empty string");
+        assert!(
+            !button_face.is_empty(),
+            "forced_colors_button_face must return a non-empty string"
+        );
     }
 
     #[test]
@@ -4429,21 +4864,25 @@ mod tests {
         // Verify they are not numeric (i.e., cannot be parsed as f32).
         let active_text = "ButtonText";
         let highlight = "Highlight";
-        assert!(active_text.parse::<f32>().is_err(), "forced-colors token must not be a number");
-        assert!(highlight.parse::<f32>().is_err(), "forced-colors token must not be a number");
+        assert!(
+            active_text.parse::<f32>().is_err(),
+            "forced-colors token must not be a number"
+        );
+        assert!(
+            highlight.parse::<f32>().is_err(),
+            "forced-colors token must not be a number"
+        );
         // They must also be distinct from each other.
-        assert_ne!(active_text, highlight, "forced-colors tokens must be distinct from each other");
+        assert_ne!(
+            active_text, highlight,
+            "forced-colors tokens must be distinct from each other"
+        );
     }
 
     #[test]
     fn at_least_4_forced_colors_tokens_defined() {
         // CSS forced-colors must expose at least 4 system color tokens.
-        let tokens = [
-            "ButtonText",
-            "ButtonFace",
-            "Highlight",
-            "HighlightText",
-        ];
+        let tokens = ["ButtonText", "ButtonFace", "Highlight", "HighlightText"];
         assert!(
             tokens.len() >= 4,
             "at least 4 forced-colors tokens must be defined, found {}",
@@ -4458,20 +4897,29 @@ mod tests {
     #[test]
     fn forced_colors_highlight_nonempty() {
         let highlight = "Highlight";
-        assert!(!highlight.is_empty(), "forced_colors highlight token must be non-empty");
+        assert!(
+            !highlight.is_empty(),
+            "forced_colors highlight token must be non-empty"
+        );
     }
 
     #[test]
     fn forced_colors_highlight_text_nonempty() {
         let highlight_text = "HighlightText";
-        assert!(!highlight_text.is_empty(), "forced_colors highlight text token must be non-empty");
+        assert!(
+            !highlight_text.is_empty(),
+            "forced_colors highlight text token must be non-empty"
+        );
     }
 
     #[test]
     fn forced_colors_button_text_and_face_are_distinct() {
         let button_text = "ButtonText";
         let button_face = "ButtonFace";
-        assert_ne!(button_text, button_face, "ButtonText and ButtonFace must be distinct tokens");
+        assert_ne!(
+            button_text, button_face,
+            "ButtonText and ButtonFace must be distinct tokens"
+        );
     }
 
     #[test]
@@ -4488,8 +4936,14 @@ mod tests {
         // Each forced-color token must be a valid non-empty string (CSS keyword).
         let tokens = ["ButtonText", "ButtonFace", "Highlight", "HighlightText"];
         for t in &tokens {
-            assert!(!t.is_empty(), "forced-colors token '{t}' must be non-empty string");
-            assert!(t.len() >= 4, "forced-colors token '{t}' must have at least 4 characters");
+            assert!(
+                !t.is_empty(),
+                "forced-colors token '{t}' must be non-empty string"
+            );
+            assert!(
+                t.len() >= 4,
+                "forced-colors token '{t}' must have at least 4 characters"
+            );
         }
     }
 
@@ -4654,7 +5108,8 @@ mod tests {
         assert!(
             SHADOW_SM.blur < SHADOW_MD.blur,
             "shadow_sm blur ({}) must be < shadow_md blur ({})",
-            SHADOW_SM.blur, SHADOW_MD.blur
+            SHADOW_SM.blur,
+            SHADOW_MD.blur
         );
     }
 
@@ -4663,16 +5118,24 @@ mod tests {
         assert!(
             SHADOW_MD.blur < SHADOW_LG.blur,
             "shadow_md blur ({}) must be < shadow_lg blur ({})",
-            SHADOW_MD.blur, SHADOW_LG.blur
+            SHADOW_MD.blur,
+            SHADOW_LG.blur
         );
     }
 
     #[test]
     fn shadow_color_alpha_less_than_one() {
         // Every shadow must be semi-transparent (alpha < 1.0).
-        for (name, t) in [("SHADOW_SM", &SHADOW_SM), ("SHADOW_MD", &SHADOW_MD), ("SHADOW_LG", &SHADOW_LG)] {
+        for (name, t) in [
+            ("SHADOW_SM", &SHADOW_SM),
+            ("SHADOW_MD", &SHADOW_MD),
+            ("SHADOW_LG", &SHADOW_LG),
+        ] {
             let a = (t.color)().a;
-            assert!(a < 1.0, "{name} alpha ({a}) must be < 1.0 (semi-transparent)");
+            assert!(
+                a < 1.0,
+                "{name} alpha ({a}) must be < 1.0 (semi-transparent)"
+            );
         }
     }
 
@@ -4682,7 +5145,8 @@ mod tests {
         assert!(
             SHADOW_LG.spread >= SHADOW_SM.spread,
             "shadow_lg spread ({}) must be >= shadow_sm spread ({})",
-            SHADOW_LG.spread, SHADOW_SM.spread
+            SHADOW_LG.spread,
+            SHADOW_SM.spread
         );
     }
 
@@ -4702,14 +5166,26 @@ mod tests {
     fn shadow_sm_alpha_less_than_lg_alpha() {
         let sm_a = (SHADOW_SM.color)().a;
         let lg_a = (SHADOW_LG.color)().a;
-        assert!(sm_a < lg_a, "sm shadow alpha ({sm_a}) must be less opaque than lg shadow alpha ({lg_a})");
+        assert!(
+            sm_a < lg_a,
+            "sm shadow alpha ({sm_a}) must be less opaque than lg shadow alpha ({lg_a})"
+        );
     }
 
     #[test]
     fn shadow_xl_blur_largest_of_all() {
-        assert!(SHADOW_XL.blur > SHADOW_LG.blur, "SHADOW_XL must have the largest blur");
-        assert!(SHADOW_XL.blur > SHADOW_MD.blur, "SHADOW_XL blur must exceed SHADOW_MD");
-        assert!(SHADOW_XL.blur > SHADOW_SM.blur, "SHADOW_XL blur must exceed SHADOW_SM");
+        assert!(
+            SHADOW_XL.blur > SHADOW_LG.blur,
+            "SHADOW_XL must have the largest blur"
+        );
+        assert!(
+            SHADOW_XL.blur > SHADOW_MD.blur,
+            "SHADOW_XL blur must exceed SHADOW_MD"
+        );
+        assert!(
+            SHADOW_XL.blur > SHADOW_SM.blur,
+            "SHADOW_XL blur must exceed SHADOW_SM"
+        );
     }
 
     #[test]
@@ -4754,7 +5230,10 @@ mod tests {
         // Thin (1px) must be less than default (2px).
         let thin: f32 = 1.0;
         let default_width: f32 = 2.0;
-        assert!(thin < default_width, "thin border ({thin}) must be < default border ({default_width})");
+        assert!(
+            thin < default_width,
+            "thin border ({thin}) must be < default border ({default_width})"
+        );
     }
 
     #[test]
@@ -4776,7 +5255,10 @@ mod tests {
     #[test]
     fn border_width_medium_positive() {
         let medium: f32 = 2.0;
-        assert!(medium > 0.0, "medium border width ({medium}) must be positive");
+        assert!(
+            medium > 0.0,
+            "medium border width ({medium}) must be positive"
+        );
     }
 
     #[test]
@@ -4796,7 +5278,10 @@ mod tests {
     #[test]
     fn border_radius_none_is_zero_distinct_from_sm() {
         assert_eq!(RADIUS_NONE, 0.0, "RADIUS_NONE must be 0.0");
-        assert!(RADIUS_SM > RADIUS_NONE, "RADIUS_SM must be > RADIUS_NONE (0)");
+        assert!(
+            RADIUS_SM > RADIUS_NONE,
+            "RADIUS_SM must be > RADIUS_NONE (0)"
+        );
     }
 
     #[test]
@@ -4853,8 +5338,8 @@ mod tests {
     }
 
     #[test]
-    fn toolbar_height_differs_from_legacy_toolbar_h() {
-        assert_ne!(TOOLBAR_HEIGHT, TOOLBAR_H);
+    fn toolbar_height_is_canonical_36() {
+        assert_eq!(TOOLBAR_HEIGHT, 36.0);
     }
 
     #[test]
@@ -4915,5 +5400,35 @@ mod tests {
     fn theme_surfaces_nonempty() {
         assert!(!Theme::dark().surface.is_empty());
         assert!(!Theme::light().surface.is_empty());
+    }
+
+    #[test]
+    fn theme_oled_bg_is_pure_black() {
+        let oled = Theme::oled();
+        assert_eq!(
+            oled.background, "#000000",
+            "oled background must be pure black"
+        );
+    }
+
+    #[test]
+    fn theme_oled_name_contains_oled() {
+        assert!(Theme::oled().name.contains("oled"));
+    }
+
+    #[test]
+    fn theme_oled_foreground_matches_dark() {
+        // OLED shares the same foreground color as dark.
+        assert_eq!(Theme::oled().foreground, Theme::dark().foreground);
+    }
+
+    #[test]
+    fn theme_oled_background_darker_than_dark() {
+        // OLED pure black is "#000000"; dark is "#0f1729" — they must differ.
+        assert_ne!(
+            Theme::oled().background,
+            Theme::dark().background,
+            "oled background must differ from dark background"
+        );
     }
 }
