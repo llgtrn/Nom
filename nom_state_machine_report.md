@@ -1,61 +1,76 @@
 # Nom State Machine Report
 
-**Date:** 2026-04-18 | **HEAD:** `ced46fc` | **Tests:** 8428 | **Workspace:** clean — Waves AP+AQ+AR+AS+AT complete
+**Date:** 2026-04-18 | **HEAD:** `7716377` | **Tests:** 8947 | **Workspace:** clean — Waves AT+AU+AV+AW complete. 0 clippy warnings.
 
 ---
 
-## Iteration 65 — Wave AT COMPLETE (HEAD ced46fc, 8428 tests)
+## Iteration 69 — Wave AW COMPLETE (HEAD 7716377, 8947 tests, 0 warnings)
+
+**10 parallel agents. Remotion video pipeline + hybrid compose + Dify/ToolJet/Refly patterns.**
 
 | Gap ID | Fix | Crate |
 |--------|-----|-------|
-| AL-PALETTE-SEARCH-UI | 32px search box + category group headers; filtered_entries/grouped_items | nom-panels |
-| AL-TEST-FRAUD | ArtifactDiff + artifact_diff() moved out of cfg(test); 5 real SQL injection edge-case tests | nom-compose |
-| AL-FEATURE-TESTS | 3 #[cfg(all(test, feature="compiler"))] tests for nom_score/bm25_index/can_wire | nom-compiler-bridge |
-| AH-CTX | ComposeContext / ComposeResult / ComposeTier in nom-compose/src/context.rs | nom-compose |
-| AH-DICTW | DictWriter insert_partial_entry() + promote_to_complete() | nom-compiler-bridge |
-| AH-GLUE | ReActLlmFn trait + 4 adapters (Stub/NomCli/Mcp/RealLlm) + AiGlueOrchestrator + GlueBlueprint | nom-compose |
-| AH-HYBRID | HybridResolver 3-tier orchestration (DbDriven→Provider→AiLeading) | nom-compose |
-| UC-FLOWGRAPH | FlowGraph + FlowNode + FlowEdge + Kahn topological sort | nom-compose |
+| C5-V5 | VideoRenderConfig + RenderProgress{rendered_frames,encoded_frames,stage,elapsed_ms} | nom-compose |
+| C5-V6 | ComposeEvent::Progress extended; all 49 construction sites updated | nom-compose |
+| C5-V7 | CancelSignal + make_cancel_signal() via AtomicBool | nom-compose |
+| C5-V8 | VideoConfigContext + thread-local push_video_config/pop/get | nom-compose |
+| C5-V9 | validate_codec_pixel_format() — even-dims + ProRes/VP9 matrix | nom-compose |
+| UC-MIDDLEWARE | StepMiddleware + MiddlewareRegistry + LoggingMiddleware + LatencyMiddleware | nom-compose |
+| UC-STREAM | SwitchableStream + StreamToken (streaming/batch via AiGlueOrchestrator) | nom-compose |
+| UC-PROMOTE | POST /promote/:glue_hash axum endpoint | nom-cli |
+| UC-CANDLE | CandleAdapter + BackendDevice{Cpu,Cuda} + InferenceFn trait | nom-compiler-bridge |
+| A6-LSP | LspRequest/LspResponse + dispatch_lsp_request (6 method stubs) | nom-compiler-bridge |
+| B1 parse | DefineThatExpr + parse_define_that() using Tok::Define+Word+That | nom-concept |
+| B2 migrate | migrate_typed_to_natural() fn→define, ->→that | nom-concept |
+| B8 100 | +16 translation tests (lazy eval, tail-call, monadic bind, etc.) | nom-concept |
+| D1 Dify | TypedNode + NodeOutputPort + NodeEvent (Started/Progress/Completed/Failed) | nom-graph |
+| D1 ToolJet | palette_kind_count() reflecting 46+ seeded kinds | nom-panels |
+| D1 Refly | SkillRouter + SkillDefinition (register/find_by_id/find_by_query) | nom-intent |
+| B9 ux/app | nom ux seed, nom app new/import/build/build-report/explain-selection | nom-cli |
+| B9 corpus | nom corpus ingest-pypi/ingest-github/pause/resume/report stubs | nom-cli |
+| D4 clippy | 0 warnings, 0 errors workspace-wide; unknown lint removed | nom-canvas |
+| D5 README | Wave history, Composition API + Video Pipeline sections | README |
 
-Previously complete (Waves AQ/AR/AS): NOM-GRAPH-ANCESTRY, NOM-BACKEND-SELF-DESCRIBE, AM-INTENT-STRUCT, AL-COSMIC, AM-SPATIAL-WIRE viewport.rs, UC-SERVE, B4 46 kinds, B5 side-tables, B7 9 skills, C3 feature flag, C7 interrupt, A3 EdgeKind, B1 define/that tokens, B2 NomxFormat, B9 bench/flow/media CLI, CI matrix, C1 run_composition.
+Previously complete (Waves AT+AU+AV): AL-PALETTE-SEARCH-UI, AL-TEST-FRAUD, AL-FEATURE-TESTS, AH-CTX, AH-DICTW, AH-GLUE, AH-HYBRID, UC-FLOWGRAPH, AH-CACHE, AH-ORCH, AH-DB-KINDS, C5-V1..V4 Remotion composition/timeline/animate.
 
 ---
 
-## Open Items (Wave AU targets)
+## Open Items (Wave AX targets)
 
 - ❌ **AN-TEST-DEDUP** — ~85% duplication ratio across 14 crates; target ≤20%
-- ❌ **AH-CACHE** — GlueCache in SharedState + 60s promotion ticker
-- ❌ **AH-ORCH** — ComposeOrchestrator multi-kind parallel pipeline
-- ❌ **AH-DB-KINDS** — 14 initial grammar.kinds seed rows (video/picture/audio/…)
-- ❌ **UC-CANDLE** — candle_adapter.rs BackendDevice::Cpu + ReActLlmFn impl
-- ❌ **UC-MIDDLEWARE** — StepMiddleware trait + MiddlewareRegistry wrapping every dispatch
-- ❌ **UC-PROMOTE** — POST /promote/:glue_hash endpoint → DictWriter::insert_partial_entry()
-- ❌ **B9 remaining** — nom corpus ingest pypi/github, nom ux seed, nom app new/...
-- ❌ **C1 full LLVM** — Click Run → native binary (run_composition wired; LLVM codegen not yet)
-- ❌ **C4 LSP visual** — hover tooltip/completion popup/diagnostic squiggle render verified
+- ❌ **C5-V10** — Two-stage video pipeline (parallel frame capture → FFmpeg stdin streaming)
+- ❌ **C4-LSP visual** — hover tooltip/completion popup/diagnostic squiggle rendered on canvas
+- ❌ **AH-UI** — Intent Preview + AI Review cards in nom-panels/src/right/
+- ❌ **D3 golden paths** — end-to-end demos: Type .nomx → highlight; drag node; compose → artifact
+- ❌ **D2 visual** — frosted-glass blur, bezier animate, all 73 tokens visible
+- ❌ **A11 LLVM** — Parser/Resolver/TypeChecker/Codegen .nom compiles via rust-nomc
+- ❌ **C5 real backends** — GPU→FFmpeg, rodio, opendataloader beyond stubs
 
 ---
 
-## Per-crate Test Counts (Wave AT actuals)
+## Per-crate Test Counts (Wave AW actuals)
 
 | Crate | Tests |
 |---|---|
 | nom-gpui | 790 |
 | nom-blocks | 560 |
 | nom-canvas-core | 575 (+12 integration) |
-| nom-cli | 411 |
+| nom-cli | 424 |
 | nom-collab | 546 |
-| nom-compiler-bridge | 550 |
-| nom-compose | 703 |
+| nom-compiler-bridge | 558 |
+| nom-compose | 748 |
 | nom-editor | 620 |
-| nom-graph | 572 |
-| nom-intent | 472 |
+| nom-graph | 575 |
+| nom-intent | 480 |
 | nom-lint | 485 |
 | nom-memoize | 468 |
-| nom-panels | 608 |
+| nom-panels | 609 |
 | nom-telemetry | 500 |
 | nom-theme | 556 |
-| **TOTAL** | **8428** |
+| **nom-canvas TOTAL** | **~8506** |
+| nom-concept (+B8) | +21 (162 lib + 16 translation_b8) |
+| nom-grammar (+AH-DB-KINDS) | 36 |
+| **GRAND TOTAL** | **~8947** |
 
 ---
 

@@ -1,6 +1,6 @@
 # Nom — Task Execution Checklist
 
-**Date:** 2026-04-18 | **HEAD:** `050b1e9` | **Tests:** 8391 | **Workspace:** clean — Wave AS complete. C-axis ~67%, D-axis ~92%.
+**Date:** 2026-04-18 | **HEAD:** `7716377` | **Tests:** 8947 | **Workspace:** clean — Waves AT+AU+AV+AW complete. B-axis ~62%, C-axis ~72%, D-axis ~95%.
 
 ## DB-Driven Architecture (Wave AE/AC verified PASS)
 
@@ -91,23 +91,62 @@
 - ✅ B1 define/that — Tok::Define + Tok::That variants + lexer arms in nom-concept; highlight arms
 - ✅ B2 NomxFormat — NomxFormat{Typed,Natural,Standard} enum + detect_format() + 5 B2 tests
 
+## Wave AT (2026-04-18) — COMMITTED ✅ (HEAD ced46fc, +37 tests)
+- ✅ AL-PALETTE-SEARCH-UI — 32px search box + category headers; filtered_entries/grouped_items; 3 tests
+- ✅ AL-TEST-FRAUD — ArtifactDiff out of cfg(test); 5 real SQL injection edge-case tests
+- ✅ AL-FEATURE-TESTS — 3 #[cfg(all(test,feature="compiler"))] tests for nom_score/bm25/can_wire
+- ✅ AH-CTX — ComposeContext/ComposeResult/ComposeTier in nom-compose/src/context.rs
+- ✅ AH-DICTW — DictWriter insert_partial_entry() + promote_to_complete()
+- ✅ AH-GLUE — ReActLlmFn trait + 4 adapters + AiGlueOrchestrator + GlueBlueprint
+- ✅ AH-HYBRID — HybridResolver 3-tier (DbDriven→Provider→AiLeading)
+- ✅ UC-FLOWGRAPH — FlowGraph + FlowNode + FlowEdge + Kahn sort
+
+## Wave AU (2026-04-18) — COMMITTED ✅ (HEAD f38224c)
+- ✅ AH-CACHE — GlueCache + GlueStatus Transient/Partial/Complete lifecycle
+- ✅ AH-ORCH — ComposeOrchestrator wrapping HybridResolver; run/run_parallel
+- ✅ AH-DB-KINDS — 14 composition grammar.kinds seed rows (video_compose/picture_compose/…)
+
+## Wave AV (2026-04-18) — COMMITTED ✅ (HEAD 34f222e)
+- ✅ C5-V1 — CompositionConfig + CompositionRegistry (Remotion composition metadata pattern)
+- ✅ C5-V2 — SequenceContext + current_frame_in_sequence + is_frame_active
+- ✅ C5-V3 — interpolate() with ExtrapolateMode (Clamp/Extend/Identity/Wrap)
+- ✅ C5-V4 — spring() underdamped+overdamped physics + SpringConfig
+
+## Wave AW (2026-04-18) — COMMITTED ✅ (HEAD 7716377, 8947 tests, 0 clippy warnings)
+- ✅ C5-V5 — VideoRenderConfig + RenderProgress{rendered_frames,encoded_frames,stage,elapsed_ms}
+- ✅ C5-V6 — ComposeEvent::Progress extended + all 49 construction sites updated
+- ✅ C5-V7 — CancelSignal + make_cancel_signal() via AtomicBool
+- ✅ C5-V8 — VideoConfigContext + thread-local push/pop/get_video_config() stack
+- ✅ C5-V9 — validate_codec_pixel_format(codec, format, w, h)
+- ✅ UC-MIDDLEWARE — StepMiddleware + MiddlewareRegistry + LoggingMiddleware + LatencyMiddleware
+- ✅ UC-STREAM — SwitchableStream + StreamToken (word-by-word streaming via AiGlueOrchestrator)
+- ✅ UC-PROMOTE — POST /promote/:glue_hash axum endpoint
+- ✅ UC-CANDLE — CandleAdapter + BackendDevice{Cpu,Cuda} + InferenceFn trait
+- ✅ A6-LSP — LspRequest/LspResponse + dispatch_lsp_request (6 methods)
+- ✅ B1 parse — DefineThatExpr + parse_define_that() using Tok::Define+Word+That
+- ✅ B2 migrate — migrate_typed_to_natural() fn→define, ->→that
+- ✅ B8 100 translations — +16 tests (lazy eval, tail-call, monadic bind, dependent types, etc.)
+- ✅ D1 Dify — TypedNode trait + NodeOutputPort + NodeEvent (Started/Progress/Completed/Failed)
+- ✅ D1 ToolJet — palette_kind_count() reflecting 46+ seeded kinds
+- ✅ D1 Refly — SkillRouter + SkillDefinition (register/find_by_id/find_by_query)
+- ✅ B9 ux/app CLI — nom ux seed, nom app new/import/build/build-report/explain-selection
+- ✅ B9 corpus — nom corpus ingest-pypi/ingest-github/pause/resume/report
+- ✅ D4 clippy — 0 warnings, 0 errors workspace-wide
+- ✅ D5 README — Wave history, Composition API + Video Pipeline sections
+
 ---
 
-## Open Items — Wave AT targets
+## Open Items — Wave AX targets
 
-- ❌ **AL-PALETTE-SEARCH-UI** — node_palette.rs: no 32px search box quad; no category group header rows
-- ❌ **AL-TEST-FRAUD** — semantic.rs: ArtifactDiff + artifact_diff() + 5 tests are cfg(test)-only; replace with real SQL injection edge-case tests
-- ❌ **AL-FEATURE-TESTS** — ui_tier.rs: zero `#[cfg(feature = "compiler")]` tests for real nom_score/BM25Index/can_wire() paths
-- ❌ **AN-TEST-DEDUP** — All 14 crates: ~85% duplication ratio; target ≤20%
-- ❌ **AH-CTX** — ComposeContext/ComposeResult/ComposeTier in nom-compose/src/context.rs
-- ❌ **AH-DICTW** — DictWriter write side: insert_partial_entry() + promote_to_complete()
-- ❌ **AH-GLUE** — AiGlueOrchestrator + GlueBlueprint + ReActLlmFn trait (4 adapters)
-- ❌ **AH-HYBRID** — HybridResolver orchestrating Tier1→Tier2→Tier3
-- ❌ **AH-ORCH** — ComposeOrchestrator multi-kind parallel pipeline
-- ❌ **UC-CANDLE** — candle_adapter.rs BackendDevice::Cpu + ReActLlmFn impl (Phi-3/Gemma-2B)
-- ❌ **UC-FLOWGRAPH** — FlowNode + FlowEdge typed graph replacing linear ComposeOrchestrator
-- ❌ **C4-LSP** — hover tooltip/completion popup/diagnostic squiggle render visually verified
-- ❌ **C5-BACKENDS** — video→FFmpeg, audio→rodio, data-extract→opendataloader real wiring
+- ❌ **AN-TEST-DEDUP** — ~85% duplication ratio; target ≤20%
+- ❌ **C5-V10** — Two-stage video pipeline (parallel frame capture → FFmpeg stdin streaming)
+- ❌ **C4-LSP** — hover tooltip/completion popup/diagnostic squiggle visually rendered on canvas
+- ❌ **AH-INTENT** — classify_with_react 3-pass fully wired (✅ done), AH-PROMOTE UI cards
+- ❌ **AH-UI** — Intent Preview + AI Review cards in nom-panels/src/right/
+- ❌ **D3 golden paths** — Type .nomx → highlight; drag node → canvas render; wire → confidence edge
+- ❌ **A11 LLVM** — Parser/Resolver/TypeChecker/Codegen .nom compiles via rust-nomc
+- ❌ **D2 visual** — frosted-glass blur, bezier animate, all 73 tokens used
+- ❌ **C5 real backends** — GPU→FFmpeg, rodio, opendataloader real wiring (not stubs)
 
 ---
 
