@@ -1,8 +1,26 @@
 # Nom State Machine Report
 
-**Date:** 2026-04-19 | **HEAD:** `761c3eb` | **Tests:** 8785 | **Workspace:** clean — Waves AX+AY complete. 0 clippy warnings.
+**Date:** 2026-04-19 | **HEAD:** `07ab271` | **Tests:** 8827 | **Workspace:** clean — Waves AX+AY+AZ complete. 0 clippy warnings.
 
 ---
+
+## Iteration 71 — Wave AZ COMPLETE (HEAD 07ab271, 8827 tests, 0 warnings)
+
+**10 parallel agents. LSP visual overlay + audio/image/storyboard backends + MECE + define-that pipeline.**
+
+| Gap ID | Fix | Crate |
+|--------|-----|-------|
+| C4-LSP visual | DiagnosticSquiggle + HoverTooltip + CompletionPopup + LspOverlay | nom-panels |
+| A6 LSP real | LspTransport JSON-RPC framing + AuthoringProtocol event stream | nom-compiler-bridge |
+| B6 MECE | MeceValidator + MeceCategory + DreamScore (EPIC_SCORE_THRESHOLD=95) | nom-concept |
+| B1 full | ConceptNode + define_that_to_concept_node + parse_concept_source | nom-concept |
+| C5 audio | AudioSource + AudioPlayback + AudioMixer (rodio-pattern stub) | nom-compose |
+| C5 image | ImageLayer + ImageComposite + BlendMode | nom-compose |
+| C5 storyboard | StoryboardPanel + Storyboard + estimated_frames() | nom-compose |
+| D3 demo | DemoRunner + DemoKind + DemoResult golden-path sequences | nom-cli |
+| D2 render | FrostedPassConfig + FrostedRenderPass state machine | nom-canvas-core |
+| A10 corpus | CorpusStats + report_stats() | nom-cli |
+| AN-TEST-DEDUP | -9 duplicates across nom-gpui/nom-lint/nom-memoize | 3 crates |
 
 ## Iteration 70 — Wave AY COMPLETE (HEAD 761c3eb, 8785 tests, 0 warnings)
 
@@ -65,17 +83,15 @@ Previously complete (Waves AT+AU+AV): AL-PALETTE-SEARCH-UI, AL-TEST-FRAUD, AL-FE
 
 ---
 
-## Open Items (Wave AZ targets)
+## Open Items (Wave ABA targets)
 
-- ❌ **C4-LSP visual** — hover tooltip/completion popup/diagnostic squiggle rendered on canvas
-- ❌ **D2 visual** — frosted-glass RENDER pass wired into wgpu renderer (tokens exist, not rendered)
-- ❌ **D3 golden paths** — golden demo scripts (executable: type .nomx → highlight, drag node → compose)
+- ❌ **D2 render wired** — FrostedRenderPass integrated into actual wgpu draw loop (pass exists, not called)
 - ❌ **A11 LLVM** — Parser/Resolver/TypeChecker/Codegen .nom compiles via rust-nomc
-- ❌ **C5 real backends** — GPU→FFmpeg, rodio, opendataloader real wiring (not stubs)
-- ❌ **B6 MECE/Dream gate** — MECE validator + Dream score ≥95 gate
-- ❌ **A6 LSP real** — stdin/stdout async handshake (tokio), AuthoringProtocol stream
-- ❌ **B1 full parse** — define-that parse integrated into full nom-concept pipeline
-- ❌ **AN-TEST-DEDUP** — remaining 14 crates beyond nom-intent/compose; target ≤20% ratio
+- ❌ **C5 real wiring** — GPU→FFmpeg real encode, actual rodio playback, opendataloader real load
+- ❌ **A6 LSP async** — tokio stdin/stdout I/O loop (transport framing done, full loop not started)
+- ❌ **B2 migration tool** — `nom convert v1 v2` + 100 .nomx golden corpus
+- ❌ **A7 bootstrap** — Stage0→Stage1→Stage2→Stage3 fixpoint proof
+- ❌ **A10 100-repo corpus** — 100-repo ingestion pipeline + 100M+ nomtu entries
 
 ---
 

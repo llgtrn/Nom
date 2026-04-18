@@ -1,6 +1,6 @@
 # Nom — Task Execution Checklist
 
-**Date:** 2026-04-19 | **HEAD:** `761c3eb` | **Tests:** 8785 | **Workspace:** clean — Waves AX+AY complete. B-axis ~65%, C-axis ~76%, D-axis ~97%.
+**Date:** 2026-04-19 | **HEAD:** `07ab271` | **Tests:** 8827 | **Workspace:** clean — Waves AX+AY+AZ complete. B-axis ~70%, C-axis ~80%, D-axis ~98%.
 
 ## DB-Driven Architecture (Wave AE/AC verified PASS)
 
@@ -159,17 +159,28 @@
 - ✅ A3 nom-media — MediaUnit/Codec/Container crate (6 tests)
 - ✅ D5 docs — docs/user-manual.md + docs/api-reference.md + CONTRIBUTING.md
 
-## Open Items — Wave AZ targets
+## Wave AZ (2026-04-19) — COMMITTED ✅ (HEAD 07ab271, 8827 tests, 0 warnings)
+- ✅ C4-LSP visual — DiagnosticSquiggle + HoverTooltip + CompletionPopup + LspOverlay (+10)
+- ✅ A6 LSP real — LspTransport JSON-RPC framing + AuthoringProtocol event stream (+8)
+- ✅ B6 MECE — MeceValidator + DreamScore EPIC_SCORE_THRESHOLD=95 (+8)
+- ✅ B1 full parse — ConceptNode + parse_concept_source pipeline (+6)
+- ✅ C5 audio — AudioSource + AudioPlayback + AudioMixer (+8)
+- ✅ C5 image — ImageLayer + ImageComposite + BlendMode (+11)
+- ✅ C5 storyboard — StoryboardPanel + Storyboard (+storyboard)
+- ✅ D3 demo — DemoRunner + DemoKind + DemoResult golden sequences (+5)
+- ✅ D2 render — FrostedPassConfig + FrostedRenderPass state machine (+7)
+- ✅ A10 corpus — CorpusStats + report_stats() (+4)
+- ✅ AN-TEST-DEDUP — -9 duplicates across nom-gpui/nom-lint/nom-memoize
 
-- ❌ **C4-LSP visual** — hover tooltip/completion popup/diagnostic squiggle rendered on canvas
-- ❌ **D2 visual render** — frosted-glass RENDER wired into wgpu pipeline (tokens exist, not rendered)
-- ❌ **D3 golden scripts** — executable demo scripts (type .nomx → highlight, drag → compose)
+## Open Items — Wave ABA targets
+
+- ❌ **D2 render wired** — FrostedRenderPass integrated into actual wgpu draw loop
 - ❌ **A11 LLVM** — Parser/Resolver/TypeChecker/Codegen .nom compiles via rust-nomc
-- ❌ **C5 real backends** — GPU→FFmpeg, rodio, opendataloader real wiring (not stubs)
-- ❌ **B6 MECE/Dream gate** — MECE validator + Dream score ≥95
-- ❌ **A6 LSP real** — stdin/stdout tokio async handshake + AuthoringProtocol stream
-- ❌ **B1 full parse** — define-that integrated into full nom-concept pipeline
-- ❌ **AN-TEST-DEDUP** — remaining 12 crates; target ≤20% ratio
+- ❌ **C5 real wiring** — GPU→FFmpeg real encode, rodio actual playback, opendataloader real load
+- ❌ **A6 LSP async loop** — tokio stdin/stdout I/O loop (transport framing done)
+- ❌ **B2 migration tool** — `nom convert v1 v2` + 100 .nomx golden corpus
+- ❌ **A7 bootstrap** — Stage0→Stage1→Stage2→Stage3 fixpoint proof
+- ❌ **A10 100-repo corpus** — 100-repo ingestion pipeline
 
 ---
 

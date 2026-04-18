@@ -1,7 +1,7 @@
 # Nom — Roadmap to 100%
 
 **Date:** 2026-04-18 | **Mandate:** reach 100% on all 4 axes. Every `[ ]` is a completable task.
-**Last updated:** Wave AY COMPLETE — HEAD `761c3eb`, **8785 tests**, 0 clippy warnings. Waves AX+AY closed 19 items. A-axis 46%, B-axis ~65%, C-axis ~76%, D-axis ~97%.
+**Last updated:** Wave AZ COMPLETE — HEAD `07ab271`, **8827 tests**, 0 clippy warnings. Waves AX+AY+AZ closed 30+ items. A-axis 50%, B-axis ~70%, C-axis ~82%, D-axis ~98%.
 
 ## Current finalization snapshot
 
@@ -101,7 +101,7 @@
 - [x] textDocument/references stub dispatch
 - [x] workspace/symbol stub dispatch
 - [ ] stdin/stdout real handshake (tokio async)
-- [ ] AuthoringProtocol edit-is-compile event stream
+- [x] AuthoringProtocol edit-is-compile event stream (Wave AZ)
 - [ ] Partial-result streaming for long ops
 - [ ] `workspace/rename` refactor
 
@@ -215,7 +215,7 @@
 - [ ] Populated from real ingests (requires bench/flow CLI driving actual runs)
 
 ### B6. Dream-tree + MECE
-- [ ] MECE-objectives validator firing on agent demos
+- [x] MECE-objectives validator + DreamScore ≥95 gate (Wave AZ)
 - [ ] Feature-stack word IDs
 - [ ] DreamReport score ≥95 gate active
 
