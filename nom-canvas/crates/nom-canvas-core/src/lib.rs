@@ -96,6 +96,10 @@ pub use layout_grid::{GridCell, GridPlacement, GridTrack, LayoutGrid, TrackSize}
 pub mod viewport_clip;
 pub use viewport_clip::{ClipRect, ClipStack, ViewportClipper, ClipResult, ClipBatch};
 
+/// Extended hit-zone model with named zones and priority-ordered spatial queries.
+pub mod hit_zone;
+pub use hit_zone::{HitZoneKind, HitZone, HitZoneMap, HitTestResult, ZoneHitTester};
+
 #[cfg(test)]
 mod integration_tests {
     use crate::elements::{paint_graph_node, paint_wire};

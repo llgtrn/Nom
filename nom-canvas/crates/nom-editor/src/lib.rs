@@ -51,3 +51,5 @@ pub mod code_lens;
 pub use code_lens::{CodeLensKind, CodeLens, CodeLensProvider, CodeLensOverlay, LensResolver};
 pub mod breadcrumb;
 pub use breadcrumb::{BreadcrumbKind, BreadcrumbSegment, BreadcrumbPath, BreadcrumbNav, BreadcrumbRenderer};
+pub mod outline_view;
+pub use outline_view::{OutlineItemKind, OutlineItem, OutlineSection, OutlineTree, OutlineRenderer};

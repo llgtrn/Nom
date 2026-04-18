@@ -50,3 +50,5 @@ pub mod intent_graph;
 pub use intent_graph::{IntentKind, IntentNode, IntentEdge, IntentGraph, IntentGraphQuery};
 pub mod schema_version;
 pub use schema_version::{SchemaVersionId, VersionEdge, SchemaVersionGraph, VersionDiff, SchemaMigrationPlan};
+pub mod route_table;
+pub use route_table::{RouteKind, RouteKey, RouteEntry, RouteTable, RouteResolver};

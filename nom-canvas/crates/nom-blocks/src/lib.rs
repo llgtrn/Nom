@@ -90,6 +90,10 @@ pub use flow_step_table::{StepStatus, FlowStepRow, FlowStepTable, FlowStepQuery,
 #[allow(missing_docs)]
 pub mod embed_registry;
 pub use embed_registry::{EmbedKind, EmbedEntry, EmbedRegistry, EmbedResolver};
+/// Block tree — hierarchical node structure (BlockNodeKind, BlockNode, BlockTree, BlockTreeWalker, TreeDiff).
+#[allow(missing_docs)]
+pub mod block_tree;
+pub use block_tree::{BlockNodeKind, BlockNode, BlockTree, BlockTreeWalker, TreeDiff};
 
 #[cfg(test)]
 mod integration_tests {
