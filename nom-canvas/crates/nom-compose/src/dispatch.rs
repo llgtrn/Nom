@@ -879,4 +879,119 @@ mod tests {
         assert_eq!(col.data_type, SemanticDataType::Float);
         assert_eq!(col.description.as_deref(), Some("unit price in USD"));
     }
+
+    // ── Wave AE new tests ────────────────────────────────────────────────────
+
+    #[test]
+    fn registry_with_7_backends_all_dispatch_ok() {
+        // Register the 7 "real" backends (video, audio, document, export, rag_query,
+        // mobile_screen→WebScreen, native_screen→Render) via NoopBackend and verify each routes.
+        let mut reg = BackendRegistry::new();
+        let kinds = [
+            BackendKind::Video,
+            BackendKind::Audio,
+            BackendKind::Document,
+            BackendKind::Export,
+            BackendKind::RagQuery,
+            BackendKind::WebScreen,
+            BackendKind::Render,
+        ];
+        for kind in &kinds {
+            reg.register(Box::new(NoopBackend::new(kind.clone())));
+        }
+        assert_eq!(reg.registered_kinds().len(), 7, "exactly 7 backends must be registered");
+        for kind in &kinds {
+            let result = reg.dispatch(kind.clone(), "probe", &|_| {});
+            assert!(result.is_ok(), "dispatch must succeed for kind: {}", kind.name());
+        }
+    }
+
+    #[test]
+    fn registry_route_by_kind_returns_correct_backend() {
+        // Each kind returns an output that starts with its own name prefix.
+        let mut reg = BackendRegistry::new();
+        reg.register(Box::new(NoopBackend::new(BackendKind::Video)));
+        reg.register(Box::new(NoopBackend::new(BackendKind::Audio)));
+        reg.register(Box::new(NoopBackend::new(BackendKind::Document)));
+
+        let v = reg.dispatch(BackendKind::Video, "x", &|_| {}).unwrap();
+        assert!(v.starts_with("video:"), "video backend output must start with 'video:'");
+
+        let a = reg.dispatch(BackendKind::Audio, "x", &|_| {}).unwrap();
+        assert!(a.starts_with("audio:"), "audio backend output must start with 'audio:'");
+
+        let d = reg.dispatch(BackendKind::Document, "x", &|_| {}).unwrap();
+        assert!(d.starts_with("document:"), "document backend output must start with 'document:'");
+    }
+
+    #[test]
+    fn registry_unknown_kind_error_message_contains_kind_name() {
+        let reg = BackendRegistry::new();
+        let err = reg.dispatch(BackendKind::Scenario, "x", &|_| {}).unwrap_err();
+        assert!(err.contains("scenario"), "error must name the missing kind");
+    }
+
+    #[test]
+    fn concurrent_dispatch_simulation_all_succeed() {
+        // Simulate concurrent dispatch by sharing a registry across multiple
+        // closures (no actual threads needed — tests the Send+Sync bound via Arc).
+        use std::sync::Arc;
+        let mut reg = BackendRegistry::new();
+        reg.register(Box::new(NoopBackend::new(BackendKind::Video)));
+        reg.register(Box::new(NoopBackend::new(BackendKind::Audio)));
+        reg.register(Box::new(NoopBackend::new(BackendKind::Image)));
+        let reg = Arc::new(reg);
+
+        let results: Vec<_> = [
+            (BackendKind::Video, "v-payload"),
+            (BackendKind::Audio, "a-payload"),
+            (BackendKind::Image, "i-payload"),
+        ]
+        .iter()
+        .map(|(kind, input)| reg.dispatch(kind.clone(), input, &|_| {}))
+        .collect();
+
+        for r in &results {
+            assert!(r.is_ok(), "each concurrent dispatch must succeed");
+        }
+        assert!(results[0].as_ref().unwrap().contains("video"));
+        assert!(results[1].as_ref().unwrap().contains("audio"));
+        assert!(results[2].as_ref().unwrap().contains("image"));
+    }
+
+    #[test]
+    fn backend_kind_from_kind_name_all_names_parse() {
+        // Every variant's name() must parse back via from_kind_name() to itself.
+        let all = [
+            BackendKind::Video, BackendKind::Audio, BackendKind::Image,
+            BackendKind::Document, BackendKind::Data, BackendKind::App,
+            BackendKind::Workflow, BackendKind::Scenario, BackendKind::RagQuery,
+            BackendKind::Transform, BackendKind::EmbedGen, BackendKind::Render,
+            BackendKind::Export, BackendKind::Pipeline, BackendKind::CodeExec,
+            BackendKind::WebScreen,
+        ];
+        for kind in &all {
+            let parsed = BackendKind::from_kind_name(kind.name());
+            assert_eq!(parsed.as_ref(), Some(kind), "roundtrip failed for {:?}", kind);
+        }
+    }
+
+    #[test]
+    fn noop_backend_compose_empty_input_returns_kind_prefix() {
+        let b = NoopBackend::new(BackendKind::Transform);
+        let result = b.compose("", &|_| {}).unwrap();
+        assert_eq!(result, "transform:", "empty input must yield 'transform:'");
+    }
+
+    #[test]
+    fn registry_dispatch_after_replacing_backend() {
+        // Registering a new backend for the same kind replaces the old one.
+        let mut reg = BackendRegistry::new();
+        reg.register(Box::new(NoopBackend::new(BackendKind::Pipeline)));
+        // Replace with another noop (same observable behavior).
+        reg.register(Box::new(NoopBackend::new(BackendKind::Pipeline)));
+        assert_eq!(reg.registered_kinds().len(), 1);
+        let result = reg.dispatch(BackendKind::Pipeline, "data", &|_| {}).unwrap();
+        assert!(result.starts_with("pipeline:"));
+    }
 }

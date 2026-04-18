@@ -369,4 +369,44 @@ mod tests {
         let upper = Hash128::of_str("HELLO");
         assert_ne!(lower, upper, "hash must be case-sensitive");
     }
+
+    // --- Byte-order differences produce different hashes ---
+
+    #[test]
+    fn hash128_byte_order_two_bytes_reversed() {
+        // [0xAB, 0xCD] vs [0xCD, 0xAB] — same bytes, different order.
+        let h1 = Hash128::of_bytes(&[0xAB, 0xCD]);
+        let h2 = Hash128::of_bytes(&[0xCD, 0xAB]);
+        assert_ne!(h1, h2, "byte-reversed inputs must produce different hashes");
+    }
+
+    #[test]
+    fn hash128_byte_order_four_bytes() {
+        // [0x01, 0x02, 0x03, 0x04] vs [0x04, 0x03, 0x02, 0x01].
+        let h1 = Hash128::of_bytes(&[0x01, 0x02, 0x03, 0x04]);
+        let h2 = Hash128::of_bytes(&[0x04, 0x03, 0x02, 0x01]);
+        assert_ne!(h1, h2, "4-byte reversal must produce different hashes");
+    }
+
+    #[test]
+    fn hash128_byte_order_u64_little_vs_big_endian() {
+        // of_u64 uses to_le_bytes; compare with big-endian encoding of the same value.
+        let v: u64 = 0x0102030405060708;
+        let via_le = Hash128::of_bytes(&v.to_le_bytes());
+        let via_be = Hash128::of_bytes(&v.to_be_bytes());
+        // LE and BE encodings differ → hashes must differ.
+        assert_ne!(via_le, via_be, "LE vs BE encoding must produce different hashes");
+    }
+
+    #[test]
+    fn hash128_byte_order_single_swap() {
+        // Swap just the first two bytes of a longer slice.
+        let original = &[0x10u8, 0x20, 0x30, 0x40, 0x50];
+        let swapped = &[0x20u8, 0x10, 0x30, 0x40, 0x50];
+        assert_ne!(
+            Hash128::of_bytes(original),
+            Hash128::of_bytes(swapped),
+            "single byte swap must produce different hash"
+        );
+    }
 }

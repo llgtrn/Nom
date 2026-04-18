@@ -864,4 +864,133 @@ mod tests {
         };
         assert!(!hit_test_arrow([50.0, 50.0], &a, HIT_RADIUS));
     }
+
+    /// Wire with length < 5px (very short): hit test on the midpoint still works.
+    #[test]
+    fn wire_very_short_hit() {
+        // Line segment shorter than HIT_RADIUS (5px) — point at midpoint hits.
+        let l = CanvasLine {
+            id: 99,
+            start: [0.0, 0.0],
+            end: [3.0, 0.0], // length = 3px < HIT_RADIUS
+            stroke_width: 1.0,
+            color: [1.0, 1.0, 1.0, 1.0],
+            dashes: vec![],
+            z_index: 0,
+        };
+        // Midpoint is (1.5, 0.0); 2px above should hit with HIT_RADIUS=5.
+        assert!(hit_test_line([1.5, 2.0], &l, HIT_RADIUS), "midpoint of short wire must hit");
+        // Point far away must miss.
+        assert!(!hit_test_line([100.0, 100.0], &l, HIT_RADIUS), "far point must miss short wire");
+    }
+
+    /// Wire with zero length (degenerate point): hit test on that point.
+    #[test]
+    fn wire_zero_length_hit() {
+        let l = CanvasLine {
+            id: 100,
+            start: [10.0, 10.0],
+            end: [10.0, 10.0], // zero length
+            stroke_width: 1.0,
+            color: [1.0, 1.0, 1.0, 1.0],
+            dashes: vec![],
+            z_index: 0,
+        };
+        // Point at the degenerate location hits within HIT_RADIUS.
+        assert!(hit_test_line([10.0, 10.0], &l, HIT_RADIUS));
+        // Point just beyond HIT_RADIUS must miss.
+        assert!(!hit_test_line([16.0, 10.0], &l, HIT_RADIUS));
+    }
+
+    /// Rotated rect: a point that is inside the rotated footprint but outside
+    /// the unrotated AABB still hits.
+    #[test]
+    fn rotated_rect_point_inside_rotated_footprint_hits() {
+        use std::f32::consts::FRAC_PI_4;
+        // 100×20 rect centred at (50, 50), rotated 45°.
+        // After rotation the long axis runs diagonally.
+        let r = CanvasRect {
+            id: 77,
+            bounds: ([0.0, 40.0], [100.0, 20.0]), // origin=(0,40), size=(100,20)
+            fill: None,
+            stroke: None,
+            corner_radius: 0.0,
+            rotation: FRAC_PI_4,
+            z_index: 0,
+        };
+        // Centre is always inside.
+        let cx = 0.0 + 100.0 / 2.0;
+        let cy = 40.0 + 20.0 / 2.0;
+        assert!(hit_test_rect([cx, cy], &r, 0.0), "centre of rotated rect must hit");
+    }
+
+    /// Group hit testing returns the element with the highest z_index.
+    #[test]
+    fn group_hit_returns_topmost() {
+        let group = vec![
+            CanvasRect { id: 1, bounds: ([0.0, 0.0], [100.0, 100.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 2 },
+            CanvasRect { id: 2, bounds: ([0.0, 0.0], [100.0, 100.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 7 },
+            CanvasRect { id: 3, bounds: ([0.0, 0.0], [100.0, 100.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 4 },
+        ];
+        let pt = [50.0, 50.0];
+        let topmost = group.iter()
+            .filter(|r| hit_test_rect(pt, r, 0.0))
+            .max_by_key(|r| r.z_index);
+        assert!(topmost.is_some(), "at least one element must be hit");
+        assert_eq!(topmost.unwrap().id, 2, "element with z_index=7 must be topmost");
+    }
+
+    /// Connector with exactly 4 points uses the bezier path.
+    #[test]
+    fn connector_four_point_bezier() {
+        let conn = CanvasConnector {
+            id: 80,
+            src_id: 1,
+            dst_id: 2,
+            route: vec![[0.0, 0.0], [0.0, 50.0], [100.0, 50.0], [100.0, 0.0]],
+            confidence: 0.9,
+            reason: String::new(),
+            z_index: 0,
+        };
+        // Point near the start (0,0) must hit.
+        assert!(hit_test_connector([0.0, 0.0], &conn, HIT_RADIUS), "start of bezier must hit");
+        // Point near the end (100,0) must hit.
+        assert!(hit_test_connector([100.0, 0.0], &conn, HIT_RADIUS), "end of bezier must hit");
+        // Point far from the curve must miss.
+        assert!(!hit_test_connector([50.0, 200.0], &conn, HIT_RADIUS), "far point must miss bezier");
+    }
+
+    /// hit_test_rect_aabb: point on right edge hits.
+    #[test]
+    fn hit_test_rect_aabb_on_right_edge() {
+        assert!(hit_test_rect_aabb([100.0, 40.0], 0.0, 0.0, 100.0, 80.0));
+    }
+
+    /// dist_to_segment: perpendicular distance from the middle of a diagonal segment.
+    #[test]
+    fn dist_to_segment_diagonal() {
+        // Segment from (0,0) to (10,10); midpoint is (5,5).
+        // Perpendicular distance from (5, 0) to the segment.
+        let d = dist_to_segment([5.0, 0.0], [0.0, 0.0], [10.0, 10.0]);
+        // Perpendicular distance = |5 - 5*cos45| ≈ 3.535
+        assert!(d > 3.0 && d < 4.0, "diagonal perpendicular distance should be ~3.5, got {}", d);
+    }
+
+    /// Rect with 90° rotation: test centre still hits.
+    #[test]
+    fn rect_90_degree_rotation_centre_hits() {
+        use std::f32::consts::FRAC_PI_2;
+        let r = CanvasRect {
+            id: 50,
+            bounds: ([0.0, 0.0], [100.0, 40.0]),
+            fill: None,
+            stroke: None,
+            corner_radius: 0.0,
+            rotation: FRAC_PI_2,
+            z_index: 0,
+        };
+        let cx = 50.0;
+        let cy = 20.0;
+        assert!(hit_test_rect([cx, cy], &r, 0.0), "centre of 90°-rotated rect must hit");
+    }
 }

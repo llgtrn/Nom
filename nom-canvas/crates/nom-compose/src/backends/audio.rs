@@ -345,4 +345,129 @@ mod tests {
         assert_eq!(block.entity.id, "aud7");
         assert_eq!(block.entity.word, "theme");
     }
+
+    // ── Wave AE new tests ────────────────────────────────────────────────────
+
+    #[test]
+    fn flac_stub_header_contains_sample_rate() {
+        let spec = AudioSpec { sample_rate: 96000, channels: 1, duration_ms: 1000, codec: "flac".into() };
+        let bytes = encode_audio_stub_container("FLAC", "flac", &spec);
+        let text = String::from_utf8_lossy(&bytes);
+        assert!(text.contains("sample_rate=96000"), "FLAC stub must contain sample_rate");
+    }
+
+    #[test]
+    fn ogg_stub_header_contains_codec_field() {
+        let spec = AudioSpec { sample_rate: 48000, channels: 1, duration_ms: 500, codec: "opus".into() };
+        let bytes = encode_audio_stub_container("Ogg", "opus", &spec);
+        let text = String::from_utf8_lossy(&bytes);
+        assert!(text.contains("codec=opus"), "Ogg stub must contain codec field");
+        assert!(text.contains("NOM-STUB-AUDIO-CONTAINER: Ogg"));
+    }
+
+    #[test]
+    fn audio_sample_rate_zero_does_not_panic() {
+        let mut store = InMemoryStore::new();
+        let input = AudioInput {
+            entity: NomtuRef { id: "aud-zero".into(), word: "silence".into(), kind: "media".into() },
+            pcm_samples: vec![0.0f32; 8],
+            sample_rate: 0,
+            codec: "pcm".into(),
+            container: AudioContainer::Wav,
+            audio_codec: AudioCodec::Pcm,
+        };
+        // Must not panic — sample_rate=0 is clamped to 1 internally
+        let _block = AudioBackend::compose(input, &mut store, &LogProgressSink);
+    }
+
+    #[test]
+    fn audio_sample_rate_192000_wav_stores_artifact() {
+        let mut store = InMemoryStore::new();
+        let input = AudioInput {
+            entity: NomtuRef { id: "aud-hi".into(), word: "hires".into(), kind: "media".into() },
+            pcm_samples: vec![0.5f32; 192],
+            sample_rate: 192000,
+            codec: "pcm".into(),
+            container: AudioContainer::Wav,
+            audio_codec: AudioCodec::Pcm,
+        };
+        let block = AudioBackend::compose(input, &mut store, &LogProgressSink);
+        assert!(store.exists(&block.artifact_hash));
+        let payload = store.read(&block.artifact_hash).unwrap();
+        assert_eq!(&payload[0..4], b"RIFF");
+    }
+
+    #[test]
+    fn flac_stub_compose_stores_artifact() {
+        let mut store = InMemoryStore::new();
+        let input = AudioInput {
+            entity: NomtuRef { id: "aud-flac".into(), word: "lossless".into(), kind: "media".into() },
+            pcm_samples: vec![0.1f32; 4000],
+            sample_rate: 44100,
+            codec: "flac".into(),
+            container: AudioContainer::FlacStub,
+            audio_codec: AudioCodec::FlacStub,
+        };
+        let block = AudioBackend::compose(input, &mut store, &LogProgressSink);
+        assert!(store.exists(&block.artifact_hash));
+        let payload = store.read(&block.artifact_hash).unwrap();
+        let text = String::from_utf8_lossy(&payload);
+        assert!(text.contains("FLAC"));
+    }
+
+    #[test]
+    fn ogg_stub_compose_stores_artifact() {
+        let mut store = InMemoryStore::new();
+        let input = AudioInput {
+            entity: NomtuRef { id: "aud-ogg".into(), word: "stream".into(), kind: "media".into() },
+            pcm_samples: vec![0.2f32; 2000],
+            sample_rate: 48000,
+            codec: "opus".into(),
+            container: AudioContainer::OggStub,
+            audio_codec: AudioCodec::OpusStub,
+        };
+        let block = AudioBackend::compose(input, &mut store, &LogProgressSink);
+        assert!(store.exists(&block.artifact_hash));
+    }
+
+    #[test]
+    fn audio_codec_all_three_display_different() {
+        let pcm = AudioCodec::Pcm.to_string();
+        let flac = AudioCodec::FlacStub.to_string();
+        let opus = AudioCodec::OpusStub.to_string();
+        assert_ne!(pcm, flac);
+        assert_ne!(flac, opus);
+        assert_ne!(pcm, opus);
+    }
+
+    #[test]
+    fn audio_container_all_three_display_different() {
+        let wav = AudioContainer::Wav.to_string();
+        let flac = AudioContainer::FlacStub.to_string();
+        let ogg = AudioContainer::OggStub.to_string();
+        assert_ne!(wav, flac);
+        assert_ne!(flac, ogg);
+        assert_ne!(wav, ogg);
+    }
+
+    #[test]
+    fn audio_spec_high_sample_rate_bitrate() {
+        // 192000 Hz, 1 channel => 192000 * 1 * 16 / 1000 = 3072 kbps
+        let spec = AudioSpec { sample_rate: 192000, channels: 1, duration_ms: 100, codec: "pcm".into() };
+        assert_eq!(spec.bitrate_kbps(), 3072);
+    }
+
+    #[test]
+    fn audio_spec_zero_sample_rate_bitrate_is_zero() {
+        let spec = AudioSpec { sample_rate: 0, channels: 1, duration_ms: 0, codec: "pcm".into() };
+        assert_eq!(spec.bitrate_kbps(), 0);
+    }
+
+    #[test]
+    fn flac_stub_header_contains_duration_ms() {
+        let spec = AudioSpec { sample_rate: 44100, channels: 1, duration_ms: 3000, codec: "flac".into() };
+        let bytes = encode_audio_stub_container("FLAC", "flac", &spec);
+        let text = String::from_utf8_lossy(&bytes);
+        assert!(text.contains("duration_ms=3000"));
+    }
 }

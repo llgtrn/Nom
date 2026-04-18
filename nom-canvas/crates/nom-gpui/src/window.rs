@@ -559,4 +559,146 @@ mod tests {
             panic!("expected Focused");
         }
     }
+
+    // ── Wave AE new tests ────────────────────────────────────────────────────
+
+    #[test]
+    fn window_builder_only_title_uses_defaults() {
+        let w = WindowBuilder::new("my-app").build();
+        assert_eq!(w.options.title, "my-app");
+        // Defaults: 1280 x 800
+        assert_eq!(w.options.size, Vec2::new(1280.0, 800.0));
+        assert!(w.options.resizable);
+    }
+
+    #[test]
+    fn window_builder_only_width_changed() {
+        let w = WindowBuilder::new("test").width(640.0).build();
+        assert_eq!(w.content_size.x, 640.0);
+        assert_eq!(w.content_size.y, 800.0, "height should remain default 800");
+    }
+
+    #[test]
+    fn window_builder_only_height_changed() {
+        let w = WindowBuilder::new("test").height(480.0).build();
+        assert_eq!(w.content_size.x, 1280.0, "width should remain default 1280");
+        assert_eq!(w.content_size.y, 480.0);
+    }
+
+    #[test]
+    fn window_close_not_requested_initially() {
+        let w = Window::new(WindowOptions::default());
+        assert!(!w.close_requested(), "close_requested must be false on creation");
+    }
+
+    #[test]
+    fn window_request_close_sets_flag_permanently() {
+        let mut w = Window::new(WindowOptions::default());
+        w.request_close();
+        // Flag must persist — calling it again must still return true.
+        assert!(w.close_requested());
+        assert!(w.close_requested());
+    }
+
+    #[test]
+    fn window_scale_factor_default_is_one() {
+        let w = Window::new(WindowOptions::default());
+        assert!((w.scale_factor - 1.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn window_set_scale_factor_fractional() {
+        let mut w = Window::new(WindowOptions::default());
+        w.take_frame_pending();
+        w.set_scale_factor(1.5);
+        assert!((w.scale_factor - 1.5).abs() < f32::EPSILON);
+        assert!(w.take_frame_pending(), "fractional scale must also trigger redraw");
+    }
+
+    #[test]
+    fn window_set_cursor_position_multiple_updates() {
+        let mut w = Window::new(WindowOptions::default());
+        for (x, y) in [(10.0f32, 20.0f32), (100.0, 200.0), (0.0, 0.0)] {
+            w.set_cursor_position(Vec2::new(x, y));
+            assert_eq!(w.cursor_position, Vec2::new(x, y));
+        }
+    }
+
+    #[test]
+    fn window_handle_device_lost_makes_frame_pending() {
+        let mut w = Window::new(WindowOptions::default());
+        w.take_frame_pending(); // clear
+        w.handle_device_lost();
+        assert!(
+            w.take_frame_pending(),
+            "device-lost must queue a new frame for atlas re-upload"
+        );
+    }
+
+    #[test]
+    fn window_options_no_decorations() {
+        let opts = WindowOptions {
+            decorations: false,
+            ..WindowOptions::default()
+        };
+        assert!(!opts.decorations);
+    }
+
+    #[test]
+    fn window_options_non_resizable() {
+        let opts = WindowOptions {
+            resizable: false,
+            ..WindowOptions::default()
+        };
+        assert!(!opts.resizable);
+    }
+
+    #[test]
+    fn window_options_no_min_size() {
+        let opts = WindowOptions {
+            min_size: None,
+            ..WindowOptions::default()
+        };
+        assert!(opts.min_size.is_none());
+    }
+
+    #[test]
+    fn window_event_device_lost_variant() {
+        let ev = WindowEvent::DeviceLost;
+        match ev {
+            WindowEvent::DeviceLost => {}
+            _ => panic!("expected DeviceLost"),
+        }
+    }
+
+    #[test]
+    fn window_event_scroll() {
+        use crate::event::{Modifiers, ScrollEvent};
+        let ev = WindowEvent::Scroll(ScrollEvent {
+            position: Vec2::zero(),
+            delta: Vec2::new(0.0, -3.0),
+            modifiers: Modifiers::default(),
+        });
+        match ev {
+            WindowEvent::Scroll(_) => {}
+            _ => panic!("expected Scroll"),
+        }
+    }
+
+    #[test]
+    fn window_take_frame_pending_is_idempotent_when_false() {
+        let mut w = Window::new(WindowOptions::default());
+        // No pending frame — multiple takes all return false.
+        for _ in 0..5 {
+            assert!(!w.take_frame_pending());
+        }
+    }
+
+    #[test]
+    fn window_request_redraw_then_take_resets() {
+        let mut w = Window::new(WindowOptions::default());
+        w.request_redraw();
+        assert!(w.take_frame_pending());
+        assert!(!w.take_frame_pending(), "second take must be false");
+    }
 }

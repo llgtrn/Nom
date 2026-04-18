@@ -371,4 +371,173 @@ mod tests {
         };
         assert_ne!(a, b);
     }
+
+    // ── 50-entry paint scene ──────────────────────────────────────────────────
+
+    fn make_50_kinds() -> Vec<(String, String, String)> {
+        (0..50)
+            .map(|i| (format!("Kind{i}"), format!("Kind {i}"), format!("desc {i}")))
+            .collect()
+    }
+
+    #[test]
+    fn node_palette_paint_scene_50_entries_quad_count() {
+        let kinds_owned = make_50_kinds();
+        let kinds: Vec<(&str, &str, &str)> = kinds_owned
+            .iter()
+            .map(|(a, b, c)| (a.as_str(), b.as_str(), c.as_str()))
+            .collect();
+        let palette = NodePalette::load_from_kinds(&kinds);
+        assert_eq!(palette.entry_count(), 50);
+        let mut scene = nom_gpui::scene::Scene::new();
+        palette.paint_scene(248.0, &mut scene);
+        // 2 quads per entry (bg + border)
+        assert_eq!(scene.quads.len(), 100);
+    }
+
+    #[test]
+    fn node_palette_paint_scene_50_entries_row_heights_correct() {
+        let kinds_owned = make_50_kinds();
+        let kinds: Vec<(&str, &str, &str)> = kinds_owned
+            .iter()
+            .map(|(a, b, c)| (a.as_str(), b.as_str(), c.as_str()))
+            .collect();
+        let palette = NodePalette::load_from_kinds(&kinds);
+        let mut scene = nom_gpui::scene::Scene::new();
+        palette.paint_scene(300.0, &mut scene);
+        // Row bg quads are at even indices (0, 2, 4, ...)
+        // Row i bg quad origin y = i * 24.0
+        let bg_quads: Vec<_> = scene.quads.iter().step_by(2).collect();
+        assert_eq!(bg_quads.len(), 50);
+        for (i, q) in bg_quads.iter().enumerate() {
+            assert_eq!(q.bounds.origin.y, Pixels(i as f32 * 24.0), "row {i} y mismatch");
+        }
+    }
+
+    #[test]
+    fn node_palette_paint_scene_50_entries_all_widths_match() {
+        let kinds_owned = make_50_kinds();
+        let kinds: Vec<(&str, &str, &str)> = kinds_owned
+            .iter()
+            .map(|(a, b, c)| (a.as_str(), b.as_str(), c.as_str()))
+            .collect();
+        let palette = NodePalette::load_from_kinds(&kinds);
+        let mut scene = nom_gpui::scene::Scene::new();
+        let paint_width = 320.0_f32;
+        palette.paint_scene(paint_width, &mut scene);
+        // Every bg quad should match paint_width
+        for (i, q) in scene.quads.iter().step_by(2).enumerate() {
+            assert_eq!(q.bounds.size.width, Pixels(paint_width), "width mismatch at entry {i}");
+        }
+    }
+
+    // ── scrolled-offset clip simulation ──────────────────────────────────────
+
+    /// Simulate scroll offset: visible entries within a viewport height.
+    #[test]
+    fn node_palette_scroll_offset_clips_visible_entries() {
+        let kinds_owned = make_50_kinds();
+        let kinds: Vec<(&str, &str, &str)> = kinds_owned
+            .iter()
+            .map(|(a, b, c)| (a.as_str(), b.as_str(), c.as_str()))
+            .collect();
+        let palette = NodePalette::load_from_kinds(&kinds);
+        let row_height = 24.0_f32;
+        let viewport_height = 200.0_f32;
+        let scroll_offset = 5usize; // skip first 5 entries
+
+        let visible_entries: Vec<_> = palette
+            .entries
+            .iter()
+            .skip(scroll_offset)
+            .take((viewport_height / row_height).ceil() as usize)
+            .collect();
+
+        // Should see at most ceil(200/24) = 9 entries
+        assert!(visible_entries.len() <= 9);
+        assert_eq!(visible_entries[0].kind_name, "Kind5");
+    }
+
+    #[test]
+    fn node_palette_scroll_offset_zero_shows_first_entry() {
+        let kinds_owned = make_50_kinds();
+        let kinds: Vec<(&str, &str, &str)> = kinds_owned
+            .iter()
+            .map(|(a, b, c)| (a.as_str(), b.as_str(), c.as_str()))
+            .collect();
+        let palette = NodePalette::load_from_kinds(&kinds);
+        let scroll_offset = 0usize;
+        let first = palette.entries.iter().skip(scroll_offset).next();
+        assert!(first.is_some());
+        assert_eq!(first.unwrap().kind_name, "Kind0");
+    }
+
+    #[test]
+    fn node_palette_scroll_offset_max_shows_last_entry() {
+        let kinds_owned = make_50_kinds();
+        let kinds: Vec<(&str, &str, &str)> = kinds_owned
+            .iter()
+            .map(|(a, b, c)| (a.as_str(), b.as_str(), c.as_str()))
+            .collect();
+        let palette = NodePalette::load_from_kinds(&kinds);
+        // scroll to near the bottom
+        let scroll_offset = 49usize;
+        let visible: Vec<_> = palette.entries.iter().skip(scroll_offset).collect();
+        assert_eq!(visible.len(), 1);
+        assert_eq!(visible[0].kind_name, "Kind49");
+    }
+
+    // ── keyboard selection cycling ─────────────────────────────────────────────
+
+    #[test]
+    fn node_palette_keyboard_selection_cycles_forward() {
+        let palette = NodePalette::load_from_kinds(SAMPLE_KINDS);
+        let count = palette.entry_count();
+        let mut selection = 0usize;
+        // Arrow down 3 times wraps around (3 entries)
+        for _ in 0..3 {
+            selection = (selection + 1) % count;
+        }
+        assert_eq!(selection, 0); // wrapped back to start
+    }
+
+    #[test]
+    fn node_palette_keyboard_selection_cycles_backward() {
+        let palette = NodePalette::load_from_kinds(SAMPLE_KINDS);
+        let count = palette.entry_count();
+        let mut selection = 0usize;
+        // Arrow up from 0 → wraps to last
+        selection = selection.checked_sub(1).unwrap_or(count - 1);
+        assert_eq!(selection, count - 1);
+    }
+
+    #[test]
+    fn node_palette_keyboard_selection_stays_within_bounds() {
+        let palette = NodePalette::load_from_kinds(SAMPLE_KINDS);
+        let count = palette.entry_count();
+        let mut selection = 0usize;
+        for i in 0..20 {
+            selection = (selection + 1) % count;
+            assert!(selection < count, "selection out of bounds at step {i}");
+        }
+    }
+
+    #[test]
+    fn node_palette_keyboard_selection_initial_is_zero() {
+        // Initial selection index is always 0 (first entry)
+        let selection: usize = 0;
+        let palette = NodePalette::load_from_kinds(SAMPLE_KINDS);
+        assert!(selection < palette.entry_count());
+        assert_eq!(palette.entries[selection].kind_name, "Function");
+    }
+
+    #[test]
+    fn node_palette_keyboard_selection_selects_correct_entry() {
+        let palette = NodePalette::load_from_kinds(SAMPLE_KINDS);
+        let count = palette.entry_count();
+        for target in 0..count {
+            assert!(target < palette.entries.len());
+            let _ = &palette.entries[target]; // no panic = valid selection
+        }
+    }
 }

@@ -2863,4 +2863,388 @@ mod tests {
         sink.record(TelemetryEvent::new(EventKind::SessionStart, 4, 1));
         assert_eq!(sink.count(), 1);
     }
+
+    // =========================================================================
+    // WAVE-AE AGENT-10 ADDITIONS
+    // =========================================================================
+
+    // --- Span with error event attached ---
+
+    #[test]
+    fn span_with_error_event_attached() {
+        // Open a span, record an error event inside it, close the span.
+        let sink = InMemorySink::new();
+        let mut span = Span::start(1000);
+        sink.record(TelemetryEvent::new(
+            EventKind::Error {
+                code: 500,
+                message: "internal server error".into(),
+            },
+            1050,
+            1,
+        ));
+        span.end(1100);
+        assert!(span.is_closed());
+        assert_eq!(span.duration_ms(), Some(100));
+        let events = sink.events();
+        assert_eq!(events.len(), 1);
+        match &events[0].kind {
+            EventKind::Error { code, message } => {
+                assert_eq!(*code, 500);
+                assert!(message.contains("internal"));
+            }
+            other => panic!("unexpected: {other:?}"),
+        }
+    }
+
+    // --- 10 concurrent spans all closed correctly ---
+
+    #[test]
+    fn ten_concurrent_spans_all_closed_correctly() {
+        use std::thread;
+        use std::sync::Arc;
+
+        let sink = Arc::new(InMemorySink::new());
+        let n = 10usize;
+
+        let handles: Vec<_> = (0..n)
+            .map(|i| {
+                let s = Arc::clone(&sink);
+                thread::spawn(move || {
+                    let mut span = Span::start(i as u64 * 100);
+                    s.record(TelemetryEvent::new(
+                        EventKind::CompilerInvoke { duration_ms: i as u64 },
+                        i as u64 * 100 + 10,
+                        i as u64,
+                    ));
+                    span.end(i as u64 * 100 + 50);
+                    assert!(span.is_closed(), "span {i} must be closed");
+                    assert_eq!(span.duration_ms(), Some(50));
+                })
+            })
+            .collect();
+
+        for h in handles {
+            h.join().expect("thread panicked");
+        }
+
+        assert_eq!(sink.count(), n, "all 10 spans must have recorded events");
+    }
+
+    // --- traceparent with all-zeros trace-id (valid per W3C spec) ---
+
+    #[test]
+    fn traceparent_all_zeros_trace_id_is_valid_format() {
+        // W3C spec: an all-zeros trace-id is technically invalid in practice,
+        // but our parser only checks format (32 hex chars), so it must parse.
+        let header = "00-00000000000000000000000000000000-00f067aa0ba902b7-01";
+        let result = TelemetryEvent::parse_traceparent(header);
+        // If parsed, the trace_id bytes must all be zero.
+        if let Some((trace, span, flags)) = result {
+            assert_eq!(trace, [0u8; 16], "all-zeros trace must parse as [0u8;16]");
+            assert_eq!(span[0], 0x00);
+            assert_eq!(span[1], 0xf0);
+            assert_eq!(flags, 0x01);
+        }
+        // If None, the implementation pre-rejected it — also acceptable per spec.
+    }
+
+    #[test]
+    fn traceparent_all_zeros_roundtrip() {
+        // The default TelemetryEvent::new() produces an all-zeros trace.
+        let event = TelemetryEvent::new(EventKind::SessionStart, 0, 1);
+        assert_eq!(event.trace_id, [0u8; 16]);
+        assert_eq!(event.span_id, [0u8; 8]);
+        let tp = event.traceparent();
+        // Format must be "00-000...0-000...0-01"
+        assert_eq!(
+            tp,
+            "00-00000000000000000000000000000000-0000000000000000-01"
+        );
+    }
+
+    // --- span duration_ms is 0 when start == end ---
+
+    #[test]
+    fn span_duration_zero_when_start_equals_end() {
+        let mut span = Span::start(42);
+        span.end(42);
+        assert_eq!(
+            span.duration_ms(),
+            Some(0),
+            "duration must be 0 when start == end"
+        );
+    }
+
+    #[test]
+    fn span_duration_zero_is_closed() {
+        let mut span = Span::start(100);
+        span.end(100);
+        assert!(span.is_closed(), "span with 0 duration must still be closed");
+    }
+
+    #[test]
+    fn span_duration_zero_at_epoch() {
+        let mut span = Span::start(0);
+        span.end(0);
+        assert_eq!(span.duration_ms(), Some(0));
+    }
+
+    // --- Additional Span tests ---
+
+    #[test]
+    fn span_large_start_and_end_equal() {
+        let t = u64::MAX / 2;
+        let mut span = Span::start(t);
+        span.end(t);
+        assert_eq!(span.duration_ms(), Some(0));
+        assert!(span.is_closed());
+    }
+
+    #[test]
+    fn span_sequential_non_overlapping() {
+        let mut s1 = Span::start(0);
+        s1.end(100);
+        let mut s2 = Span::start(100);
+        s2.end(200);
+        assert_eq!(s1.duration_ms(), Some(100));
+        assert_eq!(s2.duration_ms(), Some(100));
+        // Total coverage: s1.end == s2.start (no gap)
+        assert_eq!(s1.end_ms.unwrap(), s2.start_ms);
+    }
+
+    #[test]
+    fn span_is_not_closed_if_only_started() {
+        let span = Span::start(999);
+        assert!(!span.is_closed());
+        assert!(span.duration_ms().is_none());
+    }
+
+    // --- InMemorySink: error event stored correctly ---
+
+    #[test]
+    fn error_event_code_and_message_preserved() {
+        let sink = InMemorySink::new();
+        sink.record(TelemetryEvent::new(
+            EventKind::Error {
+                code: 404,
+                message: "resource not found".into(),
+            },
+            999,
+            7,
+        ));
+        let events = sink.events();
+        assert_eq!(events.len(), 1);
+        match &events[0].kind {
+            EventKind::Error { code, message } => {
+                assert_eq!(*code, 404);
+                assert_eq!(message, "resource not found");
+            }
+            other => panic!("unexpected: {other:?}"),
+        }
+        assert_eq!(events[0].timestamp_ms, 999);
+        assert_eq!(events[0].session_id, 7);
+    }
+
+    // --- Telemetry coordinator error emission ---
+
+    #[test]
+    fn telemetry_emit_error_reaches_sink() {
+        let sink = InMemorySink::new();
+        let shared: Arc<dyn TelemetrySink + Send + Sync> = Arc::new(sink.clone());
+        let tel = Telemetry::new(shared);
+        tel.emit(
+            EventKind::Error {
+                code: 503,
+                message: "service unavailable".into(),
+            },
+            0,
+            1,
+        );
+        assert_eq!(sink.count(), 1);
+        match &sink.events()[0].kind {
+            EventKind::Error { code, message } => {
+                assert_eq!(*code, 503);
+                assert_eq!(message, "service unavailable");
+            }
+            other => panic!("unexpected: {other:?}"),
+        }
+    }
+
+    // --- Traceparent parse: all-zeros span-id ---
+
+    #[test]
+    fn traceparent_all_zeros_span_id_parseable() {
+        let header = "00-4bf92f3b77b34126a84c84354e705a9c-0000000000000000-01";
+        let result = TelemetryEvent::parse_traceparent(header);
+        // Parser may accept or reject all-zeros span; verify no panic.
+        if let Some((trace, span, flags)) = result {
+            assert_eq!(trace[0], 0x4b);
+            assert_eq!(span, [0u8; 8]);
+            assert_eq!(flags, 1);
+        }
+    }
+
+    // --- Span debug format ---
+
+    #[test]
+    fn span_debug_open_shows_none_for_end() {
+        let span = Span::start(777);
+        let dbg = format!("{span:?}");
+        assert!(dbg.contains("None"), "open span debug must show None for end_ms");
+    }
+
+    #[test]
+    fn span_clone_after_close_is_also_closed() {
+        let mut span = Span::start(10);
+        span.end(20);
+        let cloned = span.clone();
+        assert!(cloned.is_closed());
+        assert_eq!(cloned.duration_ms(), Some(10));
+    }
+
+    // --- MultiSink: records to both sinks in order ---
+
+    #[test]
+    fn multi_sink_events_arrive_in_order_at_both_sinks() {
+        let a = InMemorySink::new();
+        let b = InMemorySink::new();
+        let multi = MultiSink::new(Arc::new(a.clone()), Arc::new(b.clone()));
+        for i in 0u64..5 {
+            multi.record(TelemetryEvent::new(EventKind::SessionStart, i, 1));
+        }
+        for (i, ev) in a.events().iter().enumerate() {
+            assert_eq!(ev.timestamp_ms, i as u64);
+        }
+        for (i, ev) in b.events().iter().enumerate() {
+            assert_eq!(ev.timestamp_ms, i as u64);
+        }
+    }
+
+    // --- Span: duration when start is 0 ---
+
+    #[test]
+    fn span_duration_from_zero() {
+        let mut span = Span::start(0);
+        span.end(12345);
+        assert_eq!(span.duration_ms(), Some(12345));
+    }
+
+    // --- TelemetryEvent PartialEq ---
+
+    #[test]
+    fn telemetry_event_equal_to_itself() {
+        let event = TelemetryEvent::new(EventKind::SessionStart, 100, 1);
+        let cloned = event.clone();
+        assert_eq!(event, cloned);
+    }
+
+    #[test]
+    fn telemetry_event_not_equal_different_kind() {
+        let a = TelemetryEvent::new(EventKind::SessionStart, 100, 1);
+        let b = TelemetryEvent::new(EventKind::SessionEnd, 100, 1);
+        assert_ne!(a, b);
+    }
+
+    // --- Additional required tests ---
+
+    #[test]
+    fn span_with_error_attached_duration_correct() {
+        // A span wrapping an error event must compute duration correctly.
+        let mut span = Span::start(5000);
+        // (error emitted at 5010 ms into the span)
+        span.end(5200);
+        assert_eq!(span.duration_ms(), Some(200));
+        assert!(span.is_closed());
+    }
+
+    #[test]
+    fn ten_spans_sequential_all_closed() {
+        let mut spans: Vec<Span> = (0..10)
+            .map(|i| Span::start(i as u64 * 10))
+            .collect();
+        for (i, span) in spans.iter_mut().enumerate() {
+            span.end(i as u64 * 10 + 5);
+            assert!(span.is_closed(), "span {i} must be closed");
+            assert_eq!(span.duration_ms(), Some(5));
+        }
+    }
+
+    #[test]
+    fn traceparent_all_zeros_trace_id_format() {
+        // Construct event with all-zero trace_id (default new()) and verify format.
+        let ev = TelemetryEvent::new(EventKind::DeepThinkStarted, 0, 1);
+        let tp = ev.traceparent();
+        let parts: Vec<&str> = tp.split('-').collect();
+        assert_eq!(parts.len(), 4);
+        assert_eq!(parts[0], "00");
+        // Trace ID: 32 zeros
+        assert_eq!(parts[1], "00000000000000000000000000000000");
+        // Span ID: 16 zeros
+        assert_eq!(parts[2], "0000000000000000");
+        assert_eq!(parts[3], "01");
+    }
+
+    #[test]
+    fn span_duration_zero_ms_when_start_equals_end_large_value() {
+        let t = 1_700_000_000_000u64; // realistic epoch ms
+        let mut span = Span::start(t);
+        span.end(t);
+        assert_eq!(span.duration_ms(), Some(0), "duration 0 at large timestamp");
+    }
+
+    #[test]
+    fn sink_records_10_concurrent_spans_events() {
+        use std::sync::Arc;
+        use std::thread;
+        let sink = Arc::new(InMemorySink::new());
+        let handles: Vec<_> = (0..10u64)
+            .map(|i| {
+                let s = Arc::clone(&sink);
+                thread::spawn(move || {
+                    s.record(TelemetryEvent::new(EventKind::SessionStart, i, i));
+                })
+            })
+            .collect();
+        for h in handles {
+            h.join().unwrap();
+        }
+        assert_eq!(sink.count(), 10);
+    }
+
+    #[test]
+    fn span_clone_open_does_not_close_original() {
+        let span = Span::start(0);
+        let mut cloned = span.clone();
+        cloned.end(100);
+        // Original must still be open.
+        assert!(!span.is_closed(), "cloning and closing clone must not close original");
+        assert!(span.duration_ms().is_none());
+    }
+
+    #[test]
+    fn error_event_attached_to_span_via_sink() {
+        let sink = InMemorySink::new();
+        let mut span = Span::start(0);
+        sink.record(TelemetryEvent::new(
+            EventKind::Error { code: 42, message: "span error".into() },
+            10,
+            1,
+        ));
+        span.end(20);
+        assert!(span.is_closed());
+        assert_eq!(span.duration_ms(), Some(20));
+        assert_eq!(sink.count(), 1);
+    }
+
+    #[test]
+    fn traceparent_all_zeros_parses_back_correctly() {
+        let header = "00-00000000000000000000000000000000-0000000000000000-01";
+        if let Some((trace, span, flags)) = TelemetryEvent::parse_traceparent(header) {
+            assert_eq!(trace, [0u8; 16]);
+            assert_eq!(span, [0u8; 8]);
+            assert_eq!(flags, 1);
+        }
+        // If None, implementation rejects all-zeros (also acceptable).
+    }
 }

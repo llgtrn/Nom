@@ -848,4 +848,231 @@ mod tests {
         assert!(final_confidence.is_some(), "expected a Final event");
         assert!(final_confidence.unwrap() > 0.0, "final confidence should be > 0");
     }
+
+    // ── AE3 additions ──────────────────────────────────────────────────────
+
+    /// plan_flow with a majority-Nom-keyword intent must produce confidence > 0.5.
+    #[test]
+    fn plan_flow_nom_keywords_confidence_above_half() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let worker = BackgroundWorker::new(state);
+        // "define", "that", "is", "result" are all known Nom keywords → high hit rate
+        let output = PipelineOutput {
+            source_hash: 10,
+            grammar_version: 1,
+            output_json: r#"{"intent":"define result that is and or"}"#.into(),
+        };
+        let plan = worker.do_plan_flow(&output).unwrap();
+        assert!(
+            plan.confidence > 0.5,
+            "all-keyword goal must yield confidence > 0.5, got {:.3}",
+            plan.confidence
+        );
+    }
+
+    /// do_verify on a plan whose intent spans 1001 lines must emit a PerformanceCaution warning.
+    #[test]
+    fn verify_1001_lines_emits_performance_diagnostic() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let worker = BackgroundWorker::new(state);
+        // Build a string with exactly 1001 non-empty lines
+        let long_intent: String = (0..1001)
+            .map(|i| format!("line_{i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let plan = CompositionPlan {
+            intent: long_intent,
+            steps: vec![],
+            confidence: 0.5,
+        };
+        let diags = worker.do_verify(&plan);
+        let has_perf = diags.iter().any(|d| d.contains("PerformanceCaution"));
+        assert!(
+            has_perf,
+            "1001-line input must trigger PerformanceCaution; got: {:?}",
+            diags
+        );
+    }
+
+    /// deep_think step at index 2 (third step, 0-based) must mention at least one entity
+    /// word extracted from the original prompt.
+    #[test]
+    fn deep_think_step3_contains_entity_from_prompt() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let worker = BackgroundWorker::new(state);
+        let (tx, rx) = crossbeam_channel::bounded(64);
+        let interrupt = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        // "pipeline" and "transforms" and "dataset" are > 4 chars and not stop words
+        worker.do_deep_think("define pipeline that transforms dataset", &interrupt, &tx);
+        let events: Vec<DeepThinkEvent> = rx.try_iter().collect();
+        // Collect all Step events in order
+        let steps: Vec<_> = events
+            .iter()
+            .filter_map(|e| if let DeepThinkEvent::Step(s) = e { Some(s) } else { None })
+            .collect();
+        assert!(steps.len() >= 3, "expected at least 3 steps");
+        // Step at index 2 (third step) is "Identifying key entities"
+        let step3_text = format!("{} {:?}", steps[2].hypothesis, steps[2].evidence);
+        let found = ["pipeline", "transforms", "dataset"]
+            .iter()
+            .any(|w| step3_text.contains(w));
+        assert!(
+            found,
+            "step 3 must contain an entity from prompt; got: {}",
+            step3_text
+        );
+    }
+
+    /// do_verify on a plan with step missing description emits StepMissingDescription diagnostic.
+    #[test]
+    fn verify_step_missing_description_emits_diagnostic() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let worker = BackgroundWorker::new(state);
+        let plan = CompositionPlan {
+            intent: "define x that is 1".into(),
+            steps: vec![PlanStep {
+                id: "step_0".into(),
+                description: "".into(),
+                kind: "plan".into(),
+                depends_on: vec![],
+            }],
+            confidence: 0.5,
+        };
+        let diags = worker.do_verify(&plan);
+        assert!(
+            diags.iter().any(|d| d.contains("StepMissingDescription")),
+            "missing description should emit diagnostic; got: {:?}",
+            diags
+        );
+    }
+
+    /// do_verify on a plan with step missing id emits StepMissingId diagnostic.
+    #[test]
+    fn verify_step_missing_id_emits_diagnostic() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let worker = BackgroundWorker::new(state);
+        let plan = CompositionPlan {
+            intent: "define x that is 1".into(),
+            steps: vec![PlanStep {
+                id: "".into(),
+                description: "something".into(),
+                kind: "plan".into(),
+                depends_on: vec![],
+            }],
+            confidence: 0.5,
+        };
+        let diags = worker.do_verify(&plan);
+        assert!(
+            diags.iter().any(|d| d.contains("StepMissingId")),
+            "empty step id should emit diagnostic; got: {:?}",
+            diags
+        );
+    }
+
+    /// plan_flow with non-keyword words produces lower confidence than all-keyword goal.
+    #[test]
+    fn plan_flow_non_keyword_words_lower_confidence() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let worker = BackgroundWorker::new(state);
+        let output_all_keyword = PipelineOutput {
+            source_hash: 20,
+            grammar_version: 1,
+            output_json: r#"{"intent":"define result that is and or"}"#.into(),
+        };
+        let output_gibberish = PipelineOutput {
+            source_hash: 21,
+            grammar_version: 1,
+            output_json: r#"{"intent":"xyzzy frobble quux snorkel blorp"}"#.into(),
+        };
+        let plan_keyword = worker.do_plan_flow(&output_all_keyword).unwrap();
+        let plan_gibberish = worker.do_plan_flow(&output_gibberish).unwrap();
+        assert!(
+            plan_keyword.confidence >= plan_gibberish.confidence,
+            "all-keyword goal confidence ({:.3}) should be >= gibberish confidence ({:.3})",
+            plan_keyword.confidence,
+            plan_gibberish.confidence
+        );
+    }
+
+    /// verify exactly 1000 lines must NOT emit a PerformanceCaution (boundary is >1000).
+    #[test]
+    fn verify_exactly_1000_lines_no_performance_diagnostic() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let worker = BackgroundWorker::new(state);
+        let intent: String = (0..1000)
+            .map(|i| format!("line_{i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let plan = CompositionPlan {
+            intent,
+            steps: vec![],
+            confidence: 0.5,
+        };
+        let diags = worker.do_verify(&plan);
+        let has_perf = diags.iter().any(|d| d.contains("PerformanceCaution"));
+        assert!(
+            !has_perf,
+            "exactly 1000 lines should not trigger PerformanceCaution; got: {:?}",
+            diags
+        );
+    }
+
+    /// plan_flow extracts intent from the "intent" JSON field, not the "source" field.
+    #[test]
+    fn plan_flow_reads_intent_field_from_json() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let worker = BackgroundWorker::new(state);
+        let output = PipelineOutput {
+            source_hash: 30,
+            grammar_version: 1,
+            output_json: r#"{"intent":"define that","source":"ignored text"}"#.into(),
+        };
+        let plan = worker.do_plan_flow(&output).unwrap();
+        // "define" and "that" are both Nom keywords; confidence should be boosted
+        assert!(
+            plan.confidence > 0.4,
+            "intent field keywords should boost confidence; got {:.3}",
+            plan.confidence
+        );
+    }
+
+    /// BackgroundTier::verify sends the job on the channel and returns a receiver.
+    #[test]
+    fn background_tier_verify_sends_job() {
+        let (tier, receiver) = BackgroundTier::new();
+        let plan = CompositionPlan {
+            intent: "define x that is 1".into(),
+            steps: vec![],
+            confidence: 0.7,
+        };
+        let _reply = tier.verify(plan);
+        let job = receiver.try_recv().expect("expected a job on the channel");
+        assert!(matches!(job, BackgroundJob::Verify { .. }));
+    }
+
+    /// BackgroundTier::deep_think sends the job on the channel and returns a receiver.
+    #[test]
+    fn background_tier_deep_think_sends_job() {
+        let (tier, receiver) = BackgroundTier::new();
+        let interrupt = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let _rx = tier.deep_think("test intent".to_string(), interrupt);
+        let job = receiver.try_recv().expect("expected a job on the channel");
+        assert!(matches!(job, BackgroundJob::DeepThink { .. }));
+    }
+
+    /// compile_opts_full has cache_enabled = true and max_stages = 0.
+    #[test]
+    fn compile_opts_full_fields() {
+        let opts = CompileOpts::full();
+        assert!(opts.cache_enabled);
+        assert_eq!(opts.max_stages, 0);
+    }
+
+    /// compile_opts_fast has max_stages = 2.
+    #[test]
+    fn compile_opts_fast_max_stages() {
+        let opts = CompileOpts::fast();
+        assert_eq!(opts.max_stages, 2);
+        assert!(opts.cache_enabled);
+    }
 }

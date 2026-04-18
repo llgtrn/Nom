@@ -246,4 +246,104 @@ mod tests {
             assert!(window[0] < window[1], "linear chain must be in order");
         }
     }
+
+    // ── Wave AE new tests ────────────────────────────────────────────────────
+
+    #[test]
+    fn plan_zero_steps_topo_order_is_empty() {
+        let plan = CompositionPlan::new();
+        assert_eq!(plan.topo_order().len(), 0);
+    }
+
+    #[test]
+    fn plan_zero_steps_is_valid_dag() {
+        let plan = CompositionPlan::new();
+        assert!(plan.is_valid_dag());
+    }
+
+    #[test]
+    fn plan_one_step_topo_order_contains_that_step() {
+        let mut plan = CompositionPlan::new();
+        let id = plan.add_step(BackendKind::Audio, "src", "out");
+        let order = plan.topo_order();
+        assert_eq!(order, vec![id]);
+    }
+
+    #[test]
+    fn plan_ten_steps_linear_all_appear_in_order() {
+        let mut plan = CompositionPlan::new();
+        let first = plan.add_step(BackendKind::Video, "raw", "s0");
+        let mut prev = first;
+        for i in 1..10usize {
+            prev = plan.add_step_after(
+                BackendKind::Transform,
+                format!("s{}", i - 1),
+                format!("s{i}"),
+                vec![prev],
+            );
+        }
+        assert!(plan.is_valid_dag());
+        let order = plan.topo_order();
+        assert_eq!(order.len(), 10);
+        // Linear chain means order must be 0,1,2,...,9
+        for (expected, &actual) in order.iter().enumerate() {
+            assert_eq!(actual, expected, "step at position {expected} must be {expected}");
+        }
+    }
+
+    #[test]
+    fn plan_step_backend_field_preserved() {
+        let mut plan = CompositionPlan::new();
+        plan.add_step(BackendKind::Render, "x", "y");
+        assert_eq!(plan.steps[0].backend, BackendKind::Render);
+    }
+
+    #[test]
+    fn plan_step_input_output_keys_preserved() {
+        let mut plan = CompositionPlan::new();
+        plan.add_step(BackendKind::Export, "my_input", "my_output");
+        assert_eq!(plan.steps[0].input_key, "my_input");
+        assert_eq!(plan.steps[0].output_key, "my_output");
+    }
+
+    #[test]
+    fn plan_depends_on_empty_for_root_steps() {
+        let mut plan = CompositionPlan::new();
+        plan.add_step(BackendKind::Video, "a", "b");
+        plan.add_step(BackendKind::Audio, "c", "d");
+        assert!(plan.steps[0].depends_on.is_empty());
+        assert!(plan.steps[1].depends_on.is_empty());
+    }
+
+    #[test]
+    fn plan_two_independent_steps_both_in_topo() {
+        let mut plan = CompositionPlan::new();
+        let a = plan.add_step(BackendKind::Video, "v_in", "v_out");
+        let b = plan.add_step(BackendKind::Audio, "a_in", "a_out");
+        let order = plan.topo_order();
+        assert_eq!(order.len(), 2);
+        assert!(order.contains(&a));
+        assert!(order.contains(&b));
+    }
+
+    #[test]
+    fn plan_step_id_equals_insertion_index() {
+        let mut plan = CompositionPlan::new();
+        for i in 0..5usize {
+            let id = plan.add_step(BackendKind::Transform, "x", "y");
+            assert_eq!(id, i);
+            assert_eq!(plan.steps[i].step_id, i);
+        }
+    }
+
+    #[test]
+    fn plan_clone_preserves_all_steps() {
+        let mut plan = CompositionPlan::new();
+        plan.add_step(BackendKind::Video, "a", "b");
+        plan.add_step(BackendKind::Audio, "c", "d");
+        let cloned = plan.clone();
+        assert_eq!(cloned.steps.len(), plan.steps.len());
+        assert_eq!(cloned.steps[0].input_key, "a");
+        assert_eq!(cloned.steps[1].input_key, "c");
+    }
 }

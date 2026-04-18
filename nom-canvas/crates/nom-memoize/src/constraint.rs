@@ -446,4 +446,57 @@ mod tests {
         assert!(!ok3);
         assert!(!(ok1 && ok2 && ok3));
     }
+
+    // --- Constraint with 0 inputs is always satisfied ---
+
+    #[test]
+    fn constraint_zero_inputs_always_satisfied() {
+        // A constraint with no recorded snapshots and matching input_hash validates
+        // regardless of what current_snapshots are passed (empty).
+        let c = Constraint::new(0);
+        assert!(
+            c.validate(0, &[]),
+            "zero-input constraint must be satisfied when input_hash matches"
+        );
+    }
+
+    #[test]
+    fn constraint_zero_inputs_with_any_input_hash_satisfied_when_matching() {
+        // Multiple input_hash values: each zero-input constraint satisfies when hash matches.
+        for hash in [0u64, 1, u64::MAX, 0xdeadbeef, 42] {
+            let c = Constraint::new(hash);
+            assert!(
+                c.validate(hash, &[]),
+                "zero-input constraint with hash={hash} must validate when hash matches"
+            );
+        }
+    }
+
+    #[test]
+    fn constraint_zero_inputs_rejects_wrong_hash() {
+        // Zero-input constraint still fails when the input_hash doesn't match.
+        let c = Constraint::new(100);
+        assert!(
+            !c.validate(101, &[]),
+            "zero-input constraint must reject mismatched hash"
+        );
+    }
+
+    #[test]
+    fn constraint_zero_inputs_accepts_extra_current_snapshots() {
+        // Zero recorded snapshots + correct hash + extra current snapshots = valid.
+        let c = Constraint::new(7);
+        let extra = snap(1, vec![(1, Hash128::of_str("x"))]);
+        assert!(
+            c.validate(7, &[extra]),
+            "zero-input constraint with extra current snapshots must still validate"
+        );
+    }
+
+    #[test]
+    fn constraint_zero_inputs_snapshot_count_is_zero() {
+        let c = Constraint::new(42);
+        assert_eq!(c.snapshot_count(), 0);
+        assert_eq!(c.input_hash(), 42);
+    }
 }

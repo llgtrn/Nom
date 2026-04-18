@@ -286,4 +286,121 @@ mod tests {
         assert_eq!(panel.entity.id(), Some("ent-2"));
         assert_eq!(panel.entity.kind(), Some("B"));
     }
+
+    // ── NomtuRef field renders as link ────────────────────────────────────────
+
+    /// A row whose value looks like an entity reference (contains "://") is a link-style row.
+    #[test]
+    fn properties_nomtu_ref_row_value_contains_entity_id() {
+        let mut panel = PropertiesPanel::new();
+        let entity = NomtuRef::new("ent-link-42", "link_word", "Concept");
+        panel.load_entity_ref(entity.clone());
+        // Simulate a "nomtu_ref" field pointing to the entity
+        let link_value = format!("nomtu://{}/{}", entity.kind, entity.id);
+        panel.set_row("ref_field", &link_value, false);
+        assert_eq!(panel.rows[0].key, "ref_field");
+        assert!(panel.rows[0].value.contains("ent-link-42"));
+        assert!(panel.rows[0].value.contains("Concept"));
+    }
+
+    #[test]
+    fn properties_nomtu_ref_row_is_non_editable() {
+        let mut panel = PropertiesPanel::new();
+        panel.load_entity_ref(NomtuRef::new("e1", "w", "Function"));
+        // NomtuRef fields are rendered as read-only links
+        panel.set_row("entity_ref", "nomtu://Function/e1", false);
+        assert!(!panel.rows[0].editable);
+    }
+
+    #[test]
+    fn properties_nomtu_ref_panel_entity_id_accessible() {
+        let mut panel = PropertiesPanel::new();
+        panel.load_entity_ref(NomtuRef::new("e-ref-99", "myword", "Media"));
+        assert_eq!(panel.entity.id(), Some("e-ref-99"));
+        assert_eq!(panel.entity.kind(), Some("Media"));
+    }
+
+    // ── multi-field update resets dirty ──────────────────────────────────────
+
+    /// After loading a new entity, all row data is cleared (dirty reset).
+    #[test]
+    fn properties_multi_field_update_then_load_resets_all() {
+        let mut panel = PropertiesPanel::new();
+        panel.load_entity("ent-1", "Kind");
+        panel.set_row("field_a", "val_a", true);
+        panel.set_row("field_b", "val_b", false);
+        panel.set_row("field_c", "val_c", true);
+        assert_eq!(panel.row_count(), 3);
+        // Simulate "reset dirty" by loading a new entity
+        panel.load_entity("ent-2", "Kind");
+        assert_eq!(panel.row_count(), 0, "all rows must be cleared on new entity load");
+    }
+
+    #[test]
+    fn properties_multi_field_update_overwrites_existing_values() {
+        let mut panel = PropertiesPanel::new();
+        panel.set_row("alpha", "v1", false);
+        panel.set_row("beta", "v2", false);
+        // Update both
+        panel.set_row("alpha", "v1_updated", true);
+        panel.set_row("beta", "v2_updated", true);
+        assert_eq!(panel.row_count(), 2);
+        assert_eq!(panel.rows[0].value, "v1_updated");
+        assert_eq!(panel.rows[1].value, "v2_updated");
+        assert!(panel.rows[0].editable);
+        assert!(panel.rows[1].editable);
+    }
+
+    #[test]
+    fn properties_multi_field_update_only_target_key_changes() {
+        let mut panel = PropertiesPanel::new();
+        panel.set_row("x", "v1", false);
+        panel.set_row("y", "v2", false);
+        panel.set_row("z", "v3", false);
+        // Update only "y"
+        panel.set_row("y", "v2_new", true);
+        assert_eq!(panel.rows[0].value, "v1"); // unchanged
+        assert_eq!(panel.rows[1].value, "v2_new"); // changed
+        assert_eq!(panel.rows[2].value, "v3"); // unchanged
+    }
+
+    // ── validation error field highlighted ────────────────────────────────────
+
+    /// An editable row in error state is represented as editable (focus ring rendered).
+    #[test]
+    fn properties_validation_error_editable_row_gets_focus_ring() {
+        let mut panel = PropertiesPanel::new();
+        panel.load_entity("ent-1", "Concept");
+        // "error" row is editable = true → paint_scene adds focus_ring_quad
+        panel.set_row("invalid_field", "bad_value", true);
+        let mut scene = Scene::new();
+        panel.paint_scene(280.0, 400.0, &mut scene);
+        // header(2) + 1 row editable(bg+border+focus=3) = 5
+        assert_eq!(scene.quads.len(), 5);
+    }
+
+    #[test]
+    fn properties_validation_error_non_editable_row_no_focus_ring() {
+        let mut panel = PropertiesPanel::new();
+        panel.load_entity("ent-1", "Concept");
+        // read-only row → no focus ring
+        panel.set_row("locked_field", "value", false);
+        let mut scene = Scene::new();
+        panel.paint_scene(280.0, 400.0, &mut scene);
+        // header(2) + 1 row non-editable(bg+border=2) = 4
+        assert_eq!(scene.quads.len(), 4);
+    }
+
+    #[test]
+    fn properties_mixed_valid_invalid_rows_quad_count() {
+        let mut panel = PropertiesPanel::new();
+        panel.load_entity("ent-1", "Function");
+        panel.set_row("name", "valid_name", false);         // non-editable: 2 quads
+        panel.set_row("return_type", "bad_type", true);     // editable: 3 quads
+        panel.set_row("visibility", "invalid", true);       // editable: 3 quads
+        let mut scene = Scene::new();
+        panel.paint_scene(280.0, 400.0, &mut scene);
+        // header(2) + 2 + 3 + 3 = 10
+        assert_eq!(scene.quads.len(), 10);
+    }
 }

@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 pub type BlockId = String;
 
 /// Every block MUST have a DB entity reference. No Option<> wrapper.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct NomtuRef {
     pub id: String,
     pub word: String,

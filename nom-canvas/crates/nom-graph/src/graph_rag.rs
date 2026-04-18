@@ -868,4 +868,151 @@ mod tests {
             "empty graph must return no results (no nodes to score)"
         );
     }
+
+    // -----------------------------------------------------------------------
+    // RRF fusion of 3 ranked lists: top result has score 1/(RRF_K+0)
+    // -----------------------------------------------------------------------
+    #[test]
+    fn rrf_fusion_three_list_top_result_score() {
+        // A 3-node DAG queried with node "alpha"'s vec.
+        // "alpha" has cosine=1.0 → rank 0 → score = 1.0/(60+0) = 1/60.
+        let dag = three_node_dag();
+        let retriever = GraphRagRetriever::new(&dag);
+        let query = node_vec("alpha");
+        let results = retriever.retrieve(&query, 3, 2);
+        assert_eq!(results.len(), 3);
+        // Top result must be alpha with score ~1/60.
+        assert_eq!(results[0].node_id, "alpha", "alpha must rank first");
+        let expected = 1.0f32 / RRF_K;
+        assert!(
+            (results[0].score - expected).abs() < 1e-5,
+            "top RRF score must be 1/(RRF_K+0)={}, got {}",
+            expected,
+            results[0].score
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // RRF fusion: empty list fusion returns empty
+    // -----------------------------------------------------------------------
+    #[test]
+    fn rrf_fusion_empty_list_returns_empty() {
+        let dag = Dag::new();
+        let retriever = GraphRagRetriever::new(&dag);
+        let query = node_vec("anything");
+        let results = retriever.retrieve(&query, 10, 5);
+        assert!(results.is_empty(), "RRF on empty node set must return empty results");
+    }
+
+    // -----------------------------------------------------------------------
+    // RRF score normalization: all scores in (0, 1/60]
+    // -----------------------------------------------------------------------
+    #[test]
+    fn rrf_score_normalization_all_in_range() {
+        // With full-confidence edges, maximum RRF score is 1/(RRF_K+0) = 1/60 ≈ 0.0167.
+        // All scores must be positive and at most 1/60.
+        let mut dag = Dag::new();
+        for name in &["n1", "n2", "n3", "n4", "n5"] {
+            dag.add_node(ExecNode::new(*name, "verb"));
+        }
+        dag.add_edge("n1", "out", "n2", "in");
+        dag.add_edge("n2", "out", "n3", "in");
+        dag.add_edge("n3", "out", "n4", "in");
+        dag.add_edge("n4", "out", "n5", "in");
+        let retriever = GraphRagRetriever::new(&dag);
+        let query = node_vec("n1");
+        let results = retriever.retrieve(&query, 5, 4);
+        let max_possible = 1.0f32 / RRF_K;
+        for r in &results {
+            assert!(r.score > 0.0, "score must be positive, got {}", r.score);
+            assert!(
+                r.score <= max_possible + 1e-5,
+                "score {} must not exceed max_possible={}", r.score, max_possible
+            );
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // cosine_sim: zero vector returns 0.0
+    // -----------------------------------------------------------------------
+    #[test]
+    fn cosine_sim_zero_vector_returns_zero() {
+        let zero = [0.0f32; 16];
+        let v = node_vec("test");
+        assert_eq!(cosine_sim(&zero, &v), 0.0);
+        assert_eq!(cosine_sim(&v, &zero), 0.0);
+        assert_eq!(cosine_sim(&zero, &zero), 0.0);
+    }
+
+    // -----------------------------------------------------------------------
+    // node_vec: deterministic (same id → same vec)
+    // -----------------------------------------------------------------------
+    #[test]
+    fn node_vec_is_deterministic() {
+        let v1 = node_vec("deterministic_test");
+        let v2 = node_vec("deterministic_test");
+        assert_eq!(v1, v2, "node_vec must be deterministic for same input");
+    }
+
+    // -----------------------------------------------------------------------
+    // node_vec: different ids produce different vecs
+    // -----------------------------------------------------------------------
+    #[test]
+    fn node_vec_different_ids_differ() {
+        let v1 = node_vec("apple");
+        let v2 = node_vec("orange");
+        assert_ne!(v1, v2, "different node ids must produce different vectors");
+    }
+
+    // -----------------------------------------------------------------------
+    // node_vec: L2 norm is 1.0 (normalised)
+    // -----------------------------------------------------------------------
+    #[test]
+    fn node_vec_is_unit_norm() {
+        let v = node_vec("some_node");
+        let norm: f32 = v.iter().map(|x| x * x).sum::<f32>().sqrt();
+        assert!(
+            (norm - 1.0).abs() < 1e-5,
+            "node_vec must be L2-normalised (norm={})",
+            norm
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // RetrievedNode: hops field reflects BFS distance
+    // -----------------------------------------------------------------------
+    #[test]
+    fn retrieved_node_hops_field_for_direct_neighbour() {
+        // A single-node DAG: root with no edges.
+        // root's own BFS seed gives hops=0.
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("solo_root", "verb"));
+
+        let retriever = GraphRagRetriever::new(&dag);
+        let query = node_vec("solo_root");
+        let results = retriever.retrieve(&query, 1, 0);
+
+        assert_eq!(results.len(), 1);
+        let root_r = &results[0];
+        assert_eq!(root_r.node_id, "solo_root");
+        assert_eq!(root_r.hops, 0, "own-seed node must have hops=0");
+    }
+
+    // -----------------------------------------------------------------------
+    // CachedRetriever: different params produce different cache entries
+    // -----------------------------------------------------------------------
+    #[test]
+    fn cached_retriever_different_top_k_separate_cache_entries() {
+        let dag = three_node_dag();
+        let mut cached = CachedRetriever::new(&dag);
+        let query = node_vec("alpha");
+        let _ = cached.retrieve_cached(&query, 1, 2);
+        let _ = cached.retrieve_cached(&query, 2, 2);
+        // Different top_k → different cache keys → 2 distinct cache entries.
+        assert_eq!(
+            cached.cache.len(),
+            2,
+            "different top_k values must produce separate cache entries"
+        );
+    }
 }

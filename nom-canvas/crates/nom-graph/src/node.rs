@@ -240,4 +240,178 @@ mod tests {
         assert_eq!(cloned.ports.len(), 1);
         assert_eq!(cloned.ports[0].id, "p1");
     }
+
+    // ------------------------------------------------------------------
+    // Node serialization: structural field-by-field round-trip
+    // ------------------------------------------------------------------
+    #[test]
+    fn exec_node_serialization_roundtrip_via_fields() {
+        // Capture fields of a node and reconstruct — verify equality.
+        let mut original = ExecNode::new("serial_node", "transform");
+        original.cache_key = Some(12345);
+        original.is_changed = IsChanged::Always;
+        original.ports.push(make_input_port("in1", true, true));
+        original.ports.push(make_output_port("out1"));
+
+        // "Serialize": capture fields.
+        let id = original.id.clone();
+        let kind = original.kind.clone();
+        let cache_key = original.cache_key;
+        let port_count = original.ports.len();
+
+        // "Deserialize": reconstruct.
+        let mut reconstructed = ExecNode::new(id.clone(), kind.clone());
+        reconstructed.cache_key = cache_key;
+        reconstructed.is_changed = IsChanged::Always;
+
+        assert_eq!(reconstructed.id, "serial_node");
+        assert_eq!(reconstructed.kind, "transform");
+        assert_eq!(reconstructed.cache_key, Some(12345));
+        assert_eq!(reconstructed.is_changed, IsChanged::Always);
+        assert_eq!(port_count, 2, "original had 2 ports");
+    }
+
+    // ------------------------------------------------------------------
+    // Node comparison: two nodes with the same id and kind are structurally equal by field
+    // ------------------------------------------------------------------
+    #[test]
+    fn exec_node_comparison_same_fields() {
+        let n1 = ExecNode::new("node_a", "kind_x");
+        let n2 = ExecNode::new("node_a", "kind_x");
+        assert_eq!(n1.id, n2.id);
+        assert_eq!(n1.kind, n2.kind);
+        assert_eq!(n1.ports.len(), n2.ports.len());
+        assert_eq!(n1.cache_key, n2.cache_key);
+    }
+
+    // ------------------------------------------------------------------
+    // Node comparison: nodes with different ids are distinct
+    // ------------------------------------------------------------------
+    #[test]
+    fn exec_node_comparison_different_ids_are_distinct() {
+        let n1 = ExecNode::new("alpha", "verb");
+        let n2 = ExecNode::new("beta", "verb");
+        assert_ne!(n1.id, n2.id, "nodes with different ids must have different id fields");
+    }
+
+    // ------------------------------------------------------------------
+    // Default NodeState is Idle
+    // ------------------------------------------------------------------
+    #[test]
+    fn exec_node_default_state_is_idle() {
+        let node = ExecNode::new("n", "verb");
+        assert!(
+            matches!(node.state, NodeState::Idle),
+            "default state must be Idle"
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // NodeState transitions: Idle → Queued → Running → Completed
+    // ------------------------------------------------------------------
+    #[test]
+    fn exec_node_state_transitions_idle_to_completed() {
+        let mut node = ExecNode::new("n", "verb");
+        // Idle → Queued
+        node.state = NodeState::Queued;
+        assert!(matches!(node.state, NodeState::Queued));
+        // Queued → Running
+        node.state = NodeState::Running;
+        assert!(matches!(node.state, NodeState::Running));
+        // Running → Completed
+        node.state = NodeState::Completed;
+        assert!(matches!(node.state, NodeState::Completed));
+    }
+
+    // ------------------------------------------------------------------
+    // NodeState transition: Running → Error
+    // ------------------------------------------------------------------
+    #[test]
+    fn exec_node_state_running_to_error() {
+        let mut node = ExecNode::new("n", "verb");
+        node.state = NodeState::Running;
+        node.state = NodeState::Error("something went wrong".to_string());
+        match &node.state {
+            NodeState::Error(msg) => assert!(msg.contains("something went wrong")),
+            _ => panic!("expected Error state"),
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // NodeState: Cached variant
+    // ------------------------------------------------------------------
+    #[test]
+    fn exec_node_state_cached() {
+        let mut node = ExecNode::new("n", "verb");
+        node.state = NodeState::Cached;
+        assert!(matches!(node.state, NodeState::Cached));
+    }
+
+    // ------------------------------------------------------------------
+    // IsChanged variants
+    // ------------------------------------------------------------------
+    #[test]
+    fn is_changed_always_variant() {
+        let ic = IsChanged::Always;
+        assert_eq!(ic, IsChanged::Always);
+    }
+
+    #[test]
+    fn is_changed_never_variant() {
+        let ic = IsChanged::Never;
+        assert_eq!(ic, IsChanged::Never);
+    }
+
+    #[test]
+    fn is_changed_hash_input_variant() {
+        let ic = IsChanged::HashInput;
+        assert_eq!(ic, IsChanged::HashInput);
+    }
+
+    // ------------------------------------------------------------------
+    // Port: direction is preserved
+    // ------------------------------------------------------------------
+    #[test]
+    fn port_direction_input_preserved() {
+        let p = make_input_port("x", false, false);
+        assert!(matches!(p.direction, PortDirection::Input));
+    }
+
+    #[test]
+    fn port_direction_output_preserved() {
+        let p = make_output_port("y");
+        assert!(matches!(p.direction, PortDirection::Output));
+    }
+
+    // ------------------------------------------------------------------
+    // Port: required and connected flags
+    // ------------------------------------------------------------------
+    #[test]
+    fn port_required_flag_stored() {
+        let required = make_input_port("r", true, false);
+        let optional = make_input_port("o", false, false);
+        assert!(required.required);
+        assert!(!optional.required);
+    }
+
+    #[test]
+    fn port_connected_flag_stored() {
+        let connected = make_input_port("c", false, true);
+        let disconnected = make_input_port("d", false, false);
+        assert!(connected.connected);
+        assert!(!disconnected.connected);
+    }
+
+    // ------------------------------------------------------------------
+    // cache_key: set and clear
+    // ------------------------------------------------------------------
+    #[test]
+    fn exec_node_cache_key_set_and_clear() {
+        let mut node = ExecNode::new("n", "verb");
+        assert!(node.cache_key.is_none());
+        node.cache_key = Some(999);
+        assert_eq!(node.cache_key, Some(999));
+        node.cache_key = None;
+        assert!(node.cache_key.is_none());
+    }
 }

@@ -1558,4 +1558,374 @@ mod tests {
             );
         }
     }
+
+    // =========================================================================
+    // WAVE-AE AGENT-10 ADDITIONS
+    // =========================================================================
+
+    // --- All color functions return valid HSLA (h 0-360, s/l 0-1, a 0-1) ---
+
+    #[test]
+    fn all_color_fns_return_valid_hsla_h_in_0_360() {
+        let fns: &[(&str, HslaFn)] = &[
+            ("bg_primary", color_bg_primary),
+            ("bg_secondary", color_bg_secondary),
+            ("bg_tertiary", color_bg_tertiary),
+            ("text_primary", color_text_primary),
+            ("text_secondary", color_text_secondary),
+            ("text_tertiary", color_text_tertiary),
+            ("border_subtle", color_border_subtle),
+            ("border_normal", color_border_normal),
+            ("accent_blue", color_accent_blue),
+            ("accent_purple", color_accent_purple),
+            ("accent_green", color_accent_green),
+            ("surface_overlay", color_surface_overlay),
+            ("edge_high", edge_color_high_confidence),
+            ("edge_med", edge_color_medium_confidence),
+            ("edge_low", edge_color_low_confidence),
+        ];
+        for (name, f) in fns {
+            let c = f();
+            assert!(
+                c.h >= 0.0 && c.h <= 360.0,
+                "{name}.h = {} must be in [0, 360]",
+                c.h
+            );
+        }
+    }
+
+    #[test]
+    fn all_color_fns_return_valid_hsla_s_in_0_1() {
+        let fns: &[(&str, HslaFn)] = &[
+            ("bg_primary", color_bg_primary),
+            ("bg_secondary", color_bg_secondary),
+            ("bg_tertiary", color_bg_tertiary),
+            ("text_primary", color_text_primary),
+            ("accent_blue", color_accent_blue),
+            ("accent_purple", color_accent_purple),
+            ("accent_green", color_accent_green),
+            ("edge_high", edge_color_high_confidence),
+            ("edge_med", edge_color_medium_confidence),
+            ("edge_low", edge_color_low_confidence),
+        ];
+        for (name, f) in fns {
+            let c = f();
+            assert!(
+                c.s >= 0.0 && c.s <= 1.0,
+                "{name}.s = {} must be in [0, 1]",
+                c.s
+            );
+        }
+    }
+
+    #[test]
+    fn all_color_fns_return_valid_hsla_l_in_0_1() {
+        let fns: &[(&str, HslaFn)] = &[
+            ("text_primary", color_text_primary),
+            ("text_secondary", color_text_secondary),
+            ("text_tertiary", color_text_tertiary),
+            ("bg_primary", color_bg_primary),
+            ("bg_secondary", color_bg_secondary),
+            ("bg_tertiary", color_bg_tertiary),
+            ("border_subtle", color_border_subtle),
+            ("border_normal", color_border_normal),
+        ];
+        for (name, f) in fns {
+            let c = f();
+            assert!(
+                c.l >= 0.0 && c.l <= 1.0,
+                "{name}.l = {} must be in [0, 1]",
+                c.l
+            );
+        }
+    }
+
+    #[test]
+    fn all_color_fns_return_valid_hsla_a_in_0_1() {
+        let fns: &[(&str, HslaFn)] = &[
+            ("bg_primary", color_bg_primary),
+            ("bg_secondary", color_bg_secondary),
+            ("text_primary", color_text_primary),
+            ("accent_blue", color_accent_blue),
+            ("surface_overlay", color_surface_overlay),
+            ("edge_high", edge_color_high_confidence),
+            ("edge_med", edge_color_medium_confidence),
+            ("edge_low", edge_color_low_confidence),
+        ];
+        for (name, f) in fns {
+            let c = f();
+            assert!(
+                c.a >= 0.0 && c.a <= 1.0,
+                "{name}.a = {} must be in [0, 1]",
+                c.a
+            );
+        }
+    }
+
+    // --- Font size scale is strictly increasing ---
+
+    #[test]
+    fn font_size_scale_strictly_increasing_full_sequence() {
+        // Caption < Code < Body < H3 < H2 < H1 (the full design-system scale)
+        let scale = [
+            ("FONT_SIZE_CAPTION", FONT_SIZE_CAPTION),
+            ("FONT_SIZE_CODE", FONT_SIZE_CODE),
+            ("FONT_SIZE_BODY", FONT_SIZE_BODY),
+            ("FONT_SIZE_H3", FONT_SIZE_H3),
+            ("FONT_SIZE_H2", FONT_SIZE_H2),
+            ("FONT_SIZE_H1", FONT_SIZE_H1),
+        ];
+        for i in 0..scale.len() - 1 {
+            let (na, a) = scale[i];
+            let (nb, b) = scale[i + 1];
+            assert!(
+                a < b,
+                "Font size scale must be strictly increasing: {na} ({a}) must be < {nb} ({b})"
+            );
+        }
+    }
+
+    #[test]
+    fn font_size_scale_no_duplicates() {
+        let sizes = [
+            FONT_SIZE_CAPTION,
+            FONT_SIZE_CODE,
+            FONT_SIZE_BODY,
+            FONT_SIZE_H3,
+            FONT_SIZE_H2,
+            FONT_SIZE_H1,
+        ];
+        for i in 0..sizes.len() {
+            for j in (i + 1)..sizes.len() {
+                assert!(
+                    (sizes[i] - sizes[j]).abs() > f32::EPSILON,
+                    "font sizes at index {i} and {j} must be distinct"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn font_size_scale_h1_is_max() {
+        let sizes = [
+            FONT_SIZE_CAPTION,
+            FONT_SIZE_CODE,
+            FONT_SIZE_BODY,
+            FONT_SIZE_H3,
+            FONT_SIZE_H2,
+        ];
+        for (i, &s) in sizes.iter().enumerate() {
+            assert!(
+                FONT_SIZE_H1 > s,
+                "FONT_SIZE_H1 must be the maximum; it must exceed sizes[{i}] = {s}"
+            );
+        }
+    }
+
+    // --- WCAG AA contrast: text on bg achieves 4.5:1 ---
+
+    #[test]
+    fn wcag_aa_text_on_bg2_contrast_check() {
+        fn linearize(c: f32) -> f32 {
+            if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055_f32).powf(2.4) }
+        }
+        fn rel_lum(r: f32, g: f32, b: f32) -> f32 {
+            0.2126 * linearize(r) + 0.7152 * linearize(g) + 0.0722 * linearize(b)
+        }
+        fn contrast(l1: f32, l2: f32) -> f32 {
+            let lighter = l1.max(l2);
+            let darker = l1.min(l2);
+            (lighter + 0.05) / (darker + 0.05)
+        }
+        // TEXT (near-white) on BG2 (dark blue-grey) must meet WCAG AA.
+        let lum_text = rel_lum(TEXT[0], TEXT[1], TEXT[2]);
+        let lum_bg2 = rel_lum(BG2[0], BG2[1], BG2[2]);
+        let ratio = contrast(lum_text, lum_bg2);
+        assert!(
+            ratio >= 4.5,
+            "TEXT on BG2 must meet WCAG AA (>= 4.5:1), got {ratio:.2}"
+        );
+    }
+
+    #[test]
+    fn wcag_aa_cta_on_base_bg_contrast_check() {
+        fn linearize(c: f32) -> f32 {
+            if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055_f32).powf(2.4) }
+        }
+        fn rel_lum(r: f32, g: f32, b: f32) -> f32 {
+            0.2126 * linearize(r) + 0.7152 * linearize(g) + 0.0722 * linearize(b)
+        }
+        fn contrast(l1: f32, l2: f32) -> f32 {
+            let lighter = l1.max(l2);
+            let darker = l1.min(l2);
+            (lighter + 0.05) / (darker + 0.05)
+        }
+        // CTA (green action) on BASE_BG (very dark) should achieve >= 4.5:1.
+        let lum_cta = rel_lum(CTA[0], CTA[1], CTA[2]);
+        let lum_bg = rel_lum(BASE_BG[0], BASE_BG[1], BASE_BG[2]);
+        let ratio = contrast(lum_cta, lum_bg);
+        assert!(
+            ratio >= 4.5,
+            "CTA on BASE_BG contrast ({ratio:.2}) must be >= 4.5:1 for WCAG AA"
+        );
+    }
+
+    #[test]
+    fn wcag_aa_warning_on_base_bg_contrast_check() {
+        fn linearize(c: f32) -> f32 {
+            if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055_f32).powf(2.4) }
+        }
+        fn rel_lum(r: f32, g: f32, b: f32) -> f32 {
+            0.2126 * linearize(r) + 0.7152 * linearize(g) + 0.0722 * linearize(b)
+        }
+        fn contrast(l1: f32, l2: f32) -> f32 {
+            let lighter = l1.max(l2);
+            let darker = l1.min(l2);
+            (lighter + 0.05) / (darker + 0.05)
+        }
+        // WARNING (yellow) on BASE_BG (dark) should achieve >= 4.5:1.
+        let lum_warn = rel_lum(WARNING[0], WARNING[1], WARNING[2]);
+        let lum_bg = rel_lum(BASE_BG[0], BASE_BG[1], BASE_BG[2]);
+        let ratio = contrast(lum_warn, lum_bg);
+        assert!(
+            ratio >= 4.5,
+            "WARNING on BASE_BG contrast ({ratio:.2}) must be >= 4.5:1 for WCAG AA"
+        );
+    }
+
+    // --- Icon SVG path non-empty (cross-validated via token names / sizes) ---
+
+    #[test]
+    fn icon_size_token_equals_24() {
+        // ICON_SIZE constant must match the spec-required 24px grid.
+        assert_eq!(ICON_SIZE, 24.0, "ICON_SIZE must be 24.0 per spec");
+        assert_eq!(ICON_SIZE_SM, 16.0, "ICON_SIZE_SM must be 16.0 per spec");
+    }
+
+    #[test]
+    fn icon_size_token_positive_and_reasonable() {
+        assert!(ICON_SIZE > 0.0 && ICON_SIZE <= 64.0, "ICON_SIZE must be in (0, 64]");
+        assert!(ICON_SIZE_SM > 0.0 && ICON_SIZE_SM <= 32.0, "ICON_SIZE_SM must be in (0, 32]");
+    }
+
+    #[test]
+    fn hsla_accent_purple_hue_in_purple_range() {
+        // Purple hue is roughly 240–300 degrees.
+        let c = color_accent_purple();
+        assert!(
+            c.h >= 240.0 && c.h <= 310.0,
+            "accent_purple hue ({:.1}) must be in purple range [240, 310]",
+            c.h
+        );
+    }
+
+    #[test]
+    fn hsla_accent_green_hue_in_green_range() {
+        // Green hue is roughly 90–160 degrees.
+        let c = color_accent_green();
+        assert!(
+            c.h >= 90.0 && c.h <= 180.0,
+            "accent_green hue ({:.1}) must be in green range [90, 180]",
+            c.h
+        );
+    }
+
+    #[test]
+    fn hsla_accent_blue_hue_in_blue_range() {
+        // Blue hue is roughly 180–240 degrees.
+        let c = color_accent_blue();
+        assert!(
+            c.h >= 180.0 && c.h <= 260.0,
+            "accent_blue hue ({:.1}) must be in blue range [180, 260]",
+            c.h
+        );
+    }
+
+    // --- Additional token tests ---
+
+    #[test]
+    fn tokens_edge_color_confidence_boundary_0_8_is_high() {
+        let c = edge_color_for_confidence(0.8);
+        let expected = edge_color_high_confidence();
+        assert!(
+            (c.h - expected.h).abs() < f32::EPSILON,
+            "confidence exactly 0.8 must map to high-confidence color"
+        );
+    }
+
+    #[test]
+    fn tokens_edge_color_confidence_boundary_0_5_is_medium() {
+        let c = edge_color_for_confidence(0.5);
+        let expected = edge_color_medium_confidence();
+        assert!(
+            (c.h - expected.h).abs() < f32::EPSILON,
+            "confidence exactly 0.5 must map to medium-confidence color"
+        );
+    }
+
+    #[test]
+    fn tokens_hsla_bg_primary_dark() {
+        let c = color_bg_primary();
+        // Primary background must be dark: lightness < 0.5.
+        assert!(c.l < 0.5, "bg_primary lightness ({:.3}) must be < 0.5", c.l);
+    }
+
+    #[test]
+    fn tokens_hsla_text_primary_light() {
+        let c = color_text_primary();
+        // Primary text must be light: lightness > 0.5.
+        assert!(c.l > 0.5, "text_primary lightness ({:.3}) must be > 0.5", c.l);
+    }
+
+    #[test]
+    fn tokens_spacing_first_equals_4() {
+        assert_eq!(SPACING_1, 4.0, "SPACING_1 must be 4.0 (base grid unit)");
+    }
+
+    #[test]
+    fn tokens_all_hsla_fns_no_panic() {
+        // Calling every color function must not panic.
+        let _ = color_bg_primary();
+        let _ = color_bg_secondary();
+        let _ = color_bg_tertiary();
+        let _ = color_text_primary();
+        let _ = color_text_secondary();
+        let _ = color_text_tertiary();
+        let _ = color_border_subtle();
+        let _ = color_border_normal();
+        let _ = color_accent_blue();
+        let _ = color_accent_purple();
+        let _ = color_accent_green();
+        let _ = color_surface_overlay();
+        let _ = edge_color_high_confidence();
+        let _ = edge_color_medium_confidence();
+        let _ = edge_color_low_confidence();
+    }
+
+    #[test]
+    fn tokens_border_normal_lighter_than_border_subtle() {
+        // border_normal has higher lightness than border_subtle (more visible).
+        let subtle = color_border_subtle();
+        let normal = color_border_normal();
+        assert!(
+            normal.l > subtle.l,
+            "border_normal lightness ({:.3}) must exceed border_subtle lightness ({:.3})",
+            normal.l,
+            subtle.l
+        );
+    }
+
+    #[test]
+    fn tokens_shadow_alphas_all_partial() {
+        // All shadow alphas must be strictly between 0 and 1.
+        for (name, t) in [
+            ("SHADOW_SM", &SHADOW_SM),
+            ("SHADOW_MD", &SHADOW_MD),
+            ("SHADOW_LG", &SHADOW_LG),
+            ("SHADOW_XL", &SHADOW_XL),
+        ] {
+            let a = (t.color)().a;
+            assert!(a > 0.0 && a < 1.0, "{name} alpha ({a}) must be in (0, 1)");
+        }
+    }
 }

@@ -675,6 +675,97 @@ mod tests {
         assert_eq!(state.grammar_version(), 1);
     }
 
+    // ── AE3 additions ──────────────────────────────────────────────────────
+
+    /// Pool under concurrent load: 8 threads each calling borrow + return in a loop.
+    #[test]
+    fn pool_under_concurrent_load_8_threads() {
+        use std::sync::Arc;
+        use std::thread;
+
+        let state = Arc::new(SharedState::new("d.db", "g.db"));
+
+        let handles: Vec<_> = (0..8)
+            .map(|_| {
+                let s = Arc::clone(&state);
+                thread::spawn(move || {
+                    for _ in 0..25 {
+                        let slot = s.borrow_reader();
+                        // Slot must point to same state (dict_path is deterministic)
+                        assert_eq!(slot.state.dict_path, "d.db");
+                        s.return_reader(slot);
+                    }
+                })
+            })
+            .collect();
+
+        for h in handles {
+            h.join().expect("thread panicked");
+        }
+
+        // Pool must not exceed MAX_POOL_SIZE after all threads finish
+        assert!(
+            state.pool_idle_count() <= 4,
+            "pool exceeded MAX_POOL_SIZE: {}",
+            state.pool_idle_count()
+        );
+    }
+
+    /// RwLock read from 4 threads simultaneously returns the same data.
+    #[test]
+    fn rwlock_read_from_4_threads_returns_same_data() {
+        use std::sync::Arc;
+        use std::thread;
+
+        let state = Arc::new(SharedState::new("d.db", "g.db"));
+        state.update_grammar_kinds(vec![
+            GrammarKind { name: "alpha".into(), description: "first".into() },
+            GrammarKind { name: "beta".into(), description: "second".into() },
+        ]);
+
+        let handles: Vec<_> = (0..4)
+            .map(|_| {
+                let s = Arc::clone(&state);
+                thread::spawn(move || {
+                    let kinds = s.cached_grammar_kinds();
+                    (kinds[0].name.clone(), kinds[1].name.clone())
+                })
+            })
+            .collect();
+
+        for h in handles {
+            let (name0, name1) = h.join().expect("reader thread panicked");
+            assert_eq!(name0, "alpha");
+            assert_eq!(name1, "beta");
+        }
+    }
+
+    /// borrow_reader when pool is empty creates a fresh slot pointing to self.
+    #[test]
+    fn borrow_reader_empty_pool_creates_fresh_slot() {
+        use std::sync::Arc;
+        let state = Arc::new(SharedState::new("fresh.db", "g.db"));
+        assert_eq!(state.pool_idle_count(), 0);
+        let slot = state.borrow_reader();
+        assert_eq!(slot.state.dict_path, "fresh.db");
+        // pool is still empty because we didn't return
+        assert_eq!(state.pool_idle_count(), 0);
+        // return it — now pool has 1
+        state.return_reader(slot);
+        assert_eq!(state.pool_idle_count(), 1);
+    }
+
+    /// Returned slot holds a valid Arc pointing back to the same SharedState.
+    #[test]
+    fn returned_reader_slot_arc_points_to_same_state() {
+        use std::sync::Arc;
+        let state = Arc::new(SharedState::new("same.db", "g.db"));
+        let slot = state.borrow_reader();
+        // The Arc inside the slot must alias the same allocation
+        assert!(Arc::ptr_eq(&state, &slot.state));
+        state.return_reader(slot);
+    }
+
     // ── RwLock / reader-pool tests ──────────────────────────────────────────
 
     /// Multiple concurrent readers must not block each other.

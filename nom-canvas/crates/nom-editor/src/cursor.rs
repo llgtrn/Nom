@@ -393,4 +393,114 @@ mod tests {
         assert_eq!(right.bias, Bias::Right);
         assert_eq!(left.offset, right.offset);
     }
+
+    // ── cursor clamping ──────────────────────────────────────────────────────
+
+    #[test]
+    fn cursor_clamped_past_end_of_buffer() {
+        // Simulate clamping: an offset beyond buffer length should be pinned to len.
+        let buf_len = 10usize;
+        let raw_offset = 9999usize;
+        let clamped = raw_offset.min(buf_len);
+        assert_eq!(clamped, buf_len);
+    }
+
+    #[test]
+    fn cursor_clamped_at_exactly_buffer_end() {
+        let buf_len = 5usize;
+        let clamped = buf_len.min(buf_len);
+        assert_eq!(clamped, buf_len);
+    }
+
+    #[test]
+    fn cursor_clamp_zero_len_buffer() {
+        let buf_len = 0usize;
+        let raw = 42usize;
+        let clamped = raw.min(buf_len);
+        assert_eq!(clamped, 0);
+    }
+
+    // ── cursor equality across clone ─────────────────────────────────────────
+
+    #[test]
+    fn cursor_equality_across_clone() {
+        let sel = Selection::caret(7);
+        let cloned = sel.clone();
+        assert_eq!(sel, cloned);
+    }
+
+    #[test]
+    fn selection_range_equality_across_clone() {
+        let sel = Selection::range(3, 9);
+        let cloned = sel.clone();
+        assert_eq!(sel.min_offset(), cloned.min_offset());
+        assert_eq!(sel.max_offset(), cloned.max_offset());
+        assert_eq!(sel.reversed, cloned.reversed);
+    }
+
+    #[test]
+    fn anchor_equality_across_clone() {
+        let anchor = Anchor::at(12);
+        let cloned = anchor;
+        assert_eq!(anchor, cloned);
+    }
+
+    // ── cursor jump to line 0 / last ─────────────────────────────────────────
+
+    #[test]
+    fn cursor_jump_to_line_zero() {
+        // line_to_char(0) is always 0; cursor placed there.
+        let sel = Selection::caret(0);
+        assert_eq!(sel.head(), 0);
+    }
+
+    #[test]
+    fn cursor_jump_to_last_line_simulated() {
+        // Simulate jump to last line: last_line_start = total_chars - last_line_len
+        let text = "abc\ndef\nghi";
+        // last '\n' is at byte 7; last line starts at 8
+        let last_line_start = text.rfind('\n').map(|p| p + 1).unwrap_or(0);
+        assert_eq!(last_line_start, 8);
+        let sel = Selection::caret(last_line_start);
+        assert_eq!(sel.head(), 8);
+    }
+
+    #[test]
+    fn cursor_jump_to_line_zero_from_deep_offset() {
+        // Regardless of current offset, jump to 0 produces caret at 0.
+        let deep = Selection::caret(5000);
+        let at_zero = Selection::caret(0);
+        assert_eq!(at_zero.head(), 0);
+        assert_ne!(deep.head(), at_zero.head());
+    }
+
+    #[test]
+    fn cursor_set_single_starts_at_given_offset() {
+        let cs = CursorSet::single(42);
+        assert_eq!(cs.primary().unwrap().head(), 42);
+    }
+
+    #[test]
+    fn selection_caret_head_equals_tail() {
+        let sel = Selection::caret(10);
+        assert_eq!(sel.head(), sel.tail());
+    }
+
+    #[test]
+    fn selection_reversed_min_max_correct() {
+        let sel = Selection::range(8, 2);
+        assert_eq!(sel.min_offset(), 2);
+        assert_eq!(sel.max_offset(), 8);
+        assert!(sel.reversed);
+    }
+
+    #[test]
+    fn cursor_set_add_disjoint_stays_sorted() {
+        let mut cs = CursorSet::single(0);
+        cs.add(Selection::caret(20));
+        cs.add(Selection::caret(10));
+        // After sort, offsets should be 0, 10, 20.
+        let offsets: Vec<usize> = cs.selections.iter().map(|s| s.head()).collect();
+        assert_eq!(offsets, vec![0, 10, 20]);
+    }
 }

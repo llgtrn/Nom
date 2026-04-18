@@ -1289,4 +1289,126 @@ mod tests {
             assert!(pi < pj, "n{i} must precede n{}", i + 1);
         }
     }
+
+    // ------------------------------------------------------------------
+    // 100-node DAG still toposorts correctly
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_100_node_linear_chain_topological_sort() {
+        // Build a linear chain: n0 → n1 → ... → n99.
+        let mut dag = Dag::new();
+        let names: Vec<String> = (0..100).map(|i| format!("n{i:03}")).collect();
+        for name in &names {
+            dag.add_node(ExecNode::new(name.clone(), "verb"));
+        }
+        for i in 0..99 {
+            dag.add_edge(names[i].clone(), "out", names[i + 1].clone(), "in");
+        }
+        let sorted = dag.topological_sort().unwrap();
+        assert_eq!(sorted.len(), 100, "all 100 nodes must appear in sort");
+        // Verify every consecutive pair is in the correct relative order.
+        for i in 0..99 {
+            let pi = sorted.iter().position(|x| x == &names[i]).unwrap();
+            let pj = sorted.iter().position(|x| x == &names[i + 1]).unwrap();
+            assert!(
+                pi < pj,
+                "n{i:03} must precede n{:03} in topological sort",
+                i + 1
+            );
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Edge weight accumulation across a path
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_edge_weight_accumulation_three_hop_path() {
+        // Chain: a →(0.9)→ b →(0.8)→ c →(0.7)→ d
+        // Accumulated product: 0.9 * 0.8 * 0.7 = 0.504
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("a", "verb"));
+        dag.add_node(ExecNode::new("b", "verb"));
+        dag.add_node(ExecNode::new("c", "verb"));
+        dag.add_node(ExecNode::new("d", "verb"));
+        dag.add_edge_weighted("a", "out", "b", "in", 0.9);
+        dag.add_edge_weighted("b", "out", "c", "in", 0.8);
+        dag.add_edge_weighted("c", "out", "d", "in", 0.7);
+
+        // Manually accumulate the product along the path a→b→c→d.
+        let path_edges: &[(&str, &str)] = &[("a", "b"), ("b", "c"), ("c", "d")];
+        let product: f32 = path_edges.iter().map(|(src, dst)| {
+            dag.edges
+                .iter()
+                .find(|e| e.src_node == *src && e.dst_node == *dst)
+                .expect("edge must exist")
+                .confidence
+        }).product();
+        let expected = 0.9f32 * 0.8 * 0.7;
+        assert!(
+            (product - expected).abs() < 1e-5,
+            "accumulated weight along a→b→c→d must be {}, got {}",
+            expected,
+            product
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // Edge weight accumulation: single-hop path
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_edge_weight_accumulation_single_hop() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("x", "verb"));
+        dag.add_node(ExecNode::new("y", "verb"));
+        dag.add_edge_weighted("x", "out", "y", "in", 0.6);
+        let conf = dag.edges[0].confidence;
+        assert!((conf - 0.6).abs() < 1e-6, "single-hop weight must be 0.6, got {}", conf);
+    }
+
+    // ------------------------------------------------------------------
+    // Edge weight accumulation: two independent paths, highest wins
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_edge_weight_two_paths_highest_selected() {
+        // a→c with weight 0.3, a→b→c where a→b=0.9, b→c=0.8 → product=0.72 > 0.3
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("a", "verb"));
+        dag.add_node(ExecNode::new("b", "verb"));
+        dag.add_node(ExecNode::new("c", "verb"));
+        dag.add_edge_weighted("a", "out", "c", "direct_in", 0.3);
+        dag.add_edge_weighted("a", "out", "b", "in", 0.9);
+        dag.add_edge_weighted("b", "out", "c", "in", 0.8);
+
+        let direct_conf = dag.edges.iter()
+            .find(|e| e.src_node == "a" && e.dst_node == "c")
+            .unwrap().confidence;
+        let via_b_conf: f32 = dag.edges.iter()
+            .find(|e| e.src_node == "a" && e.dst_node == "b")
+            .unwrap().confidence
+            * dag.edges.iter()
+            .find(|e| e.src_node == "b" && e.dst_node == "c")
+            .unwrap().confidence;
+
+        assert!((direct_conf - 0.3).abs() < 1e-6, "direct path confidence must be 0.3");
+        assert!((via_b_conf - 0.72).abs() < 1e-5, "two-hop path confidence must be 0.72");
+        assert!(via_b_conf > direct_conf, "two-hop path must have higher accumulated weight");
+    }
+
+    // ------------------------------------------------------------------
+    // 100 nodes: toposort is O(N+E) — returns Ok within time budget
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_100_node_no_edges_toposort() {
+        // 100 isolated nodes: no edges — each node is a root, sort must include all.
+        let mut dag = Dag::new();
+        let names: Vec<String> = (0..100).map(|i| format!("iso{i:03}")).collect();
+        for name in &names {
+            dag.add_node(ExecNode::new(name.clone(), "verb"));
+        }
+        let sorted = dag.topological_sort().unwrap();
+        assert_eq!(sorted.len(), 100, "all 100 isolated nodes must appear in sort");
+        for name in &names {
+            assert!(sorted.contains(name), "{name} must be in sort");
+        }
+    }
 }

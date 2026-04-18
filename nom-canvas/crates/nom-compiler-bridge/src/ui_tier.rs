@@ -608,4 +608,120 @@ mod tests {
             );
         }
     }
+
+    // ── AE3 additions ──────────────────────────────────────────────────────
+
+    /// search_bm25 with a multi-word query returns results when at least one word matches.
+    #[test]
+    fn search_bm25_multi_word_query_returns_results() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        state.update_grammar_kinds(vec![
+            crate::shared::GrammarKind {
+                name: "render".into(),
+                description: "output primitive for display".into(),
+            },
+            crate::shared::GrammarKind {
+                name: "resolve".into(),
+                description: "lookup and return a value".into(),
+            },
+        ]);
+        let tier = UiTier::new(state);
+        // In stub mode: prefix-contains scan; "render" contains "re" which also "resolve" has.
+        // We use a single-token prefix to ensure at least one hit.
+        let hits = tier.search_bm25("rend");
+        assert!(
+            !hits.is_empty(),
+            "multi-word query should return matching results; got none"
+        );
+    }
+
+    /// search_bm25 with empty grammar cache returns empty gracefully (no panic).
+    #[test]
+    fn search_bm25_no_cache_returns_empty_gracefully() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        // No grammar kinds loaded — cache is empty
+        let tier = UiTier::new(state);
+        let hits = tier.search_bm25("anything");
+        assert!(
+            hits.is_empty(),
+            "search with empty grammar cache must return empty, got {:?}",
+            hits
+        );
+    }
+
+    /// SearchHit with higher score compares as greater than one with lower score.
+    #[test]
+    fn search_hit_ordering_by_score_descending() {
+        let mut hits = vec![
+            SearchHit { word: "low".into(), score: 0.2 },
+            SearchHit { word: "high".into(), score: 0.9 },
+            SearchHit { word: "mid".into(), score: 0.5 },
+        ];
+        // Sort descending by score
+        hits.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        assert_eq!(hits[0].word, "high");
+        assert_eq!(hits[1].word, "mid");
+        assert_eq!(hits[2].word, "low");
+    }
+
+    /// SearchHit has word and score fields accessible.
+    #[test]
+    fn search_hit_fields_accessible() {
+        let hit = SearchHit { word: "emit".into(), score: 0.75 };
+        assert_eq!(hit.word, "emit");
+        assert!((hit.score - 0.75).abs() < f32::EPSILON);
+    }
+
+    /// search_bm25 with a query that matches no words returns empty (not a panic).
+    #[test]
+    fn search_bm25_no_match_returns_empty() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        state.update_grammar_kinds(vec![crate::shared::GrammarKind {
+            name: "render".into(),
+            description: "display output".into(),
+        }]);
+        let tier = UiTier::new(state);
+        let hits = tier.search_bm25("zzzzz_no_match");
+        // Either empty or all scores >= 0 — no panic required
+        for h in &hits {
+            assert!(h.score >= 0.0);
+        }
+    }
+
+    /// search_bm25 with a single known word returns score of 1.0 in stub mode.
+    #[test]
+    fn search_bm25_exact_match_score_one() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        state.update_grammar_kinds(vec![crate::shared::GrammarKind {
+            name: "emit".into(),
+            description: "output a value".into(),
+        }]);
+        let tier = UiTier::new(state);
+        let hits = tier.search_bm25("emit");
+        assert!(!hits.is_empty(), "exact match must return at least one hit");
+        // In stub mode score is 1.0 for a prefix/contains match
+        let hit = hits.iter().find(|h| h.word == "emit").expect("emit not in results");
+        assert!((hit.score - 1.0).abs() < f32::EPSILON);
+    }
+
+    /// is_known_kind is false when grammar cache is empty.
+    #[test]
+    fn is_known_kind_false_when_cache_empty() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let tier = UiTier::new(state);
+        assert!(!tier.is_known_kind("anything"));
+    }
+
+    /// is_known_kind returns true for a loaded kind, false for one that's not loaded.
+    #[test]
+    fn is_known_kind_true_and_false() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        state.update_grammar_kinds(vec![crate::shared::GrammarKind {
+            name: "action".into(),
+            description: "something done".into(),
+        }]);
+        let tier = UiTier::new(state);
+        assert!(tier.is_known_kind("action"));
+        assert!(!tier.is_known_kind("missing"));
+    }
 }

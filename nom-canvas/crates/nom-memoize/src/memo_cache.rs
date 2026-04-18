@@ -649,4 +649,215 @@ mod tests {
             assert_eq!(cache.get(&key, i, &[]), Some(val));
         }
     }
+
+    // --- get returns None after clear() ---
+
+    #[test]
+    fn memo_cache_get_returns_none_after_clear() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let key = Hash128::of_str("clear_test");
+        cache.put(key, 42, Constraint::new(7));
+
+        // Confirm entry exists before clear.
+        assert_eq!(cache.get(&key, 7, &[]), Some(42));
+
+        cache.clear();
+
+        // After clear, get must return None.
+        let result = cache.get(&key, 7, &[]);
+        assert_eq!(result, None, "get must return None after clear()");
+    }
+
+    #[test]
+    fn memo_cache_get_returns_none_for_all_keys_after_clear() {
+        let mut cache: MemoCache<u64> = MemoCache::new();
+        let keys: Vec<Hash128> = (0u64..10).map(Hash128::of_u64).collect();
+
+        for (i, &key) in keys.iter().enumerate() {
+            cache.put(key, i as u64, Constraint::new(i as u64));
+        }
+        assert_eq!(cache.len(), 10);
+
+        cache.clear();
+
+        // All previously inserted keys now return None.
+        for (i, &key) in keys.iter().enumerate() {
+            assert_eq!(
+                cache.get(&key, i as u64, &[]),
+                None,
+                "key {i} must return None after clear()"
+            );
+        }
+        assert_eq!(cache.len(), 0);
+    }
+
+    #[test]
+    fn memo_cache_get_none_after_clear_then_reinsert_works() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let key = Hash128::of_str("reinsert_after_clear");
+        cache.put(key, 1, Constraint::new(1));
+        cache.clear();
+        // After clear: None.
+        assert_eq!(cache.get(&key, 1, &[]), None);
+        // Reinsert: should work again.
+        cache.put(key, 99, Constraint::new(1));
+        assert_eq!(cache.get(&key, 1, &[]), Some(99));
+    }
+
+    // --- Insert 1000 entries respects capacity ---
+
+    #[test]
+    fn memo_cache_insert_1000_entries_all_present() {
+        // MemoCache has no built-in eviction; all 1000 entries must be stored.
+        let mut cache: MemoCache<u64> = MemoCache::new();
+        for i in 0u64..1000 {
+            cache.put(Hash128::of_u64(i), i, Constraint::new(i));
+        }
+        assert_eq!(cache.len(), 1000, "all 1000 entries must be stored");
+
+        // Spot-check first, middle, and last.
+        for i in [0u64, 499, 999] {
+            assert_eq!(
+                cache.get(&Hash128::of_u64(i), i, &[]),
+                Some(i),
+                "entry {i} must be retrievable"
+            );
+        }
+    }
+
+    #[test]
+    fn memo_cache_insert_1000_entries_with_capacity_simulation() {
+        // Simulate a capacity of 500: after inserting 1000 entries with eviction,
+        // only the last 500 are present.
+        let capacity = 500usize;
+        let mut cache: MemoCache<u64> = MemoCache::new();
+        let mut insertion_order: std::collections::VecDeque<Hash128> = Default::default();
+
+        for i in 0u64..1000 {
+            let key = Hash128::of_u64(i);
+            if insertion_order.len() == capacity {
+                let oldest = insertion_order.pop_front().unwrap();
+                cache.invalidate(&oldest);
+            }
+            cache.put(key, i, Constraint::new(i));
+            insertion_order.push_back(key);
+        }
+
+        // After 1000 inserts with cap 500, entries 0..500 evicted, 500..1000 present.
+        assert_eq!(cache.len(), capacity, "capacity must be respected");
+
+        // Evicted entries must return None.
+        for i in 0u64..500 {
+            assert_eq!(
+                cache.get(&Hash128::of_u64(i), i, &[]),
+                None,
+                "evicted entry {i} must return None"
+            );
+        }
+
+        // Surviving entries must be retrievable.
+        for i in 500u64..1000 {
+            assert_eq!(
+                cache.get(&Hash128::of_u64(i), i, &[]),
+                Some(i),
+                "surviving entry {i} must return Some"
+            );
+        }
+    }
+
+    #[test]
+    fn memo_cache_insert_1000_no_collision() {
+        // 1000 distinct Hash128 keys must not collide in the underlying HashMap.
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        for i in 0u64..1000 {
+            cache.put(Hash128::of_u64(i), i as u32, Constraint::new(i));
+        }
+        // Verify all 1000 distinct entries exist (no collisions silently dropped any).
+        assert_eq!(cache.len(), 1000);
+        for i in 0u64..1000 {
+            let result = cache.get(&Hash128::of_u64(i), i, &[]);
+            assert_eq!(
+                result,
+                Some(i as u32),
+                "entry {i} must not be lost due to hash collision"
+            );
+        }
+    }
+
+    // --- Additional coverage ---
+
+    #[test]
+    fn memo_cache_get_returns_none_for_unknown_key_after_1000_inserts() {
+        let mut cache: MemoCache<u64> = MemoCache::new();
+        for i in 0u64..1000 {
+            cache.put(Hash128::of_u64(i), i, Constraint::new(i));
+        }
+        // Key 1000 was never inserted.
+        assert_eq!(cache.get(&Hash128::of_u64(1000), 1000, &[]), None);
+        assert_eq!(cache.miss_count(), 0); // absent key, not constraint failure
+    }
+
+    #[test]
+    fn memo_cache_clear_then_len_zero_then_insert_works() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        for i in 0u64..5 {
+            cache.put(Hash128::of_u64(i), i as u32, Constraint::new(i));
+        }
+        cache.clear();
+        assert_eq!(cache.len(), 0);
+        // Insert after clear works normally.
+        cache.put(Hash128::of_u64(0), 99, Constraint::new(0));
+        assert_eq!(cache.len(), 1);
+        assert_eq!(cache.get(&Hash128::of_u64(0), 0, &[]), Some(99));
+    }
+
+    #[test]
+    fn memo_cache_is_empty_after_clear() {
+        let mut cache: MemoCache<u8> = MemoCache::new();
+        cache.put(Hash128::of_str("k"), 1, Constraint::new(1));
+        assert!(!cache.is_empty());
+        cache.clear();
+        assert!(cache.is_empty());
+    }
+
+    #[test]
+    fn memo_cache_capacity_1000_no_eviction_needed() {
+        // Without any eviction, all 1000 entries remain after insertion.
+        let mut cache: MemoCache<u8> = MemoCache::new();
+        for i in 0u64..1000 {
+            cache.put(Hash128::of_u64(i), (i % 256) as u8, Constraint::new(i));
+        }
+        assert_eq!(cache.len(), 1000);
+        // All entries must be retrievable.
+        for i in 0u64..1000 {
+            assert_eq!(
+                cache.get(&Hash128::of_u64(i), i, &[]),
+                Some((i % 256) as u8)
+            );
+        }
+    }
+
+    #[test]
+    fn memo_cache_clear_does_not_affect_new_entries() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        cache.put(Hash128::of_str("before"), 1, Constraint::new(1));
+        cache.clear();
+        cache.put(Hash128::of_str("after"), 2, Constraint::new(2));
+        assert_eq!(cache.len(), 1);
+        assert_eq!(cache.get(&Hash128::of_str("after"), 2, &[]), Some(2));
+        assert_eq!(cache.get(&Hash128::of_str("before"), 1, &[]), None);
+    }
+
+    #[test]
+    fn memo_cache_get_none_after_clear_miss_count_unchanged() {
+        // Absent key after clear should NOT increment miss_count
+        // (the entry isn't found in the HashMap before constraint check).
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        cache.put(Hash128::of_str("k"), 1, Constraint::new(1));
+        cache.get(&Hash128::of_str("k"), 1, &[]); // hit
+        cache.clear();
+        cache.get(&Hash128::of_str("k"), 1, &[]); // absent → None, no miss increment
+        assert_eq!(cache.hit_count(), 1);
+        assert_eq!(cache.miss_count(), 0);
+    }
 }

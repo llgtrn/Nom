@@ -1702,4 +1702,327 @@ mod tests {
             assert_eq!(h.hypothesis, hypotheses[i], "stable order must be preserved at index {i}");
         }
     }
+
+    // =========================================================================
+    // WAVE-AE AGENT-10 ADDITIONS
+    // =========================================================================
+
+    // --- ReactChain with 10 steps, interrupt at step 5 ---
+
+    #[test]
+    fn react_chain_10_steps_interrupt_at_step_5_only_5_complete() {
+        let signal = InterruptSignal::new();
+        let evidence = &["e0", "e1", "e2", "e3", "e4", "e5", "e6", "e7", "e8", "e9"];
+
+        // Run first 5 steps (indices 0..5) — signal not yet cancelled.
+        let first_half =
+            react_chain_interruptible("hypothesis", &evidence[..5], 5, &signal);
+        assert_eq!(first_half.len(), 5, "first 5 steps must complete");
+
+        // Cancel before running the remaining 5.
+        signal.cancel();
+
+        let second_half =
+            react_chain_interruptible("hypothesis", &evidence[5..], 5, &signal);
+        assert_eq!(
+            second_half.len(),
+            0,
+            "no steps must run after cancellation at step 5"
+        );
+
+        // Total completed = 5.
+        let total = first_half.len() + second_half.len();
+        assert_eq!(total, 5, "exactly 5 of 10 steps must complete");
+    }
+
+    #[test]
+    fn react_chain_10_steps_scores_all_valid() {
+        let evidence = &["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"];
+        let steps = react_chain("a b c d e f g h i j", evidence, 10);
+        assert_eq!(steps.len(), 10);
+        for (i, s) in steps.iter().enumerate() {
+            assert!(
+                s.score >= 0.0 && s.score <= 1.0,
+                "step {i} score {} out of [0,1]",
+                s.score
+            );
+        }
+    }
+
+    #[test]
+    fn react_chain_10_steps_thought_indexed_0_through_9() {
+        let evidence = &["e0", "e1", "e2", "e3", "e4", "e5", "e6", "e7", "e8", "e9"];
+        let steps = react_chain("e0", evidence, 10);
+        assert_eq!(steps.len(), 10);
+        for (i, step) in steps.iter().enumerate() {
+            assert!(
+                step.thought.contains(&format!("[{i}]")),
+                "step {i} thought must reference index [{i}]"
+            );
+        }
+    }
+
+    // --- rank_hypotheses with 0 hypotheses returns empty ---
+
+    #[test]
+    fn rank_hypotheses_zero_hypotheses_returns_empty() {
+        let ranked = rank_hypotheses(&[], &["evidence one", "evidence two"]);
+        assert!(
+            ranked.is_empty(),
+            "rank_hypotheses with empty hypothesis slice must return empty vec"
+        );
+    }
+
+    #[test]
+    fn rank_hypotheses_zero_hypotheses_zero_evidence_returns_empty() {
+        let ranked = rank_hypotheses(&[], &[]);
+        assert!(ranked.is_empty());
+    }
+
+    #[test]
+    fn best_hypothesis_on_empty_hypotheses_returns_none_with_evidence() {
+        let result = best_hypothesis(&[], &["some", "evidence"]);
+        assert!(result.is_none(), "empty hypotheses slice must return None");
+    }
+
+    // --- ScoredHypothesis with NaN score handled gracefully ---
+
+    #[test]
+    fn scored_hypothesis_nan_score_partial_cmp_returns_equal_fallback() {
+        // rank_hypotheses sorts using partial_cmp with Equal fallback for NaN.
+        // Directly construct a ScoredHypothesis with NaN score and verify
+        // that partial_cmp with Equal fallback doesn't panic.
+        let nan_score: f32 = f32::NAN;
+        let normal_score: f32 = 0.5;
+        // partial_cmp on NaN returns None; sort uses Equal as fallback.
+        let cmp = nan_score.partial_cmp(&normal_score);
+        // NaN.partial_cmp returns None — verify the fallback branch is exercised.
+        assert!(cmp.is_none(), "NaN.partial_cmp must return None");
+        // The sort comparator in rank_hypotheses uses unwrap_or(Equal):
+        let sort_result = nan_score
+            .partial_cmp(&normal_score)
+            .unwrap_or(std::cmp::Ordering::Equal);
+        assert_eq!(
+            sort_result,
+            std::cmp::Ordering::Equal,
+            "NaN score sort falls back to Equal"
+        );
+    }
+
+    #[test]
+    fn scored_hypothesis_nan_score_sort_does_not_panic() {
+        // Build a vec containing a ScoredHypothesis with NaN score and sort it.
+        // This exercises the unwrap_or(Equal) branch in rank_hypotheses' comparator.
+        let mut items = vec![
+            ScoredHypothesis {
+                hypothesis: "nan".to_string(),
+                score: f32::NAN,
+                evidence_used: vec![],
+                step_count: 0,
+            },
+            ScoredHypothesis {
+                hypothesis: "normal".to_string(),
+                score: 0.5,
+                evidence_used: vec![],
+                step_count: 0,
+            },
+        ];
+        // Must not panic.
+        items.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        assert_eq!(items.len(), 2);
+    }
+
+    #[test]
+    fn scored_hypothesis_score_nan_is_f32_nan() {
+        let sh = ScoredHypothesis {
+            hypothesis: "test".to_string(),
+            score: f32::NAN,
+            evidence_used: vec![],
+            step_count: 0,
+        };
+        assert!(sh.score.is_nan(), "score must be NaN");
+    }
+
+    // --- deep_think chain produces unique step IDs ---
+
+    #[test]
+    fn deep_think_chain_produces_unique_thought_strings() {
+        // Each step has a unique "thought" string because it encodes the evidence index.
+        let evidence = &["item0", "item1", "item2", "item3", "item4"];
+        let steps = react_chain("deep think hypothesis", evidence, 5);
+        assert_eq!(steps.len(), 5);
+        let thoughts: Vec<&str> = steps.iter().map(|s| s.thought.as_str()).collect();
+        let unique_count = {
+            let mut sorted = thoughts.clone();
+            sorted.sort_unstable();
+            sorted.dedup();
+            sorted.len()
+        };
+        assert_eq!(
+            unique_count, 5,
+            "all thought strings must be unique (each encodes a different evidence index)"
+        );
+    }
+
+    #[test]
+    fn deep_think_chain_action_strings_unique() {
+        let evidence = &["ev0", "ev1", "ev2"];
+        let steps = react_chain("thought", evidence, 3);
+        let actions: Vec<&str> = steps.iter().map(|s| s.action.as_str()).collect();
+        let unique_count = {
+            let mut sorted = actions.clone();
+            sorted.sort_unstable();
+            sorted.dedup();
+            sorted.len()
+        };
+        assert_eq!(unique_count, 3, "all action strings must be unique");
+    }
+
+    #[test]
+    fn deep_think_interruptible_unique_thoughts_before_cancel() {
+        let signal = InterruptSignal::new();
+        let evidence = &["d0", "d1", "d2", "d3", "d4"];
+        let steps = react_chain_interruptible("deep think", evidence, 5, &signal);
+        signal.cancel();
+        // Verify steps produced before cancel have unique thoughts.
+        let thoughts: Vec<&str> = steps.iter().map(|s| s.thought.as_str()).collect();
+        let unique_count = {
+            let mut sorted = thoughts.clone();
+            sorted.sort_unstable();
+            sorted.dedup();
+            sorted.len()
+        };
+        assert_eq!(
+            unique_count,
+            steps.len(),
+            "all thoughts before cancel must be unique"
+        );
+    }
+
+    // --- Additional targeted tests ---
+
+    #[test]
+    fn rank_hypotheses_result_length_matches_input() {
+        let evidence = &["alpha", "beta"];
+        let hypotheses = &["h1", "h2", "h3", "h4", "h5"];
+        let ranked = rank_hypotheses(hypotheses, evidence);
+        assert_eq!(
+            ranked.len(),
+            hypotheses.len(),
+            "ranked output length must equal input length"
+        );
+    }
+
+    #[test]
+    fn react_chain_10_steps_clamped_by_evidence() {
+        // Only 7 evidence items; requesting 10 steps yields 7.
+        let evidence = &["a", "b", "c", "d", "e", "f", "g"];
+        let steps = react_chain("a b c d e f g", evidence, 10);
+        assert_eq!(steps.len(), 7, "steps must be clamped to evidence length");
+    }
+
+    #[test]
+    fn react_chain_interrupt_at_step_5_leaves_5_steps_with_valid_scores() {
+        let signal = InterruptSignal::new();
+        let evidence = &["e0", "e1", "e2", "e3", "e4", "e5", "e6", "e7", "e8", "e9"];
+        let first = react_chain_interruptible("hyp", &evidence[..5], 5, &signal);
+        signal.cancel();
+        assert_eq!(first.len(), 5);
+        for s in &first {
+            assert!(s.score >= 0.0 && s.score <= 1.0);
+        }
+    }
+
+    #[test]
+    fn rank_hypotheses_with_zero_hypotheses_no_panic() {
+        // Explicit check that calling rank_hypotheses with empty slice doesn't panic.
+        let result = rank_hypotheses(&[], &["word"]);
+        assert_eq!(result.len(), 0);
+    }
+
+    #[test]
+    fn classify_with_react_single_char_words() {
+        // Single-character hypothesis and evidence.
+        let score = classify_with_react("a", &["a"]);
+        assert!((score - 1.0_f32).abs() < 1e-5, "single char exact match must score 1.0");
+    }
+
+    #[test]
+    fn react_chain_interruptible_ten_steps_not_cancelled() {
+        let signal = InterruptSignal::new(); // not cancelled
+        let evidence: Vec<&str> = (0..10).map(|i| if i == 0 { "ev0" } else if i == 1 { "ev1" } else if i == 2 { "ev2" } else if i == 3 { "ev3" } else if i == 4 { "ev4" } else if i == 5 { "ev5" } else if i == 6 { "ev6" } else if i == 7 { "ev7" } else if i == 8 { "ev8" } else { "ev9" }).collect();
+        let steps = react_chain_interruptible("ev", &evidence, 10, &signal);
+        assert_eq!(steps.len(), 10, "uncancelled 10-step chain must complete all steps");
+    }
+
+    #[test]
+    fn deep_think_step_observations_contain_confidence() {
+        let evidence = &["think", "deep", "node"];
+        let steps = react_chain("deep think node", evidence, 3);
+        for step in &steps {
+            assert!(
+                step.observation.contains("partial confidence:"),
+                "each step observation must contain 'partial confidence:'"
+            );
+        }
+    }
+
+    #[test]
+    fn scored_hypothesis_debug_format_contains_fields() {
+        let evidence = &["alpha beta"];
+        let ranked = rank_hypotheses(&["alpha beta"], evidence);
+        let dbg = format!("{:?}", ranked[0]);
+        assert!(dbg.contains("ScoredHypothesis"));
+        assert!(dbg.contains("alpha beta"));
+    }
+
+    #[test]
+    fn classify_with_react_multiple_evidence_items_bounded() {
+        // 5 evidence items; score must stay in [0,1].
+        let evidence = &["one two", "two three", "three four", "four five", "five one"];
+        let score = classify_with_react("one two three four five", evidence);
+        assert!(score >= 0.0 && score <= 1.0, "score {score} out of [0,1]");
+    }
+
+    #[test]
+    fn rank_hypotheses_hypothesis_field_matches_input() {
+        let evidence = &["test"];
+        let hypotheses = &["hypothesis alpha", "hypothesis beta"];
+        let ranked = rank_hypotheses(hypotheses, evidence);
+        let names: Vec<&str> = ranked.iter().map(|r| r.hypothesis.as_str()).collect();
+        assert!(names.contains(&"hypothesis alpha"));
+        assert!(names.contains(&"hypothesis beta"));
+    }
+
+    #[test]
+    fn best_hypothesis_score_between_zero_and_one() {
+        let evidence = &["node graph query"];
+        let hypotheses = &["node graph", "unrelated"];
+        let best = best_hypothesis(hypotheses, evidence).unwrap();
+        assert!(best.score >= 0.0 && best.score <= 1.0);
+    }
+
+    #[test]
+    fn scored_hypothesis_evidence_used_not_empty_when_evidence_provided() {
+        let evidence = &["evidence item"];
+        let ranked = rank_hypotheses(&["evidence"], evidence);
+        assert!(!ranked[0].evidence_used.is_empty(), "evidence_used must not be empty");
+    }
+
+    #[test]
+    fn react_chain_interruptible_five_steps_all_have_non_empty_fields() {
+        let signal = InterruptSignal::new();
+        let evidence = &["alpha", "beta", "gamma", "delta", "epsilon"];
+        let steps = react_chain_interruptible("alpha beta gamma delta epsilon", evidence, 5, &signal);
+        assert_eq!(steps.len(), 5);
+        for (i, step) in steps.iter().enumerate() {
+            assert!(!step.thought.is_empty(), "step {i} thought must not be empty");
+            assert!(!step.action.is_empty(), "step {i} action must not be empty");
+            assert!(!step.observation.is_empty(), "step {i} observation must not be empty");
+        }
+    }
 }

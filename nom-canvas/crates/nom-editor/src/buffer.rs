@@ -441,4 +441,94 @@ mod tests {
         let full = buf.text_for_range(0..buf.len());
         assert!(full.ends_with('!'));
     }
+
+    #[test]
+    fn buffer_large_10k_lines() {
+        // Build a 10 000-line buffer and verify line count + length.
+        let line = "abcdefghij\n"; // 11 chars
+        let text: String = line.repeat(10_000);
+        let buf = Buffer::new(1, &text);
+        // ropey counts lines by '\n'; 10 000 newlines → 10 001 (last empty line)
+        assert_eq!(buf.line_count(), 10_001);
+        // Total chars = 10 000 * 11 = 110 000
+        assert_eq!(buf.len(), 110_000);
+    }
+
+    #[test]
+    fn buffer_clone_independence() {
+        // Two buffers with the same initial text are independent.
+        let b1 = Buffer::new(1, "hello");
+        let mut b2 = Buffer::new(2, "hello");
+        b2.insert_at(5, " world");
+        // b1 is unchanged.
+        assert_eq!(b1.len(), 5);
+        assert_eq!(b2.len(), 11);
+    }
+
+    #[test]
+    fn buffer_version_increments_on_each_edit() {
+        let mut buf = Buffer::new(1, "start");
+        let v0 = buf.version;
+        buf.insert_at(5, " one");
+        let v1 = buf.version;
+        buf.insert_at(buf.len(), " two");
+        let v2 = buf.version;
+        buf.edit(0..5, "begin");
+        let v3 = buf.version;
+        assert!(v1 > v0, "version should increase after first insert");
+        assert!(v2 > v1, "version should increase after second insert");
+        assert!(v3 > v2, "version should increase after edit");
+        assert_eq!(v3 - v0, 3);
+    }
+
+    #[test]
+    fn buffer_line_count_after_mixed_crlf_lf_edits() {
+        // Start with LF-only content.
+        let mut buf = Buffer::new(1, "line1\nline2\nline3");
+        assert_eq!(buf.line_count(), 3);
+        // Insert a CRLF line at the beginning.
+        buf.insert_at(0, "crlf\r\n");
+        // Ropey counts '\n' as the line separator.
+        // After insert: "crlf\r\nline1\nline2\nline3" → 4 '\n' → 4 lines
+        assert_eq!(buf.line_count(), 4);
+        // Delete the first inserted line (6 chars: 'c','r','l','f','\r','\n')
+        buf.delete_range(0..6);
+        // Back to 3 lines.
+        assert_eq!(buf.line_count(), 3);
+    }
+
+    #[test]
+    fn buffer_clone_version_is_independent() {
+        // Two separate buffers with same text have independent versions.
+        let b1 = Buffer::new(1, "text");
+        let mut b2 = Buffer::new(2, "text");
+        b2.insert_at(4, "!");
+        // b1 version is still 0.
+        assert_eq!(b1.version, 0);
+        // b2 version advanced to 1.
+        assert_eq!(b2.version, 1);
+    }
+
+    #[test]
+    fn buffer_large_edit_on_10k_line_buffer() {
+        let line = "x\n";
+        let text: String = line.repeat(10_000);
+        let mut buf = Buffer::new(1, &text);
+        let original_len = buf.len();
+        // Edit the very first line.
+        buf.edit(0..1, "Y");
+        assert_eq!(buf.len(), original_len); // same length, char replaced
+        let first_char: char = buf.text_for_range(0..1).chars().next().unwrap();
+        assert_eq!(first_char, 'Y');
+    }
+
+    #[test]
+    fn buffer_insert_at_zero_in_large_buffer() {
+        let text: String = "z\n".repeat(5_000);
+        let mut buf = Buffer::new(2, &text);
+        let old_len = buf.len();
+        buf.insert_at(0, "START\n");
+        assert_eq!(buf.len(), old_len + 6);
+        assert_eq!(buf.text_for_range(0..6).as_ref(), "START\n");
+    }
 }

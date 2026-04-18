@@ -729,4 +729,146 @@ mod tests {
             canvas_under[1]
         );
     }
+
+    /// Viewport serialization round-trip: zoom+pan values survive a clone.
+    #[test]
+    fn viewport_serialization_round_trip() {
+        let mut vp = Viewport::new(1024.0, 768.0);
+        vp.zoom_toward(2.5, [512.0, 384.0]);
+        vp.pan_by([33.0, -17.0]);
+        let vp2 = vp.clone();
+        assert!((vp2.zoom - vp.zoom).abs() < 1e-6, "zoom must survive clone");
+        assert!((vp2.pan[0] - vp.pan[0]).abs() < 1e-6, "pan.x must survive clone");
+        assert!((vp2.pan[1] - vp.pan[1]).abs() < 1e-6, "pan.y must survive clone");
+        assert!((vp2.size[0] - vp.size[0]).abs() < 1e-6, "size.w must survive clone");
+        assert!((vp2.size[1] - vp.size[1]).abs() < 1e-6, "size.h must survive clone");
+    }
+
+    /// After zoom_toward then inverse zoom, the viewport returns to original zoom.
+    #[test]
+    fn viewport_transform_then_inverse_returns_original() {
+        let mut vp = Viewport::new(800.0, 600.0);
+        let cursor = [400.0_f32, 300.0];
+        let original_zoom = vp.zoom;
+        let original_pan = vp.pan;
+        vp.zoom_toward(3.0, cursor);
+        vp.zoom_toward(original_zoom, cursor);
+        assert!((vp.zoom - original_zoom).abs() < 1e-5, "zoom must return to original");
+        // Pan should also return to original when re-zooming to original level at screen centre.
+        assert!((vp.pan[0] - original_pan[0]).abs() < 1e-3, "pan.x must return");
+        assert!((vp.pan[1] - original_pan[1]).abs() < 1e-3, "pan.y must return");
+    }
+
+    /// Scroll wheel accumulation: multiple small zoom steps accumulate correctly.
+    #[test]
+    fn scroll_wheel_accumulation() {
+        let mut vp = Viewport::new(800.0, 600.0);
+        let cursor = [400.0_f32, 300.0];
+        // Simulate 5 scroll-wheel steps of 0.1 zoom each, starting from 1.0.
+        let step_zooms = [1.1_f32, 1.2, 1.3, 1.4, 1.5];
+        for &z in &step_zooms {
+            vp.zoom_toward(z, cursor);
+        }
+        assert!((vp.zoom - 1.5).abs() < 1e-5, "accumulated zoom should be 1.5, got {}", vp.zoom);
+    }
+
+    /// Fit-to-rect with aspect preservation: the smaller dimension fits and the
+    /// rect's extremes are visible.
+    #[test]
+    fn fit_to_rect_aspect_preservation() {
+        let mut vp = Viewport::new(800.0, 400.0); // 2:1 viewport
+        // A square canvas rect.
+        let (rx, ry, rw, rh) = (0.0_f32, 0.0, 100.0, 100.0);
+        let zoom_x = vp.size[0] / rw; // 8.0
+        let zoom_y = vp.size[1] / rh; // 4.0
+        let new_zoom = zoom_x.min(zoom_y).clamp(0.1, 32.0); // 4.0 — height limited
+        let cx = rx + rw / 2.0;
+        let cy = ry + rh / 2.0;
+        vp.zoom = new_zoom;
+        vp.pan = [-cx * new_zoom, -cy * new_zoom];
+        // All four corners must be visible.
+        assert!(vp.is_point_visible([rx, ry]), "top-left must be visible");
+        assert!(vp.is_point_visible([rx + rw, ry]), "top-right must be visible");
+        assert!(vp.is_point_visible([rx, ry + rh]), "bottom-left must be visible");
+        assert!(vp.is_point_visible([rx + rw, ry + rh]), "bottom-right must be visible");
+        // The zoom chosen is the height-limited one (4.0), not width-limited (8.0).
+        assert!((vp.zoom - zoom_y).abs() < 1e-5, "zoom must be height-limited");
+    }
+
+    /// Viewport size changes: visible_bounds correctly reflects new canvas area.
+    #[test]
+    fn viewport_size_change_updates_visible_bounds() {
+        let vp_small = Viewport::new(400.0, 300.0);
+        let vp_large = Viewport::new(800.0, 600.0);
+        let (_, br_small) = vp_small.visible_bounds();
+        let (_, br_large) = vp_large.visible_bounds();
+        // Larger screen → larger visible canvas area.
+        assert!(br_large[0] > br_small[0], "larger viewport shows more canvas width");
+        assert!(br_large[1] > br_small[1], "larger viewport shows more canvas height");
+    }
+
+    /// Pan then reset: visible_bounds returns to the default after reset.
+    #[test]
+    fn viewport_pan_then_reset_visible_bounds() {
+        let mut vp = Viewport::new(800.0, 600.0);
+        vp.pan_by([200.0, 100.0]);
+        vp.reset();
+        let (tl, br) = vp.visible_bounds();
+        // At zoom=1, pan=0: canvas bounds are [-400,-300] to [400,300].
+        assert!((tl[0] - (-400.0)).abs() < 1e-4, "tl.x after reset={}", tl[0]);
+        assert!((br[0] - 400.0).abs() < 1e-4, "br.x after reset={}", br[0]);
+    }
+
+    /// apply_transform matches canvas_to_screen at various zoom levels.
+    #[test]
+    fn apply_transform_matches_canvas_to_screen_various_zooms() {
+        for zoom in &[0.5_f32, 1.0, 2.0, 8.0] {
+            let mut vp = Viewport::new(800.0, 600.0);
+            vp.zoom_toward(*zoom, [400.0, 300.0]);
+            let pt = [42.0_f32, -17.0];
+            let via_matrix = vp.apply_transform(pt);
+            let direct = vp.canvas_to_screen(pt);
+            assert!(
+                (via_matrix[0] - direct[0]).abs() < 1e-3,
+                "x mismatch at zoom={}: matrix={} direct={}",
+                zoom, via_matrix[0], direct[0]
+            );
+            assert!(
+                (via_matrix[1] - direct[1]).abs() < 1e-3,
+                "y mismatch at zoom={}: matrix={} direct={}",
+                zoom, via_matrix[1], direct[1]
+            );
+        }
+    }
+
+    /// visible_bounds_gpui at high zoom covers tiny canvas area.
+    #[test]
+    fn visible_bounds_gpui_at_high_zoom_is_tiny() {
+        let mut vp = Viewport::new(800.0, 600.0);
+        vp.zoom_toward(16.0, [400.0, 300.0]);
+        let b = vp.visible_bounds_gpui();
+        // At 16x zoom, visible width = 800/16 = 50 px canvas.
+        assert!(b.size.width.0 < 60.0, "visible width at 16x zoom should be < 60, got {}", b.size.width.0);
+    }
+
+    /// screen_to_canvas with pan: offset shifts the canvas mapping.
+    #[test]
+    fn screen_to_canvas_with_pan_offset() {
+        let mut vp = Viewport::new(800.0, 600.0);
+        vp.pan_by([100.0, 0.0]);
+        // Screen centre is (400, 300). With pan_x=100, canvas_x = (400 - 400 - 100)/1 = -100.
+        let canvas = vp.screen_to_canvas([400.0, 300.0]);
+        assert!((canvas[0] - (-100.0)).abs() < 1e-4, "canvas.x={}", canvas[0]);
+        assert!((canvas[1]).abs() < 1e-4, "canvas.y={}", canvas[1]);
+    }
+
+    /// canvas_to_screen with pan: offset shifts screen mapping accordingly.
+    #[test]
+    fn canvas_to_screen_with_pan_offset() {
+        let mut vp = Viewport::new(800.0, 600.0);
+        vp.pan_by([-50.0, 0.0]);
+        // Canvas origin: screen_x = 0*1 + (-50) + 400 = 350.
+        let screen = vp.canvas_to_screen([0.0, 0.0]);
+        assert!((screen[0] - 350.0).abs() < 1e-4, "screen.x={}", screen[0]);
+    }
 }

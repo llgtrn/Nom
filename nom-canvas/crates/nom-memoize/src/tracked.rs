@@ -399,4 +399,100 @@ mod tests {
         }
         assert_eq!(t.call_count(), 5);
     }
+
+    // --- call_count() never decrements after reset via take_calls() ---
+
+    #[test]
+    fn call_count_never_decrements_after_reset() {
+        // After take_calls() the count goes to zero (reset), but it never goes
+        // BELOW the zero it was reset to — subsequent records only add.
+        let t = Tracked::new("data", 1);
+        t.record_call(1, Hash128::of_str("a"));
+        t.record_call(2, Hash128::of_str("b"));
+        assert_eq!(t.call_count(), 2);
+
+        // Reset via take_calls.
+        let _ = t.take_calls();
+        assert_eq!(t.call_count(), 0, "count must be zero after reset");
+
+        // Now record again — count should increment from 0, never go negative.
+        t.record_call(3, Hash128::of_str("c"));
+        assert_eq!(t.call_count(), 1, "count must increment after reset, never decrement");
+
+        t.record_call(4, Hash128::of_str("d"));
+        assert_eq!(t.call_count(), 2);
+
+        // Second reset.
+        let _ = t.take_calls();
+        assert_eq!(t.call_count(), 0);
+
+        // Always non-negative.
+        for i in 0u32..5 {
+            let before = t.call_count();
+            t.record_call(i, Hash128::of_u64(i as u64));
+            let after = t.call_count();
+            assert!(after > before, "call_count must strictly increase after record_call");
+        }
+    }
+
+    #[test]
+    fn call_count_stays_zero_without_records_after_reset() {
+        let t = Tracked::new("x", 1);
+        t.record_call(1, Hash128::of_str("v"));
+        let _ = t.take_calls();
+        // No new records — count stays at zero, never below.
+        assert_eq!(t.call_count(), 0);
+        assert_eq!(t.call_count(), 0); // second call also zero, not decremented
+    }
+
+    #[test]
+    fn call_count_multiple_resets_never_negative() {
+        let t = Tracked::new(0u32, 0);
+        for _ in 0u32..10 {
+            t.record_call(1, Hash128::of_str("x"));
+            assert!(t.call_count() >= 1);
+            let _ = t.take_calls();
+            // After reset, count is 0 (non-negative floor).
+            assert_eq!(t.call_count(), 0);
+        }
+    }
+
+    // --- Additional tracked coverage ---
+
+    #[test]
+    fn tracked_large_version_number() {
+        let t = Tracked::new("big", u64::MAX);
+        assert_eq!(t.version, u64::MAX);
+    }
+
+    #[test]
+    fn tracked_record_100_calls_count_is_100() {
+        let t = Tracked::new("stress", 1);
+        for i in 0u32..100 {
+            t.record_call(i, Hash128::of_u64(i as u64));
+        }
+        assert_eq!(t.call_count(), 100);
+    }
+
+    #[test]
+    fn tracked_take_all_100_calls() {
+        let t = Tracked::new("stress", 1);
+        for i in 0u32..100 {
+            t.record_call(i, Hash128::of_u64(i as u64));
+        }
+        let calls = t.take_calls();
+        assert_eq!(calls.len(), 100);
+        assert_eq!(t.call_count(), 0);
+    }
+
+    #[test]
+    fn tracked_snapshot_after_100_calls_has_100_pairs() {
+        let t = Tracked::new("many", 1);
+        for i in 0u32..100 {
+            t.record_call(i, Hash128::of_u64(i as u64));
+        }
+        let snap = t.snapshot();
+        assert_eq!(snap.method_call_pairs.len(), 100);
+        assert_eq!(snap.version, 1);
+    }
 }

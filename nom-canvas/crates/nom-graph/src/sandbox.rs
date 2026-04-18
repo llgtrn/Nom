@@ -1350,4 +1350,214 @@ mod tests {
             "eval_expr must succeed after sanitize passes"
         );
     }
+
+    // ------------------------------------------------------------------
+    // eval_expr_inner: depth=64 passes (at limit, not beyond)
+    // ------------------------------------------------------------------
+    #[test]
+    fn eval_expr_inner_depth_64_passes() {
+        // A BinOp chain exactly 64 levels deep is at the EVAL_DEPTH_LIMIT boundary.
+        // The check is `depth > EVAL_DEPTH_LIMIT`, so depth=64 must succeed.
+        let at_limit = (0..64).fold(Expr::Literal(SandboxValue::Int(0)), |acc, _| Expr::BinOp {
+            op: BinOpKind::Add,
+            left: Box::new(acc),
+            right: Box::new(Expr::Literal(SandboxValue::Int(1))),
+        });
+        let ctx = EvalContext::new();
+        let result = eval_expr(&at_limit, &ctx);
+        assert_eq!(
+            result,
+            Ok(SandboxValue::Int(64)),
+            "depth=64 must evaluate successfully (at limit, not exceeded)"
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // eval_expr_inner: depth=65 fails with DepthLimitExceeded
+    // ------------------------------------------------------------------
+    #[test]
+    fn eval_expr_inner_depth_65_fails() {
+        // 65 levels deep exceeds EVAL_DEPTH_LIMIT=64 → must return DepthLimitExceeded.
+        let over_limit = (0..65).fold(Expr::Literal(SandboxValue::Int(0)), |acc, _| Expr::BinOp {
+            op: BinOpKind::Add,
+            left: Box::new(acc),
+            right: Box::new(Expr::Literal(SandboxValue::Int(1))),
+        });
+        let ctx = EvalContext::new();
+        assert_eq!(
+            eval_expr(&over_limit, &ctx),
+            Err(SandboxError::DepthLimitExceeded),
+            "depth=65 must fail with DepthLimitExceeded"
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // eval_expr_inner: deeply nested If/else tree
+    // ------------------------------------------------------------------
+    #[test]
+    fn eval_expr_inner_deep_if_else_tree() {
+        // Build a left-skewed If tree 4 levels deep:
+        //   if true { if true { if true { if true { 99 } else { 0 } } else { 0 } } else { 0 } } else { 0 }
+        // Must evaluate to 99 (always takes the true branch).
+        let inner = Expr::If {
+            cond: Box::new(Expr::Literal(SandboxValue::Bool(true))),
+            then: Box::new(Expr::Literal(SandboxValue::Int(99))),
+            else_: Box::new(Expr::Literal(SandboxValue::Int(0))),
+        };
+        let level2 = Expr::If {
+            cond: Box::new(Expr::Literal(SandboxValue::Bool(true))),
+            then: Box::new(inner),
+            else_: Box::new(Expr::Literal(SandboxValue::Int(0))),
+        };
+        let level3 = Expr::If {
+            cond: Box::new(Expr::Literal(SandboxValue::Bool(true))),
+            then: Box::new(level2),
+            else_: Box::new(Expr::Literal(SandboxValue::Int(0))),
+        };
+        let level4 = Expr::If {
+            cond: Box::new(Expr::Literal(SandboxValue::Bool(true))),
+            then: Box::new(level3),
+            else_: Box::new(Expr::Literal(SandboxValue::Int(0))),
+        };
+        let ctx = EvalContext::new();
+        assert_eq!(
+            eval_expr(&level4, &ctx),
+            Ok(SandboxValue::Int(99)),
+            "deeply nested if-else tree must evaluate to 99"
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // eval_expr_inner: Call with 4 args — all evaluated
+    // ------------------------------------------------------------------
+    #[test]
+    fn eval_expr_inner_call_with_four_args_all_evaluated() {
+        // Build a Call for "len" — it only uses the first arg, but we verify
+        // that all args are evaluated without error when using eval_expr.
+        // We use a simpler approach: 4-arg call where each arg is a valid literal.
+        // "len" ignores args beyond the first; no panic must occur.
+        let ctx = EvalContext::new();
+        let expr = Expr::Call {
+            name: "len".into(),
+            args: vec![
+                Expr::Literal(SandboxValue::Str("abcd".into())),
+                Expr::Literal(SandboxValue::Int(1)),
+                Expr::Literal(SandboxValue::Int(2)),
+                Expr::Literal(SandboxValue::Int(3)),
+            ],
+        };
+        // "len" returns length of first arg (the Str "abcd" = 4).
+        assert_eq!(
+            eval_expr(&expr, &ctx),
+            Ok(SandboxValue::Int(4)),
+            "call with 4 args: len(\"abcd\", 1, 2, 3) must return 4"
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // Call: to_int converts float to int
+    // ------------------------------------------------------------------
+    #[test]
+    fn eval_expr_call_to_int_from_float() {
+        let ctx = EvalContext::new();
+        let expr = Expr::Call {
+            name: "to_int".into(),
+            args: vec![Expr::Literal(SandboxValue::Float(3.7))],
+        };
+        assert_eq!(eval_expr(&expr, &ctx), Ok(SandboxValue::Int(3)));
+    }
+
+    // ------------------------------------------------------------------
+    // Call: to_str converts int to string representation
+    // ------------------------------------------------------------------
+    #[test]
+    fn eval_expr_call_to_str_from_int() {
+        let ctx = EvalContext::new();
+        let expr = Expr::Call {
+            name: "to_str".into(),
+            args: vec![Expr::Literal(SandboxValue::Int(42))],
+        };
+        let result = eval_expr(&expr, &ctx);
+        // to_str uses Debug formatting; just check it's a Str and non-empty.
+        match result {
+            Ok(SandboxValue::Str(s)) => assert!(!s.is_empty(), "to_str must produce non-empty string"),
+            other => panic!("expected Str, got {:?}", other),
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // BinOp: Float subtraction
+    // ------------------------------------------------------------------
+    #[test]
+    fn eval_expr_float_sub_not_supported_returns_type_mismatch() {
+        // Float subtraction is not implemented (only Add for float), so it
+        // should return a TypeMismatch error.
+        let ctx = EvalContext::new();
+        let expr = Expr::BinOp {
+            op: BinOpKind::Sub,
+            left: Box::new(Expr::Literal(SandboxValue::Float(5.0))),
+            right: Box::new(Expr::Literal(SandboxValue::Float(2.0))),
+        };
+        let result = eval_expr(&expr, &ctx);
+        assert!(result.is_err(), "Float Sub must return an error (not implemented)");
+    }
+
+    // ------------------------------------------------------------------
+    // SandboxError: ForbiddenIdentifier Display
+    // ------------------------------------------------------------------
+    #[test]
+    fn sandbox_error_display_forbidden_identifier() {
+        let e = SandboxError::ForbiddenIdentifier("this".into());
+        let msg = format!("{e}");
+        assert!(msg.contains("this"), "ForbiddenIdentifier display must include identifier name");
+    }
+
+    // ------------------------------------------------------------------
+    // SandboxError: PrototypeAccess Display
+    // ------------------------------------------------------------------
+    #[test]
+    fn sandbox_error_display_prototype_access() {
+        let e = SandboxError::PrototypeAccess;
+        let msg = format!("{e}");
+        assert!(!msg.is_empty(), "PrototypeAccess display must be non-empty");
+    }
+
+    // ------------------------------------------------------------------
+    // SandboxError: InvalidDollarVar Display
+    // ------------------------------------------------------------------
+    #[test]
+    fn sandbox_error_display_invalid_dollar_var() {
+        let e = SandboxError::InvalidDollarVar("$custom".into());
+        let msg = format!("{e}");
+        assert!(msg.contains("$custom"), "InvalidDollarVar display must include var name");
+    }
+
+    // ------------------------------------------------------------------
+    // NoSideEffectsSanitizer: always returns Ok
+    // ------------------------------------------------------------------
+    #[test]
+    fn no_side_effects_sanitizer_always_ok() {
+        let s = NoSideEffectsSanitizer;
+        let expr = Expr::Literal(SandboxValue::Int(1));
+        assert!(s.check(&expr).is_ok());
+        let call_expr = Expr::Call { name: "len".into(), args: vec![] };
+        assert!(s.check(&call_expr).is_ok());
+    }
+
+    // ------------------------------------------------------------------
+    // TypeCoherenceSanitizer: nested If with type-clean branches passes
+    // ------------------------------------------------------------------
+    #[test]
+    fn type_coherence_sanitizer_nested_if_clean_passes() {
+        let expr = Expr::If {
+            cond: Box::new(Expr::Literal(SandboxValue::Bool(true))),
+            then: Box::new(Expr::BinOp {
+                op: BinOpKind::Add,
+                left: Box::new(Expr::Literal(SandboxValue::Int(1))),
+                right: Box::new(Expr::Literal(SandboxValue::Int(2))),
+            }),
+            else_: Box::new(Expr::Literal(SandboxValue::Int(0))),
+        };
+        assert!(TypeCoherenceSanitizer.check(&expr).is_ok());
+    }
 }

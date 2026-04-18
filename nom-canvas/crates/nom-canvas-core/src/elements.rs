@@ -956,4 +956,142 @@ mod tests {
         assert!((wire.waypoints[1][0] - 50.0).abs() < 1e-6);
         assert!((wire.waypoints[2][0] - 90.0).abs() < 1e-6);
     }
+
+    /// CanvasRect: corner_radius field is preserved.
+    #[test]
+    fn rect_corner_radius_preserved() {
+        let r = CanvasRect {
+            id: 1,
+            bounds: ([0.0, 0.0], [50.0, 50.0]),
+            fill: None,
+            stroke: None,
+            corner_radius: 8.0,
+            rotation: 0.0,
+            z_index: 0,
+        };
+        assert!((r.corner_radius - 8.0).abs() < 1e-6, "corner_radius must be 8.0");
+    }
+
+    /// CanvasRect: fill and stroke colours are accessible.
+    #[test]
+    fn rect_fill_and_stroke_accessible() {
+        let r = CanvasRect {
+            id: 2,
+            bounds: ([0.0, 0.0], [40.0, 30.0]),
+            fill: Some([1.0, 0.0, 0.0, 1.0]),
+            stroke: Some([0.0, 0.0, 1.0, 0.5]),
+            corner_radius: 0.0,
+            rotation: 0.0,
+            z_index: 0,
+        };
+        assert!(r.fill.is_some(), "fill must be set");
+        assert!(r.stroke.is_some(), "stroke must be set");
+        assert!((r.fill.unwrap()[0] - 1.0).abs() < 1e-6, "fill R must be 1.0");
+        assert!((r.stroke.unwrap()[2] - 1.0).abs() < 1e-6, "stroke B must be 1.0");
+    }
+
+    /// GraphNodeElement: bounding_box returns correct bottom-right corner.
+    #[test]
+    fn graph_node_bounding_box_bottom_right() {
+        let node = GraphNodeElement {
+            id: 50,
+            node_id: 1,
+            position: [10.0, 20.0],
+            size: [60.0, 30.0],
+            label: String::new(),
+            confidence: 0.5,
+        };
+        let (_, br) = bounding_box(&node);
+        assert!((br[0] - 70.0).abs() < 1e-6, "br.x = 10+60 = 70, got {}", br[0]);
+        assert!((br[1] - 50.0).abs() < 1e-6, "br.y = 20+30 = 50, got {}", br[1]);
+    }
+
+    /// WireElement: wire_midpoint with no waypoints gives correct straight-line midpoint.
+    #[test]
+    fn wire_midpoint_no_waypoints() {
+        let wire = WireElement {
+            id: 10,
+            from_node: 1,
+            to_node: 2,
+            confidence: 1.0,
+            waypoints: vec![],
+        };
+        let mid = wire_midpoint(&wire, [0.0, 0.0], [200.0, 100.0]);
+        assert!((mid[0] - 100.0).abs() < 1e-6, "mid.x must be 100, got {}", mid[0]);
+        assert!((mid[1] - 50.0).abs() < 1e-6, "mid.y must be 50, got {}", mid[1]);
+    }
+
+    /// CanvasConnector: bounds_aabb with a single point returns a degenerate AABB.
+    #[test]
+    fn connector_bounds_aabb_single_point() {
+        let conn = CanvasConnector {
+            id: 5,
+            src_id: 1,
+            dst_id: 2,
+            route: vec![[25.0, 37.0]],
+            confidence: 0.5,
+            reason: String::new(),
+            z_index: 0,
+        };
+        let aabb = conn.bounds_aabb().unwrap();
+        assert!((aabb.min[0] - 25.0).abs() < 1e-6);
+        assert!((aabb.min[1] - 37.0).abs() < 1e-6);
+        assert!((aabb.max[0] - 25.0).abs() < 1e-6);
+        assert!((aabb.max[1] - 37.0).abs() < 1e-6);
+    }
+
+    /// CanvasEllipse: fill None means transparent background.
+    #[test]
+    fn ellipse_fill_none() {
+        let e = CanvasEllipse {
+            id: 7,
+            bounds: ([0.0, 0.0], [30.0, 30.0]),
+            fill: None,
+            stroke: None,
+            z_index: 0,
+        };
+        assert!(e.fill.is_none(), "fill must be None");
+        assert!(e.stroke.is_none(), "stroke must be None");
+    }
+
+    /// ArrowHead all variants are distinct.
+    #[test]
+    fn arrow_head_all_variants_distinct() {
+        assert_ne!(ArrowHead::Open, ArrowHead::Closed);
+        assert_ne!(ArrowHead::Closed, ArrowHead::Filled);
+        assert_ne!(ArrowHead::Open, ArrowHead::Filled);
+    }
+
+    /// CanvasLine: dashes vec is preserved.
+    #[test]
+    fn line_dashes_preserved() {
+        let line = CanvasLine {
+            id: 3,
+            start: [0.0, 0.0],
+            end: [100.0, 0.0],
+            stroke_width: 2.0,
+            color: [0.0, 1.0, 0.0, 1.0],
+            dashes: vec![5.0, 3.0],
+            z_index: 0,
+        };
+        assert_eq!(line.dashes.len(), 2, "dashes must have 2 entries");
+        assert!((line.dashes[0] - 5.0).abs() < 1e-6);
+        assert!((line.dashes[1] - 3.0).abs() < 1e-6);
+    }
+
+    /// paint_graph_node with a minimum-size node still pushes 5 quads.
+    #[test]
+    fn paint_graph_node_minimum_size_pushes_quads() {
+        let node = GraphNodeElement {
+            id: 99,
+            node_id: 1,
+            position: [0.0, 0.0],
+            size: [8.0, 8.0], // just big enough for 6×6 ports
+            label: String::new(),
+            confidence: 0.1,
+        };
+        let mut scene = nom_gpui::scene::Scene::new();
+        paint_graph_node(&node, &mut scene);
+        assert_eq!(scene.quads.len(), 5, "minimum node must still push 5 quads");
+    }
 }

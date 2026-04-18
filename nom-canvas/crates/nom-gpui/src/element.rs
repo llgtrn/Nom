@@ -331,4 +331,147 @@ mod tests {
         let id = LayoutId(5);
         assert_eq!(id.0, 5);
     }
+
+    // ── Wave AE new tests ─────────────────────────────────────────────────────
+
+    #[test]
+    fn div_default_equals_new() {
+        let d1 = Div::new();
+        let d2 = Div::default();
+        assert_eq!(d1.children.len(), d2.children.len());
+        assert!(d1.style.background.is_none());
+        assert!(d2.style.background.is_none());
+    }
+
+    #[test]
+    fn div_prepaint_does_not_panic() {
+        let mut div = Div::new();
+        let mut cx = make_cx();
+        let bounds = Bounds::default();
+        let mut state = ();
+        // prepaint must not panic in the stub implementation.
+        Element::prepaint(&mut div, None, bounds, &mut state, &mut cx);
+    }
+
+    #[test]
+    fn div_paint_does_not_panic() {
+        let mut div = Div::new();
+        let mut cx = make_cx();
+        let bounds = Bounds::default();
+        let mut state = ();
+        // paint must not panic in the stub implementation.
+        Element::paint(&mut div, None, bounds, &mut state, &mut cx);
+    }
+
+    #[test]
+    fn div_full_three_phase_lifecycle() {
+        let mut div = Div::new();
+        let mut cx = make_cx();
+        // Phase 1: layout
+        let (id, mut state) = Element::request_layout(&mut div, None, &mut cx);
+        assert_ne!(id, LayoutId(0));
+        // Phase 2: prepaint
+        let bounds = cx.layout(id);
+        Element::prepaint(&mut div, None, bounds, &mut state, &mut cx);
+        // Phase 3: paint
+        Element::paint(&mut div, None, bounds, &mut state, &mut cx);
+        // All phases complete without panic.
+    }
+
+    #[test]
+    fn div_anyelement_request_layout_dyn_non_zero() {
+        let mut div = Div::new();
+        let mut cx = make_cx();
+        let id = AnyElement::request_layout_dyn(&mut div, None, &mut cx);
+        assert_ne!(id, LayoutId(0), "AnyElement layout id must be non-zero");
+    }
+
+    #[test]
+    fn div_anyelement_prepaint_dyn_does_not_panic() {
+        let mut div = Div::new();
+        let mut cx = make_cx();
+        let bounds = Bounds::default();
+        AnyElement::prepaint_dyn(&mut div, None, bounds, &mut cx);
+    }
+
+    #[test]
+    fn div_anyelement_paint_dyn_does_not_panic() {
+        let mut div = Div::new();
+        let mut cx = make_cx();
+        let bounds = Bounds::default();
+        AnyElement::paint_dyn(&mut div, None, bounds, &mut cx);
+    }
+
+    #[test]
+    fn div_child_is_boxed_as_any_element() {
+        // Verify Box<dyn AnyElement> works — Div implements AnyElement.
+        let mut parent = Div::new();
+        parent.children.push(Box::new(Div::new()));
+        assert_eq!(parent.children.len(), 1);
+    }
+
+    #[test]
+    fn layout_registry_monotonic() {
+        let mut r = LayoutRegistry::new();
+        let mut prev = r.next_id().0;
+        for _ in 0..50 {
+            let cur = r.next_id().0;
+            assert!(cur > prev, "LayoutId must strictly increase: {cur} > {prev}");
+            prev = cur;
+        }
+    }
+
+    #[test]
+    fn layout_registry_default_same_as_new() {
+        let mut r1 = LayoutRegistry::new();
+        let mut r2 = LayoutRegistry::default();
+        assert_eq!(r1.next_id(), r2.next_id(), "new and default must start at same id");
+    }
+
+    #[test]
+    fn window_context_rem_size_scale_1() {
+        let cx = WindowContext::new(1.0, Vec2::new(800.0, 600.0));
+        assert_eq!(cx.rem_size(), Pixels(16.0));
+    }
+
+    #[test]
+    fn window_context_rem_size_scale_3() {
+        let cx = WindowContext::new(3.0, Vec2::new(800.0, 600.0));
+        assert_eq!(cx.rem_size(), Pixels(48.0));
+    }
+
+    #[test]
+    fn window_context_layout_returns_default_bounds() {
+        let cx = make_cx();
+        let bounds = cx.layout(LayoutId(99));
+        // Stub always returns default bounds.
+        assert_eq!(bounds, Bounds::default());
+    }
+
+    #[test]
+    fn global_element_id_empty_pop_is_none() {
+        let mut gid = GlobalElementId::new();
+        assert_eq!(gid.pop(), None, "pop on empty GlobalElementId must be None");
+    }
+
+    #[test]
+    fn global_element_id_push_multiple_lifo() {
+        let mut gid = GlobalElementId::new();
+        gid.push(ElementId::new(10));
+        gid.push(ElementId::new(20));
+        gid.push(ElementId::new(30));
+        assert_eq!(gid.pop(), Some(ElementId::new(30)));
+        assert_eq!(gid.pop(), Some(ElementId::new(20)));
+        assert_eq!(gid.pop(), Some(ElementId::new(10)));
+        assert_eq!(gid.pop(), None);
+    }
+
+    #[test]
+    fn layout_ids_increment_by_one() {
+        let mut cx = make_cx();
+        let style = crate::styled::StyleRefinement::default();
+        let id1 = cx.request_layout(&style, &[]);
+        let id2 = cx.request_layout(&style, &[]);
+        assert_eq!(id2.0, id1.0 + 1, "consecutive layout IDs must differ by 1");
+    }
 }

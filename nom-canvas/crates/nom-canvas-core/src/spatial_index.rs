@@ -533,4 +533,95 @@ mod tests {
         assert!(found.contains(&1), "element 1 must be returned");
         assert!(found.contains(&2), "element 2 must be returned");
     }
+
+    /// Simulate concurrent inserts by inserting 100 elements in sequence and
+    /// verifying all are queryable.
+    #[test]
+    fn concurrent_insert_simulation_100_elements() {
+        let mut idx = SpatialIndex::new();
+        for i in 1_u64..=100 {
+            let base = i as f32 * 5.0;
+            idx.insert(make_bounds(i, [base, base], [base + 4.0, base + 4.0]));
+        }
+        assert_eq!(idx.len(), 100, "all 100 elements must be in index");
+        // Query a large region to find all elements.
+        let found = idx.query_in_bounds([0.0, 0.0], [600.0, 600.0]);
+        assert_eq!(found.len(), 100, "query must return all 100 elements");
+    }
+
+    /// Query after 100 removes: index is empty and query returns nothing.
+    #[test]
+    fn query_after_100_removes() {
+        let mut idx = SpatialIndex::new();
+        let all_bounds: Vec<_> = (1_u64..=100)
+            .map(|i| {
+                let base = i as f32 * 5.0;
+                make_bounds(i, [base, base], [base + 4.0, base + 4.0])
+            })
+            .collect();
+        for b in &all_bounds {
+            idx.insert(*b);
+        }
+        assert_eq!(idx.len(), 100);
+        for b in &all_bounds {
+            idx.remove(b.id, *b);
+        }
+        assert!(idx.is_empty(), "index must be empty after 100 removes");
+        let found = idx.query_in_bounds([0.0, 0.0], [600.0, 600.0]);
+        assert!(found.is_empty(), "query on empty index must return nothing");
+    }
+
+    /// Query with zero-area bounds at a point not covered by any element returns empty.
+    #[test]
+    fn query_zero_area_bounds_no_match() {
+        let mut idx = SpatialIndex::new();
+        idx.insert(make_bounds(1, [100.0, 100.0], [200.0, 200.0]));
+        // Zero-area query at a point outside element 1.
+        let found = idx.query_in_bounds([50.0, 50.0], [50.0, 50.0]);
+        assert!(found.is_empty(), "zero-area query outside element must return empty");
+    }
+
+    /// Sequential inserts then query: each new element is immediately findable.
+    #[test]
+    fn sequential_insert_immediately_queryable() {
+        let mut idx = SpatialIndex::new();
+        for i in 1_u64..=10 {
+            let base = i as f32 * 20.0;
+            idx.insert(make_bounds(i, [base, 0.0], [base + 10.0, 10.0]));
+            // The newly inserted element must be findable right away.
+            let found = idx.query_in_bounds([base, 0.0], [base + 10.0, 10.0]);
+            assert!(found.contains(&i), "element {i} must be queryable immediately after insert");
+        }
+    }
+
+    /// Verify that removing half the elements leaves the other half queryable.
+    #[test]
+    fn remove_half_leaves_other_half_queryable() {
+        let mut idx = SpatialIndex::new();
+        for i in 1_u64..=10 {
+            let base = i as f32 * 20.0;
+            idx.insert(make_bounds(i, [base, 0.0], [base + 15.0, 15.0]));
+        }
+        // Remove odd ids.
+        for i in (1_u64..=10).step_by(2) {
+            let base = i as f32 * 20.0;
+            idx.remove(i, make_bounds(i, [base, 0.0], [base + 15.0, 15.0]));
+        }
+        assert_eq!(idx.len(), 5, "5 elements must remain after removing odds");
+        // Even ids must still be queryable.
+        for i in (2_u64..=10).step_by(2) {
+            let base = i as f32 * 20.0;
+            let found = idx.query_in_bounds([base, 0.0], [base + 15.0, 15.0]);
+            assert!(found.contains(&i), "even element {i} must still be queryable");
+        }
+    }
+
+    /// nearest on a single-element index returns that element.
+    #[test]
+    fn nearest_single_element_always_returned() {
+        let mut idx = SpatialIndex::new();
+        idx.insert(make_bounds(1, [0.0, 0.0], [10.0, 10.0]));
+        let near = idx.nearest([5.0, 5.0], 1000.0);
+        assert_eq!(near, Some(1), "single element must be the nearest");
+    }
 }

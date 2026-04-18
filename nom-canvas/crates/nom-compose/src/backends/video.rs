@@ -417,4 +417,114 @@ mod tests {
         // stub artifact exists
         assert!(store.exists(&block.artifact_hash));
     }
+
+    // ── Wave AE new tests ────────────────────────────────────────────────────
+
+    #[test]
+    fn mp4_stub_header_contains_width_and_height() {
+        let spec = VideoSpec::new(30, 1280, 720, 1.0);
+        let bytes = encode_stub_container("MP4", "h264", &spec);
+        let text = String::from_utf8_lossy(&bytes);
+        assert!(text.contains("W=1280"), "MP4 stub must contain width");
+        assert!(text.contains("H=720"), "MP4 stub must contain height");
+    }
+
+    #[test]
+    fn webm_stub_header_contains_codec_field() {
+        let spec = VideoSpec::new(25, 854, 480, 1.0);
+        let bytes = encode_stub_container("WebM", "vp9", &spec);
+        let text = String::from_utf8_lossy(&bytes);
+        assert!(text.contains("codec=vp9"), "WebM stub must contain codec field");
+        assert!(text.contains("NOM-STUB-CONTAINER: WebM"));
+    }
+
+    #[test]
+    fn mp4_stub_container_format_display() {
+        assert_eq!(ContainerFormat::Mp4Stub.to_string(), "video/mp4");
+    }
+
+    #[test]
+    fn webm_stub_container_format_display() {
+        assert_eq!(ContainerFormat::WebMStub.to_string(), "video/webm");
+    }
+
+    #[test]
+    fn video_codec_h264_stub_display() {
+        assert_eq!(VideoCodec::H264Stub.to_string(), "h264");
+    }
+
+    #[test]
+    fn video_codec_vp9_stub_display() {
+        assert_eq!(VideoCodec::Vp9Stub.to_string(), "vp9");
+    }
+
+    #[test]
+    fn mp4_stub_compose_stores_artifact_in_store() {
+        let mut store = InMemoryStore::new();
+        let input = VideoInput {
+            entity: NomtuRef { id: "mp4-test".into(), word: "film".into(), kind: "media".into() },
+            frames: vec![vec![1u8, 2u8, 3u8]],
+            fps: 24,
+            width: 640,
+            height: 480,
+            container_format: ContainerFormat::Mp4Stub,
+            codec: VideoCodec::H264Stub,
+        };
+        let block = VideoBackend::compose(input, &mut store, &LogProgressSink);
+        assert!(store.exists(&block.artifact_hash));
+        let payload = store.read(&block.artifact_hash).unwrap();
+        assert!(!payload.is_empty());
+    }
+
+    #[test]
+    fn webm_stub_compose_stores_artifact_in_store() {
+        let mut store = InMemoryStore::new();
+        let input = VideoInput {
+            entity: NomtuRef { id: "webm-test".into(), word: "loop".into(), kind: "media".into() },
+            frames: vec![vec![0u8; 8]],
+            fps: 30,
+            width: 1920,
+            height: 1080,
+            container_format: ContainerFormat::WebMStub,
+            codec: VideoCodec::Vp9Stub,
+        };
+        let block = VideoBackend::compose(input, &mut store, &LogProgressSink);
+        assert!(store.exists(&block.artifact_hash));
+    }
+
+    #[test]
+    fn video_spec_zero_fps_duration_ms_is_zero() {
+        let spec = VideoSpec::new(0, 640, 480, 1.0);
+        // fps=0 — duration_ms must not panic and returns 0
+        assert_eq!(spec.duration_ms(), 0);
+    }
+
+    #[test]
+    fn video_compose_single_frame_duration_ms() {
+        let mut store = InMemoryStore::new();
+        // 1 frame at 1 fps => 1000 ms
+        let input = default_video_input("v-single", "frame", vec![vec![0u8; 4]], 1, 8, 8);
+        let block = VideoBackend::compose(input, &mut store, &LogProgressSink);
+        assert_eq!(block.duration_ms, 1000);
+    }
+
+    #[test]
+    fn video_codec_roundtrip_via_display() {
+        // Each codec's Display should produce a non-empty string
+        let codecs = [VideoCodec::Raw, VideoCodec::H264Stub, VideoCodec::Vp9Stub];
+        for codec in &codecs {
+            let s = codec.to_string();
+            assert!(!s.is_empty(), "codec display must be non-empty for {:?}", codec);
+        }
+    }
+
+    #[test]
+    fn container_format_all_three_display_different() {
+        let y4m = ContainerFormat::Y4m.to_string();
+        let mp4 = ContainerFormat::Mp4Stub.to_string();
+        let webm = ContainerFormat::WebMStub.to_string();
+        assert_ne!(y4m, mp4);
+        assert_ne!(mp4, webm);
+        assert_ne!(y4m, webm);
+    }
 }

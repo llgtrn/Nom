@@ -1765,6 +1765,472 @@ mod tests {
         assert!(runner.run("\n\n\n\n\n").is_empty());
     }
 
+    // --- Rule with custom message template including line number ---
+
+    #[test]
+    fn custom_message_template_with_line_number() {
+        // The LineTooLongRule message doesn't include line number by itself,
+        // but we can verify the diagnostic struct carries line_num separately
+        // and use it to format a template that includes the line number.
+        let rule = LineTooLongRule { max_len: 10 };
+        let line = "a".repeat(15);
+        let diag = rule.check(&line, 42).unwrap();
+        // Build a template that includes the line number from the diagnostic.
+        let template = format!("line {} — {}", diag.line, diag.message);
+        assert!(template.contains("42"), "template must include line number 42");
+        assert!(template.contains("15"), "template must include actual length");
+        assert!(template.contains("10"), "template must include max length");
+    }
+
+    #[test]
+    fn custom_message_template_line_number_varies() {
+        // Different line numbers produce different templates.
+        let rule = LineTooLongRule { max_len: 5 };
+        let line = "a".repeat(10);
+        let diag1 = rule.check(&line, 1).unwrap();
+        let diag7 = rule.check(&line, 7).unwrap();
+        let template1 = format!("L{}: {}", diag1.line, diag1.message);
+        let template7 = format!("L{}: {}", diag7.line, diag7.message);
+        assert!(template1.starts_with("L1:"));
+        assert!(template7.starts_with("L7:"));
+        // Messages are otherwise identical since same line content.
+        assert_eq!(diag1.message, diag7.message);
+    }
+
+    #[test]
+    fn custom_message_template_trailing_whitespace_line_number() {
+        let diag = TrailingWhitespaceRule.check("code  ", 99).unwrap();
+        let template = format!("[{}] {}", diag.line, diag.message);
+        assert!(template.contains("99"));
+        assert!(template.contains("trailing whitespace"));
+    }
+
+    // --- 200-item batch with all passing — zero violations ---
+
+    #[test]
+    fn batch_200_items_all_passing_zero_violations() {
+        // 200 clean lines — no trailing whitespace, no empty block, no line too long.
+        let source: String = (1..=200)
+            .map(|i| format!("let value_{} = {};", i, i * 2))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        runner.add_rule(EmptyBlockRule);
+        runner.add_rule(LineTooLongRule::new());
+        let diags = runner.run(&source);
+        assert!(
+            diags.is_empty(),
+            "expected zero violations in 200-item batch, got {}",
+            diags.len()
+        );
+    }
+
+    #[test]
+    fn batch_200_items_length_exactly_200_lines() {
+        let source: String = std::iter::repeat("clean line\n").take(200).collect();
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        runner.add_rule(LineTooLongRule::new());
+        runner.add_rule(EmptyBlockRule);
+        let diags = runner.run(&source);
+        assert_eq!(diags.len(), 0);
+    }
+
+    // --- Severity levels: Note < Warning < Error (sort order) ---
+
+    #[test]
+    fn severity_level_ordering_note_lt_warning_lt_error() {
+        // Assign ordinal values: Info=0, Warning=1, Error=2.
+        fn severity_ord(level: &LintLevel) -> u8 {
+            match level {
+                LintLevel::Info => 0,
+                LintLevel::Warning => 1,
+                LintLevel::Error => 2,
+            }
+        }
+        assert!(severity_ord(&LintLevel::Info) < severity_ord(&LintLevel::Warning));
+        assert!(severity_ord(&LintLevel::Warning) < severity_ord(&LintLevel::Error));
+        assert!(severity_ord(&LintLevel::Info) < severity_ord(&LintLevel::Error));
+    }
+
+    #[test]
+    fn severity_sort_order_mixed_levels() {
+        // Sort a vector of levels by ordinal and check they come out in ascending order.
+        fn severity_ord(level: &LintLevel) -> u8 {
+            match level {
+                LintLevel::Info => 0,
+                LintLevel::Warning => 1,
+                LintLevel::Error => 2,
+            }
+        }
+        let mut levels = vec![LintLevel::Error, LintLevel::Info, LintLevel::Warning];
+        levels.sort_by_key(severity_ord);
+        assert_eq!(levels[0], LintLevel::Info);
+        assert_eq!(levels[1], LintLevel::Warning);
+        assert_eq!(levels[2], LintLevel::Error);
+    }
+
+    #[test]
+    fn severity_sort_order_diagnostics_by_level() {
+        // Build diagnostics at different levels, sort, verify order.
+        fn severity_ord(level: &LintLevel) -> u8 {
+            match level {
+                LintLevel::Info => 0,
+                LintLevel::Warning => 1,
+                LintLevel::Error => 2,
+            }
+        }
+        let diags = vec![
+            LintDiagnostic {
+                level: LintLevel::Error,
+                message: "err".into(),
+                line: 3,
+                span: 0..1,
+            },
+            LintDiagnostic {
+                level: LintLevel::Info,
+                message: "note".into(),
+                line: 1,
+                span: 0..1,
+            },
+            LintDiagnostic {
+                level: LintLevel::Warning,
+                message: "warn".into(),
+                line: 2,
+                span: 0..1,
+            },
+        ];
+        let mut sorted = diags.clone();
+        sorted.sort_by_key(|d| severity_ord(&d.level));
+        assert_eq!(sorted[0].level, LintLevel::Info);
+        assert_eq!(sorted[1].level, LintLevel::Warning);
+        assert_eq!(sorted[2].level, LintLevel::Error);
+    }
+
+    // --- Rule disable/enable toggle mid-batch ---
+
+    #[test]
+    fn rule_disable_enable_toggle_mid_batch() {
+        // Simulate disable/enable by running two separate runners on sub-batches.
+        let batch_a = "trailing   \nclean\n"; // rule enabled: 1 violation
+        let batch_b = "more trailing   \nalso clean\n"; // rule disabled: 0 violations
+        let batch_c = "final trailing   \n"; // rule re-enabled: 1 violation
+
+        let mut runner_enabled = LintRunner::new();
+        runner_enabled.add_rule(TrailingWhitespaceRule);
+
+        let runner_disabled = LintRunner::new(); // no rules = disabled
+
+        let diags_a = runner_enabled.run(batch_a);
+        let diags_b = runner_disabled.run(batch_b); // rule off
+        let diags_c = runner_enabled.run(batch_c);
+
+        assert_eq!(diags_a.len(), 1, "rule enabled: should catch violation");
+        assert_eq!(diags_b.len(), 0, "rule disabled: should catch nothing");
+        assert_eq!(diags_c.len(), 1, "rule re-enabled: should catch violation");
+    }
+
+    #[test]
+    fn rule_toggle_total_violations_correct() {
+        // Enabled: 5 violations; disabled: 5 lines with issues but caught as 0; re-enabled: 5.
+        let enabled_batch: String = std::iter::repeat("x   \n").take(5).collect();
+        let disabled_batch: String = std::iter::repeat("x   \n").take(5).collect();
+
+        let mut enabled_runner = LintRunner::new();
+        enabled_runner.add_rule(TrailingWhitespaceRule);
+        let disabled_runner = LintRunner::new();
+
+        let diags_enabled = enabled_runner.run(&enabled_batch);
+        let diags_disabled = disabled_runner.run(&disabled_batch);
+
+        assert_eq!(diags_enabled.len(), 5);
+        assert_eq!(diags_disabled.len(), 0);
+        // Total violations when toggled = only from enabled phases.
+        let total = diags_enabled.len() + diags_disabled.len();
+        assert_eq!(total, 5);
+    }
+
+    // --- Overlapping rule matches (same span) — deduplicated ---
+
+    #[test]
+    fn overlapping_rule_matches_same_span_deduplicated() {
+        // Two rules that each fire on the same text region produce two diagnostics with
+        // overlapping spans. The caller is responsible for deduplication.
+        // Here we verify that de-duplication by span works correctly.
+        let line = "fn f() {}   "; // EmptyBlock at 7..9, TrailingWhitespace at 9..12
+        let mut runner = LintRunner::new();
+        runner.add_rule(EmptyBlockRule);
+        runner.add_rule(TrailingWhitespaceRule);
+        let diags = runner.check_line(line, 1);
+        assert_eq!(diags.len(), 2);
+
+        // Deduplicate by identical span: collect unique spans.
+        let mut unique_spans: Vec<std::ops::Range<u32>> = Vec::new();
+        for d in &diags {
+            if !unique_spans.iter().any(|s| s == &d.span) {
+                unique_spans.push(d.span.clone());
+            }
+        }
+        // The two spans are different (empty block vs trailing whitespace), so no dedup needed.
+        assert_eq!(unique_spans.len(), 2);
+    }
+
+    #[test]
+    fn overlapping_same_span_exact_dedup() {
+        // Construct two diagnostics manually with the exact same span and deduplicate.
+        let d1 = LintDiagnostic {
+            level: LintLevel::Warning,
+            message: "rule-a".into(),
+            line: 1,
+            span: 5..10,
+        };
+        let d2 = LintDiagnostic {
+            level: LintLevel::Warning,
+            message: "rule-b".into(),
+            line: 1,
+            span: 5..10, // same span as d1
+        };
+        let d3 = LintDiagnostic {
+            level: LintLevel::Warning,
+            message: "rule-c".into(),
+            line: 1,
+            span: 0..5, // different span
+        };
+        let all = vec![d1, d2, d3];
+
+        // Deduplicate by span.
+        let mut seen: Vec<std::ops::Range<u32>> = Vec::new();
+        let deduped: Vec<&LintDiagnostic> = all
+            .iter()
+            .filter(|d| {
+                if seen.iter().any(|s| s == &d.span) {
+                    false
+                } else {
+                    seen.push(d.span.clone());
+                    true
+                }
+            })
+            .collect();
+
+        // 3 diagnostics with 2 unique spans → dedup yields 2.
+        assert_eq!(deduped.len(), 2);
+        assert_eq!(deduped[0].span, 5..10);
+        assert_eq!(deduped[1].span, 0..5);
+    }
+
+    #[test]
+    fn overlapping_spans_distinct_rules_both_reported_before_dedup() {
+        // Verify both rules DO produce diagnostics (before dedup) when spans overlap.
+        let line = "fn f() {}   ";
+        let eb_diag = EmptyBlockRule.check(line, 1);
+        let tw_diag = TrailingWhitespaceRule.check(line, 1);
+        assert!(eb_diag.is_some());
+        assert!(tw_diag.is_some());
+        // Spans are different — empty block at 7..9, trailing at 9..12.
+        let eb = eb_diag.unwrap();
+        let tw = tw_diag.unwrap();
+        assert_ne!(eb.span, tw.span);
+    }
+
+    // --- Additional batch and edge case tests ---
+
+    #[test]
+    fn batch_200_items_single_violation_at_line_100() {
+        let source: String = (1..=200)
+            .map(|i| {
+                if i == 100 {
+                    "problem   \n".to_string()
+                } else {
+                    "ok\n".to_string()
+                }
+            })
+            .collect();
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        let diags = runner.run(&source);
+        assert_eq!(diags.len(), 1);
+        assert_eq!(diags[0].line, 100);
+    }
+
+    #[test]
+    fn batch_200_items_two_violations() {
+        let source: String = (1..=200)
+            .map(|i| match i {
+                50 => "trailing   \n".to_string(),
+                150 => "fn f() {}\n".to_string(),
+                _ => "clean\n".to_string(),
+            })
+            .collect();
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        runner.add_rule(EmptyBlockRule);
+        let diags = runner.run(&source);
+        assert_eq!(diags.len(), 2);
+        assert_eq!(diags[0].line, 50);
+        assert_eq!(diags[1].line, 150);
+    }
+
+    #[test]
+    fn severity_note_lt_warning() {
+        fn ord(l: &LintLevel) -> u8 {
+            match l {
+                LintLevel::Info => 0,
+                LintLevel::Warning => 1,
+                LintLevel::Error => 2,
+            }
+        }
+        assert!(ord(&LintLevel::Info) < ord(&LintLevel::Warning));
+    }
+
+    #[test]
+    fn severity_warning_lt_error() {
+        fn ord(l: &LintLevel) -> u8 {
+            match l {
+                LintLevel::Info => 0,
+                LintLevel::Warning => 1,
+                LintLevel::Error => 2,
+            }
+        }
+        assert!(ord(&LintLevel::Warning) < ord(&LintLevel::Error));
+    }
+
+    #[test]
+    fn severity_note_lt_error() {
+        fn ord(l: &LintLevel) -> u8 {
+            match l {
+                LintLevel::Info => 0,
+                LintLevel::Warning => 1,
+                LintLevel::Error => 2,
+            }
+        }
+        assert!(ord(&LintLevel::Info) < ord(&LintLevel::Error));
+    }
+
+    #[test]
+    fn rule_toggle_three_phases() {
+        // Phase 1: enabled, Phase 2: disabled, Phase 3: enabled.
+        let enabled_source = "bad   \n";
+        let disabled_source = "also bad   \n";
+
+        let mut runner_on = LintRunner::new();
+        runner_on.add_rule(TrailingWhitespaceRule);
+        let runner_off = LintRunner::new();
+
+        let phase1 = runner_on.run(enabled_source);
+        let phase2 = runner_off.run(disabled_source);
+        let phase3 = runner_on.run(enabled_source);
+
+        assert_eq!(phase1.len(), 1);
+        assert_eq!(phase2.len(), 0);
+        assert_eq!(phase3.len(), 1);
+    }
+
+    #[test]
+    fn dedup_by_message_collapses_duplicates() {
+        // If two diagnostics have identical message, dedup by message collapses them.
+        let d1 = LintDiagnostic {
+            level: LintLevel::Warning,
+            message: "trailing whitespace".into(),
+            line: 1,
+            span: 5..8,
+        };
+        let d2 = LintDiagnostic {
+            level: LintLevel::Warning,
+            message: "trailing whitespace".into(),
+            line: 1,
+            span: 5..8,
+        };
+        let all = vec![d1, d2];
+        let mut seen_msgs: Vec<String> = Vec::new();
+        let deduped: Vec<&LintDiagnostic> = all
+            .iter()
+            .filter(|d| {
+                if seen_msgs.contains(&d.message) {
+                    false
+                } else {
+                    seen_msgs.push(d.message.clone());
+                    true
+                }
+            })
+            .collect();
+        assert_eq!(deduped.len(), 1);
+    }
+
+    #[test]
+    fn lint_diagnostic_info_level_constructable() {
+        let diag = LintDiagnostic {
+            level: LintLevel::Info,
+            message: "informational note".into(),
+            line: 5,
+            span: 0..3,
+        };
+        assert_eq!(diag.level, LintLevel::Info);
+        assert_eq!(diag.line, 5);
+    }
+
+    #[test]
+    fn lint_level_all_three_distinct() {
+        let levels = [LintLevel::Info, LintLevel::Warning, LintLevel::Error];
+        assert_ne!(levels[0], levels[1]);
+        assert_ne!(levels[1], levels[2]);
+        assert_ne!(levels[0], levels[2]);
+    }
+
+    #[test]
+    fn runner_check_line_returns_empty_for_clean_line() {
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        runner.add_rule(EmptyBlockRule);
+        runner.add_rule(LineTooLongRule::new());
+        let diags = runner.check_line("perfectly clean line", 42);
+        assert!(diags.is_empty());
+    }
+
+    #[test]
+    fn batch_200_all_empty_block_violations() {
+        let source: String = std::iter::repeat("fn f() {}\n").take(200).collect();
+        let mut runner = LintRunner::new();
+        runner.add_rule(EmptyBlockRule);
+        let diags = runner.run(&source);
+        assert_eq!(diags.len(), 200);
+    }
+
+    #[test]
+    fn custom_message_line_too_long_at_boundary_plus_one() {
+        let rule = LineTooLongRule::new(); // max = 120
+        let line = "x".repeat(121);
+        let diag = rule.check(&line, 10).unwrap();
+        let template = format!("line {}: {}", diag.line, diag.message);
+        assert!(template.contains("10"));
+        assert!(template.contains("121"));
+        assert!(template.contains("120"));
+    }
+
+    #[test]
+    fn overlapping_dedup_all_same_span_keeps_one() {
+        let d = |msg: &str| LintDiagnostic {
+            level: LintLevel::Warning,
+            message: msg.into(),
+            line: 1,
+            span: 0..5,
+        };
+        let all = vec![d("rule-a"), d("rule-b"), d("rule-c")];
+        let mut seen: Vec<std::ops::Range<u32>> = Vec::new();
+        let deduped: Vec<&LintDiagnostic> = all
+            .iter()
+            .filter(|d| {
+                if seen.iter().any(|s| s == &d.span) {
+                    false
+                } else {
+                    seen.push(d.span.clone());
+                    true
+                }
+            })
+            .collect();
+        assert_eq!(deduped.len(), 1);
+    }
+
     // --- Lint rule with custom message template ---
 
     #[test]

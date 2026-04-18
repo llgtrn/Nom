@@ -31,6 +31,14 @@ impl PanelEntityRef {
     pub fn kind(&self) -> Option<&str> {
         self.as_nomtu().map(|entity| entity.kind.as_str())
     }
+
+    /// Convert into `Option<NomtuRef>`, consuming self.
+    pub fn into_option(self) -> Option<NomtuRef> {
+        match self {
+            Self::None => None,
+            Self::Nomtu(entity) => Some(entity),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -117,5 +125,117 @@ mod tests {
     fn panel_entity_ref_kind_returns_kind_str() {
         let entity = PanelEntityRef::nomtu(NomtuRef::new("e", "w", "Concept"));
         assert_eq!(entity.kind(), Some("Concept"));
+    }
+
+    // ── into_option conversion ────────────────────────────────────────────────
+
+    #[test]
+    fn panel_entity_ref_into_option_none_yields_none() {
+        let entity = PanelEntityRef::None;
+        assert!(entity.into_option().is_none());
+    }
+
+    #[test]
+    fn panel_entity_ref_into_option_nomtu_yields_some() {
+        let inner = NomtuRef::new("x1", "word", "Kind");
+        let entity = PanelEntityRef::nomtu(inner.clone());
+        let result = entity.into_option();
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), inner);
+    }
+
+    #[test]
+    fn panel_entity_ref_into_option_preserves_id() {
+        let entity = PanelEntityRef::nomtu(NomtuRef::new("id-abc", "w", "K"));
+        let result = entity.into_option().unwrap();
+        assert_eq!(result.id, "id-abc");
+    }
+
+    #[test]
+    fn panel_entity_ref_into_option_preserves_kind() {
+        let entity = PanelEntityRef::nomtu(NomtuRef::new("id", "w", "Concept"));
+        let result = entity.into_option().unwrap();
+        assert_eq!(result.kind, "Concept");
+    }
+
+    #[test]
+    fn panel_entity_ref_into_option_preserves_word() {
+        let entity = PanelEntityRef::nomtu(NomtuRef::new("id", "myword", "K"));
+        let result = entity.into_option().unwrap();
+        assert_eq!(result.word, "myword");
+    }
+
+    // ── hash consistency ──────────────────────────────────────────────────────
+
+    #[test]
+    fn nomtu_ref_hash_same_inputs_produce_same_hash() {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
+        let r1 = NomtuRef::new("id-1", "word", "Kind");
+        let r2 = NomtuRef::new("id-1", "word", "Kind");
+
+        let mut h1 = DefaultHasher::new();
+        let mut h2 = DefaultHasher::new();
+        r1.hash(&mut h1);
+        r2.hash(&mut h2);
+        assert_eq!(h1.finish(), h2.finish(), "same NomtuRef must produce same hash");
+    }
+
+    #[test]
+    fn nomtu_ref_hash_different_id_different_hash() {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
+        let r1 = NomtuRef::new("id-1", "word", "Kind");
+        let r2 = NomtuRef::new("id-2", "word", "Kind");
+
+        let mut h1 = DefaultHasher::new();
+        let mut h2 = DefaultHasher::new();
+        r1.hash(&mut h1);
+        r2.hash(&mut h2);
+        assert_ne!(h1.finish(), h2.finish(), "different id must produce different hash");
+    }
+
+    #[test]
+    fn nomtu_ref_hash_different_kind_different_hash() {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
+        let r1 = NomtuRef::new("id", "word", "KindA");
+        let r2 = NomtuRef::new("id", "word", "KindB");
+
+        let mut h1 = DefaultHasher::new();
+        let mut h2 = DefaultHasher::new();
+        r1.hash(&mut h1);
+        r2.hash(&mut h2);
+        assert_ne!(h1.finish(), h2.finish());
+    }
+
+    #[test]
+    fn nomtu_ref_can_be_used_as_hashmap_key() {
+        use std::collections::HashMap;
+        let r = NomtuRef::new("id-42", "word", "Function");
+        let mut map: HashMap<NomtuRef, u32> = HashMap::new();
+        map.insert(r.clone(), 100);
+        assert_eq!(map.get(&r), Some(&100));
+        // Same content → same key
+        let r2 = NomtuRef::new("id-42", "word", "Function");
+        assert_eq!(map.get(&r2), Some(&100));
+    }
+
+    #[test]
+    fn nomtu_ref_hash_stable_across_clones() {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
+        let r = NomtuRef::new("stable-id", "stable-word", "StableKind");
+        let clone = r.clone();
+
+        let mut h1 = DefaultHasher::new();
+        let mut h2 = DefaultHasher::new();
+        r.hash(&mut h1);
+        clone.hash(&mut h2);
+        assert_eq!(h1.finish(), h2.finish());
     }
 }

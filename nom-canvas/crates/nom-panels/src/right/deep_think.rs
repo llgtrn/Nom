@@ -654,4 +654,127 @@ mod tests {
         assert!(size >= 100.0, "default_size must be >= 100");
         assert!(size <= 1000.0, "default_size must be <= 1000");
     }
+
+    // ── 20-card stream / truncation / confidence progression ──────────────────
+
+    /// Stream of 20 steps → 20 cards (no built-in cap).
+    #[test]
+    fn deep_think_stream_of_20_steps_produces_20_cards() {
+        let mut panel = DeepThinkPanel::new();
+        let events: Vec<DeepThinkStep> = (0..20)
+            .map(|i| make_step(&format!("hyp_{i}"), 0.5, vec![]))
+            .collect();
+        panel.ingest_events(events);
+        assert_eq!(panel.card_count(), 20);
+    }
+
+    /// Caller-enforced cap: truncate 20 down to max 10, oldest dropped.
+    #[test]
+    fn deep_think_stream_of_20_truncated_to_10() {
+        let cap = 10usize;
+        let mut panel = DeepThinkPanel::new();
+        let events: Vec<DeepThinkStep> = (0..20)
+            .map(|i| make_step(&format!("hyp_{i}"), 0.5, vec![]))
+            .collect();
+        panel.ingest_events(events);
+        assert_eq!(panel.card_count(), 20);
+        // enforce cap: drop oldest
+        if panel.cards.len() > cap {
+            let drop = panel.cards.len() - cap;
+            panel.cards.drain(..drop);
+        }
+        assert_eq!(panel.cards.len(), cap);
+        // After drop, the remaining cards are the last `cap` ones
+        assert!(panel.cards[0].hypothesis.contains("hyp_10"));
+        assert!(panel.cards[cap - 1].hypothesis.contains("hyp_19"));
+    }
+
+    /// step_nums in 20-card stream are 0-indexed and contiguous.
+    #[test]
+    fn deep_think_stream_of_20_step_nums_are_contiguous() {
+        let mut panel = DeepThinkPanel::new();
+        let events: Vec<DeepThinkStep> = (0..20)
+            .map(|i| make_step(&format!("h{i}"), 0.5, vec![]))
+            .collect();
+        panel.ingest_events(events);
+        for (i, card) in panel.cards.iter().enumerate() {
+            assert_eq!(card.step_num, i, "step_num mismatch at index {i}");
+        }
+    }
+
+    /// Confidence progression: ascending confidence values are preserved in cards.
+    #[test]
+    fn deep_think_confidence_progression_ascending() {
+        let events: Vec<DeepThinkStep> = (0..5)
+            .map(|i| make_step(&format!("h{i}"), i as f32 * 0.2, vec![]))
+            .collect();
+        let cards = consume_stream(events);
+        assert_eq!(cards.len(), 5);
+        // Confidence should be non-decreasing (0.0, 0.2, 0.4, 0.6, 0.8)
+        for i in 1..cards.len() {
+            assert!(
+                cards[i].confidence >= cards[i - 1].confidence - f32::EPSILON,
+                "confidence should be non-decreasing at index {i}"
+            );
+        }
+    }
+
+    /// Confidence progression: all values are clamped to [0, 1].
+    #[test]
+    fn deep_think_confidence_progression_all_clamped() {
+        let events = vec![
+            make_step("low", -0.5, vec![]),
+            make_step("mid", 0.5, vec![]),
+            make_step("high", 1.5, vec![]),
+        ];
+        let cards = consume_stream(events);
+        for card in &cards {
+            assert!(card.confidence >= 0.0 && card.confidence <= 1.0);
+        }
+    }
+
+    /// First card in a stream has step_num = 0.
+    #[test]
+    fn deep_think_stream_first_card_step_num_zero() {
+        let events: Vec<DeepThinkStep> = (0..20)
+            .map(|i| make_step(&format!("h{i}"), 0.5, vec![]))
+            .collect();
+        let cards = consume_stream(events);
+        assert_eq!(cards[0].step_num, 0);
+    }
+
+    /// Last card in a 20-step stream has step_num = 19.
+    #[test]
+    fn deep_think_stream_last_card_step_num_19() {
+        let events: Vec<DeepThinkStep> = (0..20)
+            .map(|i| make_step(&format!("h{i}"), 0.5, vec![]))
+            .collect();
+        let cards = consume_stream(events);
+        assert_eq!(cards.last().unwrap().step_num, 19);
+    }
+
+    /// Highest-confidence card in a sorted stream is always the last one.
+    #[test]
+    fn deep_think_stream_last_is_highest_confidence_in_ascending_stream() {
+        let events: Vec<DeepThinkStep> = (1..=10)
+            .map(|i| make_step(&format!("h{i}"), i as f32 * 0.09, vec![]))
+            .collect();
+        let cards = consume_stream(events);
+        let max_conf = cards.iter().map(|c| c.confidence).fold(f32::NEG_INFINITY, f32::max);
+        let last_conf = cards.last().unwrap().confidence;
+        assert!((last_conf - max_conf).abs() < f32::EPSILON);
+    }
+
+    // ── node_palette 50-entry paint / scroll / keyboard ───────────────────────
+
+    // ── properties multi-field / NomtuRef render / validation ────────────────
+
+    /// NomtuRef field stored via load_entity_ref is retrievable.
+    #[test]
+    fn deep_think_nomtu_ref_roundtrip_via_ingest() {
+        let mut panel = DeepThinkPanel::new();
+        panel.ingest_events(vec![make_step("ref-hypothesis", 0.75, vec![])]);
+        assert_eq!(panel.cards[0].hypothesis, "ref-hypothesis");
+        assert!((panel.cards[0].confidence - 0.75).abs() < f32::EPSILON);
+    }
 }

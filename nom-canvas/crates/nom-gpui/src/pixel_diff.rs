@@ -401,4 +401,179 @@ mod tests {
 
         let _ = std::fs::remove_file(&baseline_path);
     }
+
+    // -----------------------------------------------------------------------
+    // AE Wave: Additional pixel_diff tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn threshold_exactly_at_boundary_not_counted() {
+        // diff == threshold → NOT counted (strictly greater-than semantics).
+        let a = RawImage::solid(2, 2, [50, 50, 50, 255]);
+        let b = RawImage::solid(2, 2, [60, 50, 50, 255]); // diff = 10 == threshold
+        let stats = pixel_diff(&a, &b, 10).unwrap();
+        assert_eq!(
+            stats.differing_pixels, 0,
+            "diff exactly at threshold must NOT be counted (strictly >)"
+        );
+    }
+
+    #[test]
+    fn threshold_one_over_boundary_is_counted() {
+        // diff == threshold + 1 → IS counted.
+        let a = RawImage::solid(2, 2, [50, 50, 50, 255]);
+        let b = RawImage::solid(2, 2, [61, 50, 50, 255]); // diff = 11 > 10
+        let stats = pixel_diff(&a, &b, 10).unwrap();
+        assert_eq!(
+            stats.differing_pixels, 4,
+            "diff one above threshold must be counted for all 4 pixels"
+        );
+    }
+
+    #[test]
+    fn large_image_1000x1000_zeros_has_zero_diff() {
+        // Performance test: 1000x1000 = 1M pixels, all identical.
+        let a = RawImage::solid(1000, 1000, [0, 0, 0, 255]);
+        let b = RawImage::solid(1000, 1000, [0, 0, 0, 255]);
+        let stats = pixel_diff(&a, &b, 0).unwrap();
+        assert_eq!(stats.total_pixels, 1_000_000);
+        assert_eq!(stats.differing_pixels, 0);
+    }
+
+    #[test]
+    fn large_image_1000x1000_all_different() {
+        let a = RawImage::solid(1000, 1000, [0, 0, 0, 255]);
+        let b = RawImage::solid(1000, 1000, [128, 128, 128, 255]);
+        let stats = pixel_diff(&a, &b, 10).unwrap();
+        assert_eq!(stats.total_pixels, 1_000_000);
+        assert_eq!(stats.differing_pixels, 1_000_000);
+        assert_eq!(stats.diff_fraction(), 1.0);
+    }
+
+    #[test]
+    fn alpha_channel_difference_is_detected() {
+        // Diff on alpha channel alone must be caught.
+        let a = RawImage::solid(1, 1, [128, 128, 128, 0]);
+        let b = RawImage::solid(1, 1, [128, 128, 128, 255]); // alpha diff = 255 >> threshold
+        let stats = pixel_diff(&a, &b, 10).unwrap();
+        assert_eq!(stats.differing_pixels, 1, "alpha-channel diff must be detected");
+    }
+
+    #[test]
+    fn raw_image_new_panics_on_wrong_size() {
+        let result = std::panic::catch_unwind(|| {
+            RawImage::new(2, 2, vec![0u8; 5]); // wrong length — must panic
+        });
+        assert!(result.is_err(), "RawImage::new with wrong pixel length must panic");
+    }
+
+    #[test]
+    fn raw_image_pixel_count_matches_dimensions() {
+        let img = RawImage::solid(7, 11, [0, 0, 0, 255]);
+        assert_eq!(img.pixel_count(), 77);
+        assert_eq!(img.pixels.len(), 77 * 4);
+    }
+
+    #[test]
+    fn raw_image_solid_fills_all_pixels() {
+        let img = RawImage::solid(3, 3, [10, 20, 30, 40]);
+        for chunk in img.pixels.chunks_exact(4) {
+            assert_eq!(chunk, &[10, 20, 30, 40], "every pixel must match the solid color");
+        }
+    }
+
+    #[test]
+    fn diff_stats_within_tolerance_at_exact_boundary() {
+        let stats = DiffStats { total_pixels: 100, differing_pixels: 5, threshold: 10 };
+        // 5/100 = 5% — exactly at 5% tolerance boundary → within.
+        assert!(stats.within_tolerance(0.05));
+    }
+
+    #[test]
+    fn diff_stats_within_tolerance_one_over_fails() {
+        let stats = DiffStats { total_pixels: 100, differing_pixels: 6, threshold: 10 };
+        // 6/100 = 6% > 5% tolerance → not within.
+        assert!(!stats.within_tolerance(0.05));
+    }
+
+    #[test]
+    fn diff_fraction_all_match_is_zero() {
+        let stats = DiffStats { total_pixels: 50, differing_pixels: 0, threshold: 10 };
+        assert_eq!(stats.diff_fraction(), 0.0);
+    }
+
+    #[test]
+    fn diff_fraction_half_differ() {
+        let stats = DiffStats { total_pixels: 100, differing_pixels: 50, threshold: 5 };
+        assert!((stats.diff_fraction() - 0.5).abs() < 1e-10);
+    }
+
+    #[test]
+    fn pixel_diff_threshold_zero_counts_any_change() {
+        // threshold=0: any non-zero difference is counted.
+        let a = RawImage::solid(2, 2, [10, 10, 10, 255]);
+        let b = RawImage::solid(2, 2, [11, 10, 10, 255]); // diff=1 > 0
+        let stats = pixel_diff(&a, &b, 0).unwrap();
+        assert_eq!(stats.differing_pixels, 4, "threshold=0 must catch any change");
+    }
+
+    #[test]
+    fn pixel_diff_threshold_255_counts_nothing_under_max() {
+        // threshold=255: no pixel can exceed max channel value 255, so nothing counted.
+        let a = RawImage::solid(4, 4, [0, 0, 0, 0]);
+        let b = RawImage::solid(4, 4, [255, 255, 255, 255]); // diff=255, not > 255
+        let stats = pixel_diff(&a, &b, 255).unwrap();
+        assert_eq!(stats.differing_pixels, 0, "diff==255 with threshold=255 must not count");
+    }
+
+    #[test]
+    fn load_corrupted_magic_returns_error() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("nom_gpui_bad_magic_test.nomraw");
+        // Write garbage header.
+        std::fs::write(&path, b"BADMAGIC12345678").unwrap();
+        let result = load_baseline(&path);
+        assert!(result.is_err(), "corrupted magic must return an error");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn diff_or_save_saves_on_missing_and_compares_on_second_call_different_image() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("nom_gpui_diff_compare_changed.nomraw");
+        let _ = std::fs::remove_file(&path);
+
+        let original = RawImage::solid(4, 4, [200, 200, 200, 255]);
+        let changed = RawImage::solid(4, 4, [0, 0, 0, 255]); // big diff
+
+        // Save baseline.
+        let r1 = diff_or_save(&path, &original, 10).unwrap();
+        assert_eq!(r1, DiffResult::BaselineSaved);
+
+        // Compare with very different image.
+        let r2 = diff_or_save(&path, &changed, 10).unwrap();
+        match r2 {
+            DiffResult::Compared(stats) => {
+                assert_eq!(stats.differing_pixels, 16, "all 16 pixels must differ");
+                assert_eq!(stats.diff_fraction(), 1.0);
+            }
+            DiffResult::BaselineSaved => panic!("expected comparison on second call"),
+        }
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn raw_image_equality_holds_for_identical() {
+        let a = RawImage::solid(3, 3, [1, 2, 3, 4]);
+        let b = RawImage::solid(3, 3, [1, 2, 3, 4]);
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn raw_image_clone_is_equal() {
+        let a = RawImage::solid(5, 5, [10, 20, 30, 255]);
+        let b = a.clone();
+        assert_eq!(a, b);
+    }
 }

@@ -1271,4 +1271,289 @@ mod tests {
             "begin_frame inside a frame must return AlreadyInFrame"
         );
     }
+
+    // ------------------------------------------------------------------
+    // AE Wave: Additional renderer lifecycle and state tests
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn is_in_frame_false_before_begin_frame() {
+        let renderer = Renderer::new();
+        assert!(!renderer.is_in_frame(), "new renderer must not be in-frame");
+    }
+
+    #[test]
+    fn is_in_frame_true_after_begin_frame() {
+        let mut renderer = Renderer::new();
+        renderer.begin_frame().unwrap();
+        assert!(renderer.is_in_frame(), "must be in-frame after begin_frame");
+    }
+
+    #[test]
+    fn is_in_frame_false_after_end_frame() {
+        let mut renderer = Renderer::new();
+        renderer.begin_frame().unwrap();
+        renderer.end_frame().unwrap();
+        assert!(!renderer.is_in_frame(), "must not be in-frame after end_frame");
+    }
+
+    #[test]
+    fn pending_quads_empty_before_begin_frame() {
+        let renderer = Renderer::new();
+        assert_eq!(
+            renderer.pending_quads().len(),
+            0,
+            "pending_quads must be empty before any frame"
+        );
+    }
+
+    #[test]
+    fn pending_quads_accumulates_across_draw_quads_gpu_calls() {
+        let mut renderer = Renderer::new();
+        renderer.begin_frame().unwrap();
+        renderer.draw_quads_gpu(&[QuadInstance::default(); 3]).unwrap();
+        renderer.draw_quads_gpu(&[QuadInstance::default(); 5]).unwrap();
+        assert_eq!(
+            renderer.pending_quads().len(),
+            8,
+            "pending_quads must accumulate 3 + 5 = 8 instances"
+        );
+    }
+
+    #[test]
+    fn pending_quads_cleared_by_begin_frame() {
+        let mut renderer = Renderer::new();
+        renderer.begin_frame().unwrap();
+        renderer.draw_quads_gpu(&[QuadInstance::default(); 10]).unwrap();
+        renderer.end_frame().unwrap();
+        renderer.begin_frame().unwrap();
+        assert_eq!(
+            renderer.pending_quads().len(),
+            0,
+            "begin_frame must clear pending_quads from previous frame"
+        );
+    }
+
+    #[test]
+    fn draw_quads_gpu_empty_slice_ok() {
+        let mut renderer = Renderer::new();
+        renderer.begin_frame().unwrap();
+        // Drawing zero quads must succeed without errors.
+        renderer.draw_quads_gpu(&[]).unwrap();
+        assert_eq!(renderer.pending_quads().len(), 0);
+        assert_eq!(renderer.stats().quads_drawn, 0);
+    }
+
+    #[test]
+    fn draw_quads_gpu_updates_stats_quads_drawn_cumulatively() {
+        let mut renderer = Renderer::new();
+        // Frame 1
+        renderer.begin_frame().unwrap();
+        renderer.draw_quads_gpu(&[QuadInstance::default(); 5]).unwrap();
+        renderer.end_frame().unwrap();
+        // Frame 2
+        renderer.begin_frame().unwrap();
+        renderer.draw_quads_gpu(&[QuadInstance::default(); 3]).unwrap();
+        renderer.end_frame().unwrap();
+        assert_eq!(
+            renderer.stats().quads_drawn,
+            8,
+            "quads_drawn must accumulate across frames: 5 + 3 = 8"
+        );
+    }
+
+    #[test]
+    fn frame_count_and_stats_frames_stay_in_sync() {
+        let mut renderer = Renderer::new();
+        for _ in 0..7 {
+            renderer.begin_frame().unwrap();
+            renderer.end_frame().unwrap();
+        }
+        assert_eq!(renderer.frame_count, 7);
+        assert_eq!(renderer.stats().frames, 7);
+    }
+
+    #[test]
+    fn renderer_gpu_field_none_on_new() {
+        let renderer = Renderer::new();
+        assert!(renderer.gpu.is_none(), "cpu-only renderer must have gpu == None");
+    }
+
+    #[test]
+    fn frame_error_display_not_in_frame() {
+        let e = FrameError::NotInFrame;
+        assert_eq!(format!("{e}"), "renderer is not inside a frame");
+    }
+
+    #[test]
+    fn frame_error_display_already_in_frame() {
+        let e = FrameError::AlreadyInFrame;
+        assert_eq!(format!("{e}"), "renderer already has an open frame");
+    }
+
+    #[test]
+    fn frame_error_is_error_trait() {
+        let e: Box<dyn std::error::Error> = Box::new(FrameError::NotInFrame);
+        assert!(e.to_string().contains("not inside a frame"));
+    }
+
+    #[test]
+    fn pipeline_kind_discriminants() {
+        assert_eq!(PipelineKind::Quad as u8, 0);
+        assert_eq!(PipelineKind::MonochromeSprite as u8, 1);
+        assert_eq!(PipelineKind::PolychromeSprite as u8, 2);
+        assert_eq!(PipelineKind::Path as u8, 3);
+        assert_eq!(PipelineKind::Shadow as u8, 4);
+        assert_eq!(PipelineKind::Underline as u8, 5);
+        assert_eq!(PipelineKind::Reserved6 as u8, 6);
+        assert_eq!(PipelineKind::Reserved7 as u8, 7);
+    }
+
+    #[test]
+    fn pipeline_kind_equality() {
+        assert_eq!(PipelineKind::Quad, PipelineKind::Quad);
+        assert_ne!(PipelineKind::Quad, PipelineKind::Shadow);
+    }
+
+    #[test]
+    fn frosted_rect_blur_clamped_at_30() {
+        use crate::scene::FrostedRect;
+        use crate::types::{Bounds, Pixels, Point, Size};
+
+        let mut renderer = Renderer::new();
+        let rect = FrostedRect {
+            bounds: Bounds {
+                origin: Point { x: Pixels(0.0), y: Pixels(0.0) },
+                size: Size { width: Pixels(100.0), height: Pixels(100.0) },
+            },
+            // blur_radius=30 > 20, so min(30,20)=20, alpha = (0.7 - 20*0.015).max(0.3) = 0.4
+            blur_radius: 30.0,
+            bg_alpha: 0.5,
+            border_alpha: 0.1,
+        };
+        let quads = renderer.draw_frosted_rects(&[rect]);
+        let expected = (0.7_f32 - 20.0_f32 * 0.015).max(0.3);
+        assert!(
+            (quads[0].bg_color[3] - expected).abs() < 1e-5,
+            "blur_radius=30 must clamp to 20, alpha={expected:.4}, got {}",
+            quads[0].bg_color[3]
+        );
+    }
+
+    #[test]
+    fn frosted_rect_border_widths_are_one() {
+        use crate::scene::FrostedRect;
+        use crate::types::{Bounds, Pixels, Point, Size};
+
+        let mut renderer = Renderer::new();
+        let rect = FrostedRect {
+            bounds: Bounds {
+                origin: Point { x: Pixels(0.0), y: Pixels(0.0) },
+                size: Size { width: Pixels(50.0), height: Pixels(50.0) },
+            },
+            blur_radius: 5.0,
+            bg_alpha: 0.5,
+            border_alpha: 0.5,
+        };
+        let quads = renderer.draw_frosted_rects(&[rect]);
+        // Border quad (index 1) must have border_widths = [1.0; 4]
+        assert_eq!(
+            quads[1].border_widths,
+            [1.0; 4],
+            "border quad must have uniform 1px border widths"
+        );
+        // Background quad must have zero border widths
+        assert_eq!(
+            quads[0].border_widths,
+            [0.0; 4],
+            "background quad must have zero border widths"
+        );
+    }
+
+    #[test]
+    fn frosted_rect_corner_radii_are_zero() {
+        use crate::scene::FrostedRect;
+        use crate::types::{Bounds, Pixels, Point, Size};
+
+        let mut renderer = Renderer::new();
+        let rect = FrostedRect {
+            bounds: Bounds {
+                origin: Point { x: Pixels(10.0), y: Pixels(10.0) },
+                size: Size { width: Pixels(200.0), height: Pixels(100.0) },
+            },
+            blur_radius: 8.0,
+            bg_alpha: 0.6,
+            border_alpha: 0.3,
+        };
+        let quads = renderer.draw_frosted_rects(&[rect]);
+        for (i, quad) in quads.iter().enumerate() {
+            assert_eq!(
+                quad.corner_radii,
+                [0.0; 4],
+                "quad[{i}] corner_radii must be zero (frosted rect has no rounding)"
+            );
+        }
+    }
+
+    #[test]
+    fn frosted_rect_bg_color_is_mid_grey() {
+        use crate::scene::FrostedRect;
+        use crate::types::{Bounds, Pixels, Point, Size};
+
+        let mut renderer = Renderer::new();
+        let rect = FrostedRect {
+            bounds: Bounds {
+                origin: Point { x: Pixels(0.0), y: Pixels(0.0) },
+                size: Size { width: Pixels(100.0), height: Pixels(100.0) },
+            },
+            blur_radius: 5.0,
+            bg_alpha: 0.5,
+            border_alpha: 0.5,
+        };
+        let quads = renderer.draw_frosted_rects(&[rect]);
+        // Background quad RGB must be [0.5, 0.5, 0.5] (mid-grey).
+        assert!((quads[0].bg_color[0] - 0.5).abs() < 1e-6, "R channel must be 0.5");
+        assert!((quads[0].bg_color[1] - 0.5).abs() < 1e-6, "G channel must be 0.5");
+        assert!((quads[0].bg_color[2] - 0.5).abs() < 1e-6, "B channel must be 0.5");
+    }
+
+    #[test]
+    fn ortho_projection_width_height_1() {
+        // ortho(1, 1): x scale = 2.0, y scale = -2.0
+        let m = ortho_projection(1.0, 1.0);
+        assert!((m[0][0] - 2.0).abs() < 1e-6, "x scale for width=1 is 2.0");
+        assert!((m[1][1] - (-2.0)).abs() < 1e-6, "y scale for height=1 is -2.0");
+    }
+
+    #[test]
+    fn ortho_projection_large_viewport() {
+        let m = ortho_projection(3840.0, 2160.0);
+        assert!((m[0][0] - 2.0 / 3840.0).abs() < 1e-9, "x scale");
+        assert!((m[1][1] - (-2.0 / 2160.0)).abs() < 1e-9, "y scale");
+    }
+
+    #[test]
+    fn hsla_to_rgba_blue() {
+        // Pure blue: h=240, s=1, l=0.5 → [0, 0, 1, 1]
+        let rgba = hsla_to_rgba(Hsla { h: 240.0, s: 1.0, l: 0.5, a: 1.0 });
+        assert!(rgba[0] < 0.01, "blue hue: red must be ~0, got {}", rgba[0]);
+        assert!(rgba[1] < 0.01, "blue hue: green must be ~0, got {}", rgba[1]);
+        assert!((rgba[2] - 1.0).abs() < 1e-4, "blue hue: blue must be ~1, got {}", rgba[2]);
+    }
+
+    #[test]
+    fn hsla_to_rgba_alpha_passthrough() {
+        // Alpha must be forwarded unchanged regardless of hue/saturation.
+        let rgba = hsla_to_rgba(Hsla { h: 60.0, s: 0.5, l: 0.5, a: 0.42 });
+        assert!((rgba[3] - 0.42).abs() < 1e-6, "alpha must be preserved: {}", rgba[3]);
+    }
+
+    #[test]
+    fn hsla_to_rgba_achromatic_midgrey() {
+        // s=0, l=0.5 → r = g = b = 0.5
+        let rgba = hsla_to_rgba(Hsla { h: 0.0, s: 0.0, l: 0.5, a: 1.0 });
+        assert!((rgba[0] - 0.5).abs() < 1e-6, "mid-grey R must be 0.5, got {}", rgba[0]);
+        assert!((rgba[1] - 0.5).abs() < 1e-6, "mid-grey G must be 0.5, got {}", rgba[1]);
+        assert!((rgba[2] - 0.5).abs() < 1e-6, "mid-grey B must be 0.5, got {}", rgba[2]);
+    }
 }

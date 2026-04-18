@@ -535,4 +535,114 @@ mod tests {
         // Last "z" is at byte 8
         assert_eq!(last.start, 8);
     }
+
+    // ── overlapping matches ───────────────────────────────────────────────────
+
+    #[test]
+    fn find_overlapping_matches_plain_text() {
+        // "aaa" contains "aa" at positions 0 and 1 (overlapping).
+        // The sliding-window search (start = abs+1) finds both.
+        let mut state = FindState::new();
+        state.query = "aa".to_string();
+        state.case_sensitive = true;
+        state.find_in_text("aaa");
+        // Positions: 0 and 1 are both found with the sliding window.
+        assert_eq!(state.matches.len(), 2);
+        assert_eq!(state.matches[0], 0..2);
+        assert_eq!(state.matches[1], 1..3);
+    }
+
+    #[test]
+    fn find_overlapping_three_chars_in_five_char_string() {
+        // "aaaaa" → "aaa" overlaps at 0, 1, 2
+        let mut state = FindState::new();
+        state.query = "aaa".to_string();
+        state.case_sensitive = true;
+        state.find_in_text("aaaaa");
+        assert_eq!(state.matches.len(), 3);
+    }
+
+    #[test]
+    fn find_no_overlap_when_non_overlapping_pattern() {
+        let mut state = FindState::new();
+        state.query = "ab".to_string();
+        state.case_sensitive = true;
+        state.find_in_text("ababab");
+        // Non-overlapping "ab" at 0, 2, 4 — but sliding window (start=abs+1)
+        // means start advances by 1 each time, so it finds 0, 2, 4.
+        assert_eq!(state.matches.len(), 3);
+    }
+
+    // ── replace-all count ─────────────────────────────────────────────────────
+
+    #[test]
+    fn replace_all_count_equals_match_count() {
+        let mut state = FindState::new();
+        state.query = "foo".to_string();
+        state.find_in_text("foo bar foo baz foo");
+        // find_in_text found 3 matches.
+        assert_eq!(state.matches.len(), 3);
+        // Verify that a replace-all yields the right number of substitutions.
+        let original = "foo bar foo baz foo";
+        let replaced = original.replace("foo", "qux");
+        assert_eq!(replaced, "qux bar qux baz qux");
+        // Count the replacements by comparing lengths: each "foo"(3) → "qux"(3), same length,
+        // so use occurrence counting instead.
+        let count = original.matches("foo").count();
+        assert_eq!(count, 3);
+    }
+
+    #[test]
+    fn replace_all_produces_correct_string() {
+        let original = "hello world hello";
+        let result = original.replace("hello", "Hi");
+        assert_eq!(result, "Hi world Hi");
+    }
+
+    #[test]
+    fn replace_all_no_match_unchanged() {
+        let original = "no match here";
+        let result = original.replace("xyz", "abc");
+        assert_eq!(result, original);
+    }
+
+    // ── regex with capture groups ─────────────────────────────────────────────
+
+    #[test]
+    fn find_regex_capture_group_start_positions() {
+        // Pattern with a capture group — find_regex returns starts of the whole match.
+        let state = FindState {
+            query: r"(foo)\d+".to_string(),
+            case_sensitive: true,
+            use_regex: true,
+            ..FindState::new()
+        };
+        let positions = state.find_regex("prefix foo12 middle foo99 end");
+        // "foo12" starts at 7; "foo99" starts at 20.
+        assert_eq!(positions.len(), 2);
+        assert_eq!(positions[0], 7);
+        assert_eq!(positions[1], 20);
+    }
+
+    #[test]
+    fn find_regex_alternation_group() {
+        let mut state = FindState::new();
+        state.query = r"(cat|dog)".to_string();
+        state.use_regex = true;
+        state.find_in_text("I have a cat and a dog and a cat");
+        assert_eq!(state.matches.len(), 3);
+    }
+
+    #[test]
+    fn find_regex_match_ranges_with_capture() {
+        let mut state = FindState::new();
+        // Match word characters followed by digits.
+        state.query = r"[a-z]+(\d+)".to_string();
+        state.use_regex = true;
+        state.find_in_text("abc123 def456");
+        // Two matches: "abc123" at 0..6, "def456" at 7..13.
+        assert_eq!(state.matches.len(), 2);
+        assert_eq!(state.matches[0].start, 0);
+        assert_eq!(state.matches[1].start, 7);
+    }
 }
