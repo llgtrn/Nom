@@ -120,6 +120,8 @@ pub mod storyboard;
 pub use storyboard::{StoryboardExecutor, StoryboardPhase, StoryboardPlan, StoryboardStep};
 pub mod image_dispatch;
 pub use image_dispatch::{DispatchRecord, ImageDispatcher, ModelCapability, ModelDescriptor, ModelRegistry};
+pub mod audio_encode;
+pub use audio_encode::{AudioBuffer, AudioEncoder, AudioFormat, RodioBackend};
 
 #[cfg(test)]
 mod integration_tests {

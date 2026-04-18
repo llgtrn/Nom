@@ -78,6 +78,10 @@ pub use nomx_manifest::{NomxDep, NomxManifest, NomxModuleEdge, NomxModuleGraph};
 #[allow(missing_docs)]
 pub mod crdt_merge;
 pub use crdt_merge::{CrdtMergeOp, MergeStrategy, VectorClock};
+/// BlockSchemaV2, MigrationTool, and RoundTripValidator — v2 schema format with typed fields.
+#[allow(missing_docs)]
+pub mod block_schema_v2;
+pub use block_schema_v2::{BlockSchemaV2, FieldType, MigrationTool, RoundTripValidator, SchemaField};
 
 #[cfg(test)]
 mod integration_tests {

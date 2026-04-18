@@ -382,13 +382,21 @@
 - ✅ FeatureStack — WordIdMap+FeatureWeight+FeatureStack word IDs (9 tests)
 - ✅ Storyboard — StoryboardPhase×5+StoryboardPlan+StoryboardExecutor (9 tests)
 
-## Open Items — Wave ABW targets
+## Wave ABW — COMPLETE (2026-04-19, 9618 tests)
 
-- ❌ **nom-concept bipartite-solver** — CostMatrix + BipartiteAssignment + MinCostSolver (§5.15)
-- ❌ **nom-compose image-dispatch** — ModelDescriptor + ImageDispatcher + ModelRegistry
-- ❌ **nom-graph ancestry** — AncestryChain + AncestorQuery + DescendantIter
-- ❌ **nom-blocks crdt-merge** — CrdtMergeOp + VectorClock + MergeStrategy
-- ❌ **nom-telemetry span-aggregator** — SpanAggregator + TraceReport + P95Calculator
+- ✅ BipartiteSolver — CostMatrix+BipartiteAssignment+MinCostSolver §5.15 (9 tests)
+- ✅ ImageDispatch — ModelDescriptor+ModelRegistry+ImageDispatcher (9 tests)
+- ✅ Ancestry — AncestryChain+ParentMap+AncestorQuery+DescendantIter (9 tests)
+- ✅ CrdtMerge — VectorClock+CrdtMergeOp+MergeStrategy (9 tests)
+- ✅ SpanAggregator — SpanSample+P95Calculator+SpanAggregator+TraceReport (9 tests)
+
+## Open Items — Wave ABX targets
+
+- ❌ **nom-compose audio-encode** — AudioBuffer + AudioEncoder + RodioBackend stub
+- ❌ **nom-intent rag-pipeline** — RagQuery + RagRetriever + RagPipeline (LlamaIndex pattern)
+- ❌ **nom-canvas-core bezier** — BezierPoint + BezierCurve + AnimatedBezier
+- ❌ **nom-graph content-address** — ContentHash + ContentAddressStore + ShareEntry (cross-app specialization)
+- ❌ **nom-blocks block-schema-v2** — BlockSchemaV2 + MigrationTool + RoundTripValidator
 
 ---
 

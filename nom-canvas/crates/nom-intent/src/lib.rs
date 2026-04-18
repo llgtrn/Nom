@@ -31,6 +31,9 @@ pub use dream_history::{DreamHistoryEntry, DreamHistoryStore, DreamJournal};
 pub mod feature_stack;
 pub use feature_stack::{FeatureStack, FeatureWeight, WordIdMap};
 
+pub mod rag_pipeline;
+pub use rag_pipeline::{RagDocument, RagPipeline, RagQuery, RagRetriever, RagSynthesis};
+
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,

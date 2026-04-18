@@ -34,3 +34,5 @@ pub use traversal::{GraphTraversal, TraversalOrder, TraversalResult};
 pub use weight::{EdgeWeight, WeightGraph};
 pub use weighted_graph::{WeightedEdge, WeightedGraph};
 pub use ancestry::{AncestorQuery, AncestryChain, DescendantIter, ParentMap};
+pub mod content_address;
+pub use content_address::{ContentAddressStore, ContentHash, CrossAppStore, ShareEntry};

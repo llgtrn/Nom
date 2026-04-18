@@ -56,6 +56,10 @@ pub use vision_pipeline::{
 pub mod viewport_map;
 pub use viewport_map::{ElementBounds as ViewportElementBounds, ViewportMap, VisibilityQuery};
 
+/// Bezier control points with smooth time-based animation.
+pub mod bezier;
+pub use bezier::{AnimatedBezier, BezierCurve, BezierPoint};
+
 #[cfg(test)]
 mod integration_tests {
     use crate::elements::{paint_graph_node, paint_wire};
