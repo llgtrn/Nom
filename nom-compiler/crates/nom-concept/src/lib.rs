@@ -56,7 +56,10 @@ pub mod dream;
 pub use dream::{DreamScore, MeceCategory, MeceValidator, MeceViolation, ViolationKind};
 
 pub mod bootstrap;
-pub use bootstrap::{BootstrapProof, BootstrapStage, StageBuild};
+pub use bootstrap::{BootstrapProof, BootstrapStage, BootstrapRunner, FixpointAttempt, StageBuild};
+
+pub mod ingest;
+pub use ingest::{IngestPipeline, IngestRecord, IngestSource};
 
 /// Closed kind set per doc 08 §8.1.
 ///

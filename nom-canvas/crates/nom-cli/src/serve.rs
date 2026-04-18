@@ -2,24 +2,45 @@ use axum::extract::Path;
 use axum::{extract::Json, response::Json as RespJson, routing::post, Router};
 use serde::{Deserialize, Serialize};
 
+use crate::compose::{compose_logic, ComposeRequest, ComposeResponse};
+
+// ---------------------------------------------------------------------------
+// POST /compose — new endpoint with source/format/output_path contract
+// ---------------------------------------------------------------------------
+
+/// Axum handler that delegates to the pure `compose_logic` function.
+pub async fn compose_handler(Json(body): Json<ComposeRequest>) -> RespJson<ComposeResponse> {
+    RespJson(compose_logic(body))
+}
+
+/// Returns a Router with the `POST /compose` route registered.
+pub fn build_router() -> Router {
+    Router::new().route("/compose", post(compose_handler))
+}
+
+// ---------------------------------------------------------------------------
+// Legacy router (kind/input/stream contract) — kept for backwards compat
+// ---------------------------------------------------------------------------
+
 #[derive(Deserialize)]
-pub struct ComposeRequest {
+pub struct LegacyComposeRequest {
     pub kind: String,
     pub input: String,
     pub stream: Option<bool>,
 }
 
 #[derive(Serialize)]
-pub struct ComposeResponse {
+pub struct LegacyComposeResponse {
     pub kind: String,
     pub output: String,
     pub status: String,
 }
 
-async fn handle_compose(Json(req): Json<ComposeRequest>) -> RespJson<ComposeResponse> {
-    // Route to UnifiedDispatcher
+async fn handle_compose(
+    Json(req): Json<LegacyComposeRequest>,
+) -> RespJson<LegacyComposeResponse> {
     let output = format!("Composed {} from: {}", req.kind, req.input);
-    RespJson(ComposeResponse {
+    RespJson(LegacyComposeResponse {
         kind: req.kind,
         output,
         status: "ok".to_string(),

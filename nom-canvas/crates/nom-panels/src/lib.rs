@@ -30,10 +30,11 @@ pub use left::{
 };
 pub use pane::{Member, Pane, PaneAxis, PaneGroup, PaneTab, SplitDirection};
 pub use right::{
-    AiReviewCard, AnimatedReasoningCard, CardState, ChatMessage, ChatPanel, ChatPanelMessage,
-    ChatPanelRole, ChatRole, ChatSidebarPanel, DeepThinkPanel, DeepThinkRenderer, HypothesisNode,
-    HypothesisTree, HypothesisTreeNav, IntentPreviewCard, PropertiesPanel, PropertyEntry,
-    PropertyRow, PropertyValue, ReasoningStep, ThinkingStep, ToolCard,
+    AiChatSession, AiReviewCard, AnimatedReasoningCard, CanvasMode, CardState, ChatAttachment,
+    ChatDispatch, ChatMessage, ChatPanel, ChatPanelMessage, ChatPanelRole, ChatRole,
+    ChatSidebarPanel, DeepThinkPanel, DeepThinkRenderer, HypothesisNode, HypothesisTree,
+    HypothesisTreeNav, IntentPreviewCard, PropertiesPanel, PropertyEntry, PropertyRow,
+    PropertyValue, ReasoningStep, ThinkingStep, ToolCard,
 };
 pub use shell::{Shell, ShellLayout, ShellMode};
 pub use statusbar::{StatusBar, StatusSlot};

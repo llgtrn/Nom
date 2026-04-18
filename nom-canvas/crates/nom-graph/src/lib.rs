@@ -9,6 +9,8 @@ pub mod node_output;
 pub mod nom_graph;
 pub mod sandbox;
 pub mod traversal;
+pub mod weight;
+pub mod weighted_graph;
 
 pub use cache::{
     BasicCache, CacheStrategy, CachedValue, ChangedFlags, ExecutionCache, HierarchicalCache,
@@ -25,3 +27,5 @@ pub use node_output::{NodeEvent, NodeOutputPort, NodeOutputType, TypedNode};
 pub use nom_graph::{NomGraph, NomtuRef};
 pub use sandbox::{eval_expr, sanitize, BinOpKind, EvalContext, Expr, SandboxError, SandboxValue};
 pub use traversal::{GraphTraversal, TraversalOrder, TraversalResult};
+pub use weight::{EdgeWeight, WeightGraph};
+pub use weighted_graph::{WeightedEdge, WeightedGraph};

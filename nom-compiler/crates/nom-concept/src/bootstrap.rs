@@ -194,6 +194,81 @@ impl BootstrapProof {
     }
 }
 
+// ── FixpointAttempt ───────────────────────────────────────────────────────────
+
+/// One attempt at verifying the fixpoint condition (Stage2 hash == Stage3 hash).
+#[derive(Debug, Clone)]
+pub struct FixpointAttempt {
+    /// Sequential attempt number (1-based).
+    pub attempt_id: u32,
+    /// Binary hash produced by Stage2.
+    pub s2_hash: String,
+    /// Binary hash produced by Stage3.
+    pub s3_hash: String,
+    /// Whether the two hashes matched on this attempt.
+    pub matches: bool,
+}
+
+impl FixpointAttempt {
+    /// Create a new attempt record; `matches` is computed from the hashes.
+    pub fn new(id: u32, s2: &str, s3: &str) -> Self {
+        let matches = s2 == s3;
+        Self {
+            attempt_id: id,
+            s2_hash: s2.to_string(),
+            s3_hash: s3.to_string(),
+            matches,
+        }
+    }
+
+    /// Returns `true` when the two stage hashes are identical.
+    pub fn is_fixpoint(&self) -> bool {
+        self.matches
+    }
+}
+
+// ── BootstrapRunner ───────────────────────────────────────────────────────────
+
+/// Drives repeated fixpoint attempts until one succeeds or the cap is reached.
+#[derive(Debug)]
+pub struct BootstrapRunner {
+    /// All attempts recorded so far.
+    pub attempts: Vec<FixpointAttempt>,
+    /// Maximum number of attempts before giving up.
+    pub max_attempts: u32,
+}
+
+impl BootstrapRunner {
+    /// Create a runner with the given attempt cap and no recorded attempts.
+    pub fn new(max_attempts: u32) -> Self {
+        Self {
+            attempts: Vec::new(),
+            max_attempts,
+        }
+    }
+
+    /// Record one attempt and return whether it achieved fixpoint.
+    ///
+    /// The attempt id is assigned as `(current attempt count + 1)`.
+    pub fn run_attempt(&mut self, s2_hash: &str, s3_hash: &str) -> bool {
+        let id = (self.attempts.len() as u32) + 1;
+        let attempt = FixpointAttempt::new(id, s2_hash, s3_hash);
+        let result = attempt.is_fixpoint();
+        self.attempts.push(attempt);
+        result
+    }
+
+    /// Returns `true` if any recorded attempt matched.
+    pub fn achieved_fixpoint(&self) -> bool {
+        self.attempts.iter().any(|a| a.is_fixpoint())
+    }
+
+    /// Number of attempts recorded so far.
+    pub fn attempt_count(&self) -> usize {
+        self.attempts.len()
+    }
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -268,5 +343,56 @@ mod tests {
             .record_stage(StageBuild::new(BootstrapStage::Stage3).mark_built("bbb", "c3"));
         assert!(!proof2.check_fixpoint());
         assert!(!proof2.fixpoint_achieved);
+    }
+
+    #[test]
+    fn fixpoint_attempt_matches() {
+        let a = FixpointAttempt::new(1, "abc", "abc");
+        assert!(a.is_fixpoint());
+        assert!(a.matches);
+        assert_eq!(a.attempt_id, 1);
+    }
+
+    #[test]
+    fn fixpoint_attempt_no_match() {
+        let a = FixpointAttempt::new(2, "abc", "xyz");
+        assert!(!a.is_fixpoint());
+        assert!(!a.matches);
+    }
+
+    #[test]
+    fn runner_run_attempt() {
+        let mut runner = BootstrapRunner::new(5);
+        let result = runner.run_attempt("h1", "h2");
+        assert!(!result);
+        assert_eq!(runner.attempt_count(), 1);
+        assert_eq!(runner.attempts[0].attempt_id, 1);
+    }
+
+    #[test]
+    fn runner_achieved_fixpoint_false() {
+        let mut runner = BootstrapRunner::new(3);
+        runner.run_attempt("aaa", "bbb");
+        runner.run_attempt("ccc", "ddd");
+        assert!(!runner.achieved_fixpoint());
+    }
+
+    #[test]
+    fn runner_achieved_fixpoint_true() {
+        let mut runner = BootstrapRunner::new(3);
+        runner.run_attempt("aaa", "bbb");
+        let matched = runner.run_attempt("same", "same");
+        assert!(matched);
+        assert!(runner.achieved_fixpoint());
+    }
+
+    #[test]
+    fn runner_attempt_count() {
+        let mut runner = BootstrapRunner::new(10);
+        assert_eq!(runner.attempt_count(), 0);
+        runner.run_attempt("x", "y");
+        runner.run_attempt("x", "x");
+        assert_eq!(runner.attempt_count(), 2);
+        assert_eq!(runner.max_attempts, 10);
     }
 }

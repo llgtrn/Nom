@@ -246,6 +246,111 @@ impl Default for AnimationOrder {
 }
 
 // ---------------------------------------------------------------------------
+// AnimationState / Keyframe / AnimationClip / AnimationHandle
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AnimationState {
+    Idle,
+    Running,
+    Paused,
+    Completed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Keyframe {
+    pub t: f32,
+    pub value: f32,
+}
+
+impl Keyframe {
+    pub fn new(t: f32, value: f32) -> Self {
+        Self { t, value }
+    }
+}
+
+pub struct AnimationClip {
+    pub keyframes: Vec<Keyframe>,
+    pub duration: f32,
+    pub looping: bool,
+}
+
+impl AnimationClip {
+    pub fn new(duration: f32) -> Self {
+        Self {
+            keyframes: Vec::new(),
+            duration,
+            looping: false,
+        }
+    }
+
+    pub fn add_keyframe(&mut self, t: f32, value: f32) {
+        self.keyframes.push(Keyframe::new(t, value));
+        self.keyframes.sort_by(|a, b| a.t.partial_cmp(&b.t).unwrap());
+    }
+
+    /// Linear interpolation between surrounding keyframes.
+    /// - No keyframes → 0.0
+    /// - Before first keyframe → first value
+    /// - After last keyframe → last value
+    pub fn sample_at(&self, t: f32) -> f32 {
+        if self.keyframes.is_empty() {
+            return 0.0;
+        }
+        let first = &self.keyframes[0];
+        let last = &self.keyframes[self.keyframes.len() - 1];
+        if t <= first.t {
+            return first.value;
+        }
+        if t >= last.t {
+            return last.value;
+        }
+        // Find surrounding pair
+        for i in 0..self.keyframes.len() - 1 {
+            let a = &self.keyframes[i];
+            let b = &self.keyframes[i + 1];
+            if t >= a.t && t <= b.t {
+                let span = b.t - a.t;
+                if span <= 0.0 {
+                    return b.value;
+                }
+                let local = (t - a.t) / span;
+                return a.value + (b.value - a.value) * local;
+            }
+        }
+        last.value
+    }
+
+    pub fn keyframe_count(&self) -> usize {
+        self.keyframes.len()
+    }
+}
+
+pub struct AnimationHandle {
+    pub id: u32,
+    pub state: AnimationState,
+    pub elapsed_ms: u64,
+}
+
+impl AnimationHandle {
+    pub fn new(id: u32) -> Self {
+        Self {
+            id,
+            state: AnimationState::Idle,
+            elapsed_ms: 0,
+        }
+    }
+
+    pub fn tick(&mut self, delta_ms: u64) {
+        self.elapsed_ms += delta_ms;
+    }
+
+    pub fn is_done(&self, clip_duration_ms: u64) -> bool {
+        self.elapsed_ms >= clip_duration_ms
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Interpolation helpers
 // ---------------------------------------------------------------------------
 
@@ -689,5 +794,81 @@ mod tests {
         let result = lerp_hsla(from, to, 1.0);
         assert!((result.h - to.h).abs() < 1e-5);
         assert!((result.a - to.a).abs() < 1e-5);
+    }
+
+    // -----------------------------------------------------------------------
+    // AnimationState / Keyframe / AnimationClip / AnimationHandle tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn keyframe_new() {
+        let kf = Keyframe::new(0.5, 1.0);
+        assert!((kf.t - 0.5).abs() < 1e-6);
+        assert!((kf.value - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn clip_add_keyframe() {
+        let mut clip = AnimationClip::new(1.0);
+        clip.add_keyframe(0.0, 0.0);
+        clip.add_keyframe(1.0, 10.0);
+        assert_eq!(clip.keyframe_count(), 2);
+    }
+
+    #[test]
+    fn clip_sample_at_start() {
+        let mut clip = AnimationClip::new(1.0);
+        clip.add_keyframe(0.0, 5.0);
+        clip.add_keyframe(1.0, 10.0);
+        // Before first keyframe → first value
+        assert!((clip.sample_at(-0.1) - 5.0).abs() < 1e-6);
+        // At first keyframe
+        assert!((clip.sample_at(0.0) - 5.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn clip_sample_at_end() {
+        let mut clip = AnimationClip::new(1.0);
+        clip.add_keyframe(0.0, 0.0);
+        clip.add_keyframe(1.0, 8.0);
+        // At last keyframe
+        assert!((clip.sample_at(1.0) - 8.0).abs() < 1e-6);
+        // Past last keyframe → last value
+        assert!((clip.sample_at(2.0) - 8.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn clip_sample_interpolate() {
+        let mut clip = AnimationClip::new(1.0);
+        clip.add_keyframe(0.0, 0.0);
+        clip.add_keyframe(1.0, 10.0);
+        // Midpoint → linear interp → 5.0
+        assert!((clip.sample_at(0.5) - 5.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn handle_new() {
+        let h = AnimationHandle::new(42);
+        assert_eq!(h.id, 42);
+        assert_eq!(h.state, AnimationState::Idle);
+        assert_eq!(h.elapsed_ms, 0);
+    }
+
+    #[test]
+    fn handle_tick() {
+        let mut h = AnimationHandle::new(1);
+        h.tick(100);
+        assert_eq!(h.elapsed_ms, 100);
+        h.tick(50);
+        assert_eq!(h.elapsed_ms, 150);
+    }
+
+    #[test]
+    fn handle_is_done() {
+        let mut h = AnimationHandle::new(1);
+        assert!(!h.is_done(500));
+        h.tick(500);
+        assert!(h.is_done(500));
+        assert!(!h.is_done(600));
     }
 }

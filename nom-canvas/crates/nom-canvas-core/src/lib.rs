@@ -32,6 +32,10 @@ pub use frosted_pass::{FrostedPassConfig, FrostedPassState, FrostedRenderPass};
 /// Chart primitives: types, data series, config, and chart composition.
 pub mod chart;
 pub use chart::{Chart, ChartConfig, ChartType, DataSeries};
+/// Render pipeline coordinator: phase ordering, draw command queues, and
+/// stub frame-graph toward a real wgpu draw loop.
+pub mod render_pipeline;
+pub use render_pipeline::{DrawCommand, FrameGraph, RenderPhase, RenderPipelineCoordinator, RenderQueue};
 
 #[cfg(test)]
 mod integration_tests {

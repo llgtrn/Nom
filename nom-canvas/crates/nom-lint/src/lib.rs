@@ -2,6 +2,7 @@
 
 pub mod rules;
 pub use rules::naming::{NamingLinter, NamingViolation};
+pub use rules::structure::{StructureLinter, StructureViolation, StructureViolationKind};
 
 // ---------------------------------------------------------------------------
 // Sealed supertrait (yara-x pattern) — prevents external implementations.

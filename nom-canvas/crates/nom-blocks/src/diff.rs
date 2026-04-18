@@ -665,3 +665,184 @@ mod tests {
         assert_eq!(blocks[0].id.id, "ktest");
     }
 }
+
+// ── Typed diff record and accumulator ────────────────────────────────────────
+
+/// Discriminant for a single block-level change.
+#[derive(Clone, Debug, PartialEq)]
+pub enum BlockDiffKind {
+    /// Block was introduced in the new revision.
+    Added,
+    /// Block was present in the old revision but absent in the new.
+    Removed,
+    /// A field on the block changed between revisions.
+    Modified,
+    /// Block retained its identity but moved to a different position.
+    Moved,
+}
+
+/// A flat, typed record of one change to a block, identified by a numeric id.
+#[derive(Clone, Debug, PartialEq)]
+pub struct BlockDiffRecord {
+    /// The kind of change.
+    pub kind: BlockDiffKind,
+    /// Numeric identifier of the affected block.
+    pub block_id: u32,
+    /// Name of the changed field (empty for Added / Removed).
+    pub field: String,
+    /// Value before the change, if applicable.
+    pub old_value: Option<String>,
+    /// Value after the change, if applicable.
+    pub new_value: Option<String>,
+}
+
+impl BlockDiffRecord {
+    /// Construct an `Added` record for the given block id.
+    pub fn added(id: u32) -> Self {
+        Self {
+            kind: BlockDiffKind::Added,
+            block_id: id,
+            field: String::new(),
+            old_value: None,
+            new_value: None,
+        }
+    }
+
+    /// Construct a `Removed` record for the given block id.
+    pub fn removed(id: u32) -> Self {
+        Self {
+            kind: BlockDiffKind::Removed,
+            block_id: id,
+            field: String::new(),
+            old_value: None,
+            new_value: None,
+        }
+    }
+
+    /// Construct a `Modified` record recording a field transition.
+    pub fn modified(id: u32, field: &str, old: &str, new: &str) -> Self {
+        Self {
+            kind: BlockDiffKind::Modified,
+            block_id: id,
+            field: field.to_string(),
+            old_value: Some(old.to_string()),
+            new_value: Some(new.to_string()),
+        }
+    }
+}
+
+/// An ordered accumulator of [`BlockDiffRecord`] entries.
+#[derive(Debug, Default)]
+pub struct BlockDiffer {
+    /// The accumulated diff records.
+    pub diffs: Vec<BlockDiffRecord>,
+}
+
+impl BlockDiffer {
+    /// Create an empty differ.
+    pub fn new() -> Self {
+        Self { diffs: Vec::new() }
+    }
+
+    /// Append one diff record.
+    pub fn push(&mut self, diff: BlockDiffRecord) {
+        self.diffs.push(diff);
+    }
+
+    /// Total number of diff records.
+    pub fn diff_count(&self) -> usize {
+        self.diffs.len()
+    }
+
+    /// Number of `Added` records.
+    pub fn added_count(&self) -> usize {
+        self.diffs
+            .iter()
+            .filter(|d| d.kind == BlockDiffKind::Added)
+            .count()
+    }
+
+    /// Number of `Removed` records.
+    pub fn removed_count(&self) -> usize {
+        self.diffs
+            .iter()
+            .filter(|d| d.kind == BlockDiffKind::Removed)
+            .count()
+    }
+
+    /// Number of `Modified` records.
+    pub fn modified_count(&self) -> usize {
+        self.diffs
+            .iter()
+            .filter(|d| d.kind == BlockDiffKind::Modified)
+            .count()
+    }
+}
+
+#[cfg(test)]
+mod typed_diff_tests {
+    use super::{BlockDiffKind, BlockDiffRecord, BlockDiffer};
+
+    /// BlockDiffRecord::added produces an Added record with the correct block_id.
+    #[test]
+    fn diff_added() {
+        let r = BlockDiffRecord::added(42);
+        assert_eq!(r.kind, BlockDiffKind::Added);
+        assert_eq!(r.block_id, 42);
+        assert!(r.old_value.is_none());
+        assert!(r.new_value.is_none());
+    }
+
+    /// BlockDiffRecord::removed produces a Removed record with the correct block_id.
+    #[test]
+    fn diff_removed() {
+        let r = BlockDiffRecord::removed(7);
+        assert_eq!(r.kind, BlockDiffKind::Removed);
+        assert_eq!(r.block_id, 7);
+        assert!(r.field.is_empty());
+    }
+
+    /// BlockDiffRecord::modified captures field, old_value, and new_value correctly.
+    #[test]
+    fn diff_modified() {
+        let r = BlockDiffRecord::modified(1, "title", "Hello", "World");
+        assert_eq!(r.kind, BlockDiffKind::Modified);
+        assert_eq!(r.block_id, 1);
+        assert_eq!(r.field, "title");
+        assert_eq!(r.old_value.as_deref(), Some("Hello"));
+        assert_eq!(r.new_value.as_deref(), Some("World"));
+    }
+
+    /// BlockDiffer::diff_count returns the total number of pushed records.
+    #[test]
+    fn differ_counts() {
+        let mut d = BlockDiffer::new();
+        d.push(BlockDiffRecord::added(1));
+        d.push(BlockDiffRecord::removed(2));
+        d.push(BlockDiffRecord::modified(3, "x", "a", "b"));
+        assert_eq!(d.diff_count(), 3);
+    }
+
+    /// BlockDiffer::added_count counts only Added records.
+    #[test]
+    fn differ_added_count() {
+        let mut d = BlockDiffer::new();
+        d.push(BlockDiffRecord::added(1));
+        d.push(BlockDiffRecord::added(2));
+        d.push(BlockDiffRecord::removed(3));
+        assert_eq!(d.added_count(), 2);
+        assert_eq!(d.removed_count(), 1);
+        assert_eq!(d.modified_count(), 0);
+    }
+
+    /// BlockDiffer::modified_count counts only Modified records.
+    #[test]
+    fn differ_modified_count() {
+        let mut d = BlockDiffer::new();
+        d.push(BlockDiffRecord::modified(10, "field", "old", "new"));
+        d.push(BlockDiffRecord::modified(11, "other", "x", "y"));
+        d.push(BlockDiffRecord::added(12));
+        assert_eq!(d.modified_count(), 2);
+        assert_eq!(d.added_count(), 1);
+    }
+}

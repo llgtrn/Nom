@@ -419,3 +419,49 @@ fn golden_ancestry_cache() {
         "AncestryCache must return [2] for depth 3"
     );
 }
+
+// Golden path 23: RenderPipelineCoordinator — begin frame, push one Clear command, end frame.
+#[test]
+fn golden_render_pipeline() {
+    use nom_canvas_core::{DrawCommand, FrameGraph, RenderPhase, RenderPipelineCoordinator, RenderQueue};
+    let mut coord = RenderPipelineCoordinator::new();
+    let mut graph = coord.begin_frame();
+    let mut q = RenderQueue::new(RenderPhase::Geometry);
+    q.push(DrawCommand::Clear { r: 0.0, g: 0.0, b: 0.0, a: 1.0 });
+    graph.add_queue(q);
+    let n = coord.end_frame(graph);
+    assert_eq!(n, 1);
+    assert_eq!(coord.frame_count(), 1);
+    // FrameGraph is consumed by end_frame; suppress unused import lint
+    let _: fn() -> FrameGraph = FrameGraph::new;
+}
+
+// Golden path 24: ChatDispatch routes "compose a video from my images" to CanvasMode::Compose.
+#[test]
+fn golden_chat_dispatch() {
+    use nom_panels::{CanvasMode, ChatDispatch, ChatPanelMessage};
+    let msg = ChatPanelMessage::new_user("compose a video from my images", vec![]);
+    let (mode, _response) = ChatDispatch::dispatch(msg);
+    assert!(matches!(mode, CanvasMode::Compose));
+}
+
+// Golden path 25: WeightedGraph — add two edges, verify edge_count and total_weight.
+#[test]
+fn golden_weighted_graph() {
+    use nom_graph::WeightedGraph;
+    let mut g = WeightedGraph::new();
+    g.add_edge(1, 2, 0.5).add_edge(1, 3, 1.5);
+    assert_eq!(g.edge_count(), 2);
+    assert!((g.total_weight() - 2.0).abs() < 0.001);
+}
+
+// Golden path 26: LspIoBuffer — push raw bytes, confirm they are buffered.
+#[test]
+fn golden_lsp_io_buffer() {
+    use nom_compiler_bridge::LspIoBuffer;
+    let mut buf = LspIoBuffer::new();
+    let frame_bytes = b"Content-Length: 27\r\n\r\n{\"method\":\"initialize\"}    ";
+    buf.push_bytes(frame_bytes);
+    // buffer received bytes
+    assert!(buf.buffered_len() > 0);
+}

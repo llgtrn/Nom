@@ -7,7 +7,10 @@ pub mod intent_preview;
 pub mod properties;
 pub mod reasoning_card;
 
-pub use chat::{ChatMessage as ChatPanelMessage, ChatPanel, ChatRole as ChatPanelRole};
+pub use chat::{
+    AiChatSession, CanvasMode, ChatAttachment, ChatDispatch,
+    ChatMessage as ChatPanelMessage, ChatPanel, ChatRole as ChatPanelRole,
+};
 pub use chat_sidebar::{ChatMessage, ChatRole, ChatSidebarPanel, ToolCard};
 pub use deep_think::{DeepThinkPanel, HypothesisTree, ReasoningStep, ThinkingStep};
 pub use deep_think_panel::DeepThinkRenderer;

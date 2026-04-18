@@ -1,8 +1,10 @@
 #![deny(unsafe_code)]
+pub mod animation;
 pub mod fonts;
 pub mod icons;
 pub mod tokens;
 pub mod typography;
+pub use animation::{AnimationRegistry, AnimationToken, EasingKind};
 pub use fonts::{FontRegistry, TypeStyle};
 pub use icons::{icon_path, Icon, IconPath};
 pub use tokens::*;

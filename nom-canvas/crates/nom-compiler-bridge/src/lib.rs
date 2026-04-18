@@ -12,6 +12,8 @@ pub use lsp_server::{
     dispatch_lsp_request, AuthoringEvent, AuthoringProtocol, LspLoopState, LspRequest, LspResponse,
     LspServerLoop, LspTransport,
 };
+pub mod lsp_loop;
+pub use lsp_loop::{LspAsyncLoop, LspFrame, LspIoBuffer, LspLoopConfig};
 pub mod benchmarks;
 #[cfg(feature = "compiler")]
 pub mod dictwriter;

@@ -1,6 +1,8 @@
 #![deny(unsafe_code)]
 
+pub mod export;
 pub mod metrics;
+pub use export::{ExportFormat, MetricRecord, MetricsExporter};
 pub use metrics::{Counter, Histogram, MetricsRegistry};
 
 use std::sync::{Arc, Mutex};

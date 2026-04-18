@@ -1,6 +1,7 @@
 #[cfg(feature = "serve")]
 pub mod serve;
 
+pub mod compose;
 pub mod app;
 pub mod author;
 pub mod bench;
