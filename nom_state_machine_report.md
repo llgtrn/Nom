@@ -4,6 +4,29 @@
 
 ---
 
+## Iteration 79 — Wave ABG+ABH COMPLETE (HEAD de66f18, ~9415 tests, 0 warnings)
+
+**14 parallel agents + 8 vision repos cloned + source-read of Sherlock+screenshot-to-code.**
+
+| Gap ID | Fix | Crate |
+|--------|-----|-------|
+| ChatDispatch wire | InspectDispatch → WebUrl/FilePath routing | nom-panels |
+| LlmQualityGate | QualityGateConfig + inspect_with_quality() DreamScore≥95 | nom-compose |
+| LspSyncDriver | std::io Content-Length framing read/write loop | nom-compiler-bridge |
+| CorpusOrchestrator | CorpusEcosystem + CorpusBatch + 4-ecosystem planner | nom-concept |
+| CompilePipeline | parse→IR→codegen end-to-end chain | nom-concept |
+| B8 +20 translations | 20 paradigm tests (actor, CSP, lenses, session types…) | nom-concept |
+| AudioRenderer | PlaybackEntry + rodio-pattern multi-track renderer | nom-compose |
+| D3 golden 35 | 35 total golden path integration tests | nom-canvas-tests |
+| ContentDag+Hash | 16 integration tests for hash+DAG APIs | nom-graph/nom-blocks |
+| SherlockNative | SiteEntry + ErrorDetect + CheckStatus native Rust OSINT | nom-compose |
+| VisionProvider | UiComponentType + StubVisionProvider + ScreenshotAnalyzer | nom-compose |
+| Repos cloned | segment-anything, ultralytics, unilm, screenshot-to-code, gpt-engineer, donut, AnimateDiff, stable-video-diffusion | Accelworld/upstreams |
+
+**Patterns extracted for Wave ABI:** SAM (LetterBox+sparse/dense prompt+mask decoder), YOLOv8 (NMS+BBox+batch), AnimateDiff (UNet3D+temporal attention+VAE), LayoutLMv3 (spatial bbox embeddings+patch embeddings+transformer).
+
+---
+
 ## Iteration 77 — Wave ABF COMPLETE (HEAD 5a525e5, 9315 tests, 0 warnings)
 
 **12 parallel agents. Universal clone/inspect engine: NomInspector + SherlockAdapter + StrategyExtractor + RepoInspector + ContentHash/Dag + NativeCodegen + InspectPanel (internal) + EventQueue + SelectionManager + OpLog + ActiveSpan + golden 30.**

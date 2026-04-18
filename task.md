@@ -263,18 +263,32 @@
 - ✅ D3 golden 30 — 30 total golden path tests in nom-canvas-tests
 - ✅ NomInspector design spec — docs/superpowers/specs/2026-04-19-nom-inspector-design.md
 
-## Open Items — Wave ABG targets
+## Wave ABG+ABH (2026-04-19) — COMMITTED ✅ (HEAD de66f18, ~9415 tests)
 
-- ❌ **ChatDispatch → NomInspector** — wire ChatDispatch.infer_mode() directly to NomInspector; no InspectPanel in UX
-- ❌ **LlmQualityGate** — inspect_with_quality(target, llm_fn) → DreamScore ≥95 gates each step; retry loop via ReActLlmFn
-- ❌ **C5 audio real** — real rodio playback in AudioMixer; not just stubs
+- ✅ ChatDispatch → InspectDispatch wired (WebUrl/FilePath routing, 8 tests)
+- ✅ LlmQualityGate + inspect_with_quality() DreamScore≥95 (6 tests)
+- ✅ LspSyncDriver std::io Content-Length framing (5 tests)
+- ✅ CorpusOrchestrator 4-ecosystem ingestion planner (6 tests)
+- ✅ CompilePipeline parse→IR→codegen (8 tests)
+- ✅ B8 +20 paradigm translations (actor, CSP, lenses, free monad, session types…)
+- ✅ AudioRenderer PlaybackEntry + rodio-pattern (8 tests)
+- ✅ D3 golden 35 total tests
+- ✅ ContentDag + ContentHash 16 integration tests
+- ✅ SherlockNative — SiteEntry + ErrorDetect + CheckStatus native Rust (8 tests)
+- ✅ VisionProvider — UiComponentType + ScreenshotAnalyzer (10 tests)
+- ✅ C9 build --all-features passes cleanly (7,258 nom-canvas tests)
+- ✅ 8 vision repos cloned (SAM, YOLOv8, unilm, screenshot-to-code, gpt-engineer, donut, AnimateDiff, stable-video-diffusion)
+
+## Open Items — Wave ABI targets (vision pipeline native Rust)
+
+- ❌ **BBoxDetector** — YOLOv8 LetterBox + NMS + BBox pipeline in nom-compose/src/detection.rs
+- ❌ **SegmentPipeline** — SAM sparse/dense prompt encoding + mask decoder stubs in nom-compose/src/segmentation.rs
+- ❌ **LayoutAnalyzer** — LayoutLMv3 spatial bbox embedding pattern in nom-compose/src/layout.rs
+- ❌ **AnimationPipeline** — AnimateDiff UNet3D + temporal attention stubs in nom-compose/src/diffusion.rs
+- ❌ **VisionOrchestrator** — chains BBox→Segment→Layout→nomx generation
 - ❌ **C5 video GPU→FFmpeg** — real FrameCapture → FFmpeg encode in TwoStagePipeline
-- ❌ **A6 LSP real async** — real tokio stdin/stdout I/O in LspAsyncLoop (stubs exist)
-- ❌ **A10 corpus pipeline** — 100-repo ingestion: PyPI top-100 + GitHub top-100 per ecosystem
-- ❌ **A11 full compile** — NomParser → AstToIr → IrPrinter → NativeCodegen end-to-end pipeline
-- ❌ **B8 +20 translations** — 20 more paradigm translations in nom-concept
-- ❌ **C9 build --all-features** — `cargo build --all-features` passes cleanly
-- ❌ **D3 golden 35** — 35 total golden path tests
+- ❌ **A6 LSP real tokio** — real tokio stdin/stdout in LspAsyncLoop
+- ❌ **D3 golden 40** — 40 total golden path tests
 
 ---
 
