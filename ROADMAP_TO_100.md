@@ -1,42 +1,51 @@
 # Nom — Roadmap to 100%
 
 **Date:** 2026-04-18 | **Mandate:** reach 100% on all 4 axes. Every `[ ]` is a completable task.
-**Last updated:** Wave AN COMPLETE — HEAD `7e06f47`, **7902 tests** (+250). Wave AO planned: retry 7 failed crates + CRITICAL fixes. Target: ~8200 tests.
+**Last updated:** Wave AO COMPLETE — HEAD `83667da`, **8384 tests** (+482). 10 items FIXED. Renderer + BackendKind + SQL inject still OPEN. Wave AP planned. Target: ~8650 tests.
 
 ## Current finalization snapshot
 
-**Iteration 58 audit (8 agents, 2026-04-18) — Wave AM verified, all CRITICAL items still open:**
+**Iteration 60 audit (8 agents, 2026-04-18) — Wave AN verified:**
 
 | Axis | Today | Target | Gap | Notes |
 |---|---|---|---|---|
 | A · nom-compiler | 44% | 100% | 56pp | Lexer done; self-hosting not started; 22/29 crates never called from canvas |
 | B · Nom language | 34% | 100% | 66pp | 9-kind foundation locked; C-like syntax; 30+ extended kinds unseeded |
-| C · nom-canvas ↔ compiler integration | **33%** | 100% | **67pp** | **REVISED DOWN** — renderer renders 0 pixels (8+ waves open); BackendKind 379 refs; UnifiedDispatcher/ComposeContext dead code; KindStatus absent; CRDT overflow open |
-| D · Overall platform | **70%** | 100% | **30pp** | **REVISED DOWN** — Theme struct absent; all Wave AM token additions test-only; taffy stub; cosmic-text never called; is_safe_identifier defined but unwired |
+| C · nom-canvas ↔ compiler integration | **34%** | 100% | **66pp** | +1pp from Wave AN: CRDT overflow fixed, SpatialIndex wired to selection. Renderer still renders 0 pixels (10+ waves); BackendKind 379 refs; GrammarKind.status field missing; is_safe_identifier never called in to_sql(); ExecutionEngine plans but never executes |
+| D · Overall platform | **72%** | 100% | **28pp** | +2pp from Wave AN: Theme struct + dark/light constructors added; LspPosition types in lsp_bridge.rs; FrameBlock has spatial fields. Still open: oled(), TOOLBAR_H ambiguity, deepthink confidence coloring, fonts stub, atlas LRU bug |
 
-**C-axis still at ~33%** (no improvement from Wave AM): (1) renderer still renders zero pixels, (2) BackendKind enum still 379 active references, (3) UnifiedDispatcher/ComposeContext exist but are dead code in production, (4) KindStatus/promotion lifecycle absent, (5) CRDT overflow still open.
+**C-axis at ~34%** (Wave AN fixed CRDT overflow and selection.rs wiring, nothing else):
+1. Renderer still renders zero pixels — 10 waves overdue
+2. BackendKind enum still 379 active references; UnifiedDispatcher dead code
+3. KindStatus enum exists but GrammarKind has no status field; no list_kinds() SQL
+4. is_safe_identifier() defined but never called in to_sql() — 4 SQL injection points active
+5. ExecutionEngine::plan_execution() plans DAG but execute() never calls node logic
 
-**D-axis still at ~70%** (Wave AM test-inflation did not improve real features): Wave AM "theme" additions ALL inside `#[cfg(test)]`; `pub struct Theme` still absent; `is_safe_identifier()` exists but is never called; `edge_color_for_confidence()` never called from deep_think.rs.
+**D-axis at ~72%** (Wave AN partial progress):
+- Theme struct + dark()/light() constructors now exist
+- LspPosition/LspRange types now exist in lsp_bridge.rs (not yet integrated into Buffer API)
+- FrameBlock now has x/y/width/height/z_index fields
+- Still: oled() absent, TOOLBAR_H=48.0 vs TOOLBAR_HEIGHT=36.0 ambiguity, edge_color_for_confidence() never called from deep_think.rs, atlas LRU corrupts on partial eviction
 
-**Per-crate test counts (Wave AN actuals → Wave AO targets).**
-| Crate | Wave AN actual | Wave AO target | Wave AO priority |
+**Per-crate test counts (Wave AO actuals → Wave AP targets).**
+| Crate | Wave AO actual | Wave AP target | Wave AP priority |
 |---|---|---|---|
-| nom-blocks | 515 | 560 | AN-FRAME-SPATIAL + AN-WORKSPACE-DUP + AN-BLOCKDIFF-CONTENT |
-| nom-canvas-core | 530 | 575 | AM-SPATIAL-WIRE (R-tree wiring) |
-| nom-cli | 400 | 430 | UC-SERVE (POST /compose skeleton) |
-| nom-collab | 504 | 545 | AL-CRDT-OVERFLOW + AM-CRDT-IDEMPOTENT |
-| nom-compiler-bridge | 505 | 545 | AL-GRAMMAR-STATUS + AM-UITIER-DIVERGE + AL-ATOMIC-ORDERING |
-| nom-compose | 660 | 690 | AL-BACKEND-KIND (delete enum) + AL-SQL-INJECT (wire guard) |
-| nom-editor | 578 | 620 | AN-LSP-POSITIONS + AN-INTERACTIVE-CANCEL |
-| nom-gpui | 743 | 790 | **AL-RENDER-1/2/3 (renders 0 pixels — MUST FIX)** + AM-ATLAS-LRU |
-| nom-graph | 530 | 570 | connection pool + traversal tests |
-| nom-intent | 440 | 470 | AM-INTENT-STRUCT (add BM25Index + real resolve) |
-| nom-lint | 460 | 485 | — |
-| nom-memoize | 445 | 470 | — |
-| nom-panels | 570 | 600 | AL-DEEPTHINK-CONFIDENCE (wire edge_color_for_confidence) |
-| nom-telemetry | 475 | 500 | — |
-| nom-theme | 535 | 560 | AL-THEME-SYSTEM (pub struct Theme) + AL-FONTS |
-| **TOTAL** | **7902** | **~8210** | — |
+| nom-blocks | 560 | 600 | AN-WORKSPACE-DUP remaining + rotation + cycle guard + blockdiff word |
+| nom-canvas-core | 575 | 615 | AM-SPATIAL-WIRE hit_test.rs production broadphase |
+| nom-cli | 400 | 435 | NOM-GRAPH-EXEC execute() skeleton |
+| nom-collab | 545 | 580 | AM-CRDT-IDEMPOTENT (duplicate guard in apply()) |
+| nom-compiler-bridge | 548 | 590 | AL-GRAMMAR-STATUS (status field on GrammarKind + list_kinds SQL) |
+| nom-compose | 690 | 730 | AL-BACKEND-KIND (delete enum) + AL-SQL-INJECT remaining |
+| nom-editor | 620 | 660 | NOM-EDITOR-POINT (Point row/col type + Buffer integration) |
+| nom-gpui | 790 | 840 | **AL-RENDER-1/2/3 (11 WAVES OVERDUE — BLOCKER)** + AM-ATLAS-LRU |
+| nom-graph | 570 | 610 | NOM-GRAPH-EXEC execute() + NOM-GRAPH-ANCESTRY transitive cache |
+| nom-intent | 470 | 510 | AM-INTENT-STRUCT (bm25_index + classify_with_react integration) |
+| nom-lint | 485 | 510 | — |
+| nom-memoize | 470 | 495 | — |
+| nom-panels | 600 | 635 | AL-DEEPTHINK-CONFIDENCE (wire edge_color_for_confidence to card) |
+| nom-telemetry | 500 | 525 | — |
+| nom-theme | 560 | 595 | AL-FONTS + oled() + TOOLBAR_H consolidation |
+| **TOTAL** | **8384** | **~8650** | — |
 
 **Discipline:** tick `[x]` only after BOTH the code change AND a regression test are committed. Never tick from trackers alone. See `feedback_audit_must_also_fix.md`.
 

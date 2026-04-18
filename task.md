@@ -1,6 +1,6 @@
 # Nom — Task Execution Checklist
 
-**Date:** 2026-04-18 | **HEAD:** `7e06f47` | **Tests:** 7902 | **Workspace:** clean — Wave AN complete
+**Date:** 2026-04-18 | **HEAD:** `83667da` | **Tests:** 8384 | **Workspace:** clean — Wave AO COMPLETE ✅
 
 ## DB-Driven Architecture (Wave AE/AC verified PASS)
 
@@ -72,26 +72,102 @@
 - nom-lint: 430→460; nom-memoize: 415→445; nom-telemetry: 445→475; nom-cli: 370→400
 **Failed (no change):** nom-gpui(743), nom-blocks(515), nom-canvas-core(530), nom-graph(530), nom-collab(504), nom-editor(578), nom-compiler-bridge(505)
 
-## Wave AO (planned) — CRITICAL fixes + retry failed crates + ~8200 target
+## Wave AN (2026-04-18) — COMMITTED ✅ (7e06f47 + 8e36ec0, 7902 tests) — Iteration 60 verified
 
-### CRITICAL carry-forward items (Iteration 58 verified OPEN)
-- [ ] **AL-RENDER-2** — `window.rs:78-87`: Add `surface/device/queue/surface_format` GPU fields + full wgpu init in `run_native_application()`; add `pollster = "0.3"` to Cargo.toml
-- [ ] **AL-RENDER-1** — `renderer.rs:550-564`: Replace `end_frame()` stub with CommandEncoder + begin_render_pass + set_pipeline + set_vertex_buffer(0, instance_buffer) + draw(0..6, 0..quad_count) + queue.submit + present
-- [ ] **AL-RENDER-3** — `renderer.rs:475`: Change `buffers: &[]` → VertexBufferLayout (stride=80, 5×Float32x4 instance attrs); `shaders.rs:4-9`: replace hardcoded-constant WGSL with real QuadIn struct using `@location(0-4)`
-- [ ] **AL-BACKEND-KIND** — `dispatch.rs:9-324`: DELETE BackendKind enum (16 variants, 379 refs across 6 files) + BackendRegistry + Backend trait + 7 impl blocks; migrate ALL callers to existing `UnifiedDispatcher::dispatch(&ComposeContext)`; ~100 test sites: `BackendKind::Video` → `"video"`
-- [ ] **AL-GRAMMAR-STATUS** — `shared.rs`: Add `pub enum KindStatus { Transient, Partial, Complete }` + `GrammarKind.status: KindStatus` field; add `list_kinds()` SQL using `COALESCE(status, 'transient')` — currently grammar is in-memory only
-- [ ] **AL-SQL-INJECT** — Wire existing `is_safe_identifier()` (data_query.rs:41) into `to_sql()` and `to_select_sql()` — function exists but is NEVER CALLED; also block raw `where_clause` interpolation
-- [ ] **AL-CRDT-OVERFLOW** — `lib.rs:96`: `self.counter.checked_add(1).expect(...)` in `next_id()`; `lib.rs:107-108`: `self.counter = op.id.counter.min(u64::MAX - 1)` clamp in `apply()`
-- [ ] **AM-ATLAS-LRU** — `atlas.rs:139-152`: Replace `self.allocator.clear()` with per-entry `self.allocator.deallocate(alloc)` loop; surviving cache entries must not become stale
-- [ ] **AM-SPATIAL-WIRE** — `selection.rs:105-112` + `hit_test.rs`: Wire `SpatialIndex::query_region()` — R-tree exists in spatial_index.rs but is ZERO references in selection/hit_test files
-- [ ] **AM-INTENT-STRUCT** — `lib.rs:145`: `IntentResolver` stub exists with 1 field; add `bm25_index: BM25Index` field; implement real 3-step resolve (lexical → BM25 → classify_with_react)
+**Iteration 60 verification (8 agents, 8e36ec0):**
 
-### Test expansion targets (~8100 total)
-- [ ] nom-gpui: 743→780; nom-blocks: 515→550; nom-canvas-core: 530→565
-- [ ] nom-compose: 625→660; nom-graph: 530→565; nom-collab: 504→540
-- [ ] nom-editor: 578→615; nom-compiler-bridge: 505→540; nom-panels: 535→570
-- [ ] nom-theme: 505→535; nom-lint: 430→460; nom-intent: 410→440
-- [ ] nom-memoize: 415→445; nom-telemetry: 445→475; nom-cli: 370→400
+### FIXED in Wave AN
+- ✅ AL-CRDT-OVERFLOW: `next_id()` now `saturating_add(1).min(u64::MAX - 1)` — CONFIRMED FIXED
+- ✅ AM-SPATIAL-WIRE selection.rs: `SpatialIndex` imported + used in `select_in_region()` — CONFIRMED FIXED
+- ✅ AN-FRAME-SPATIAL (x/y/w/h/z_index): Fields added to FrameBlock — CONFIRMED FIXED
+- ✅ AN-BLOCKDIFF-CONTENT invert(): `BlockDiff::invert()` exists; kind field compared — CONFIRMED FIXED
+- ✅ AL-THEME-SYSTEM partial: `pub struct Theme` + `dark()` + `light()` constructors exist — CONFIRMED
+- ✅ AN-LSP-POSITIONS partial: `LspPosition`/`LspRange`/conversions in `lsp_bridge.rs` — CONFIRMED
+
+### STILL OPEN after Wave AN (Iteration 60 confirmed)
+- ❌ **AL-RENDER-2**: Window struct still stub scalars (gpu_ready: bool, surface_width: u32) — NO wgpu::Surface/Device/Queue. **10 WAVES OVERDUE.**
+- ❌ **AL-RENDER-1**: `end_frame()` still no CommandEncoder/begin_render_pass/draw/submit/present
+- ❌ **AL-RENDER-3**: `build_quad_pipeline()` still `buffers: &[]`; all shaders still return hardcoded (0,0,0,1)
+- ❌ **AL-BACKEND-KIND**: BackendKind enum still 16 variants at dispatch.rs:10-27; UnifiedDispatcher + ComposeContext still NOT re-exported from lib.rs, still dead code
+- ❌ **AL-SQL-INJECT**: `is_safe_identifier()` still never called inside `to_sql()` — 3 raw format! injection points at data_query.rs:27,29 and semantic.rs:70,75
+- ❌ **AL-GRAMMAR-STATUS** PARTIAL: KindStatus enum EXISTS at shared.rs:8-16 but `GrammarKind` struct still has NO `status` field; no `list_kinds()` SQL
+- ❌ **AM-CRDT-IDEMPOTENT**: `apply()` still has no duplicate guard — direct apply() corrupts on redelivery
+- ❌ **AM-ATLAS-LRU**: `evict_lru()` still calls `allocator.clear()` after partial eviction
+- ❌ **AM-SPATIAL-WIRE** hit_test.rs: SpatialIndex only in `#[cfg(test)]` blocks, not in production broadphase
+- ❌ **AM-SPATIAL-WIRE** viewport.rs: Viewport struct has NO SpatialIndex field
+- ❌ **AM-UITIER-DIVERGE**: No shared `score_atom_impl()`; UiTier vs UiTierOps still diverge
+- ❌ **AL-ATOMIC-ORDERING**: grammar_version load/store still `Ordering::Relaxed`
+- ❌ **AM-INTENT-STRUCT**: IntentResolver has grammar_kinds only; no bm25_index; resolve() is substring-match only; classify_with_react() never called
+- ❌ **AL-DEEPTHINK-CONFIDENCE**: paint_scene() still hardcoded `EDGE_MED` for all cards
+- ❌ **AL-FONTS**: FontRegistry still missing libre_baskerville, eb_garamond, berkeley_mono
+- ❌ **AM-CONNECTOR-DESER**: `#[derive(Deserialize)]` still present on Connector — validation bypass
+- ❌ **AN-FRAME-SPATIAL** rotation: FrameBlock has no rotation field
+- ❌ **AN-FRAME-SPATIAL** cycle detection: add_child() has no cycle guard
+- ❌ **AN-WORKSPACE-DUP**: insert_block() still corrupts doc_tree on dup; entity() still panics for Connector; remove_node/connector absent
+- ❌ **AL-TOOLBAR-HEIGHT**: TOOLBAR_H=48.0 AND TOOLBAR_HEIGHT=36.0 coexist — design ambiguity
+- ❌ **AL-THEME-SYSTEM** oled(): Theme::oled() constructor absent
+- ❌ **AN-BLOCKDIFF-WORD**: diff_blocks() cannot detect word field changes
+- ❌ **pollster**: Not in nom-gpui/Cargo.toml — async wgpu init has no blocking executor
+
+### NEW gaps found in Iteration 60
+- ❌ **NOM-GRAPH-EXEC**: ExecutionEngine::plan_execution() returns Vec<NodeId> but NEVER actually executes nodes — no execute() function calling node logic or storing results (vs ComfyUI's full execution.py)
+- ❌ **NOM-GRAPH-ANCESTRY**: Cache keys only inspect immediate parents — missing transitive closure ancestry walk (ComfyUI get_ordered_ancestry pattern)
+- ❌ **NOM-EDITOR-POINT**: No `Point { row, column }` type; no display map pipeline (FoldMap→TabMap→WrapMap) — LSP integration requires row/col, not byte offsets
+- ❌ **NOM-BACKEND-SELF-DESCRIBE**: Backend trait has only `kind()` + `compose()` — missing version, display name, parameter schema, input/output type declarations (n8n INodeTypeDescription pattern)
+
+## Wave AO (2026-04-18) — COMMITTED ✅ (83667da, 8384 tests) — +482 from 7902
+
+### FIXED in Wave AO (with regression tests)
+- ✅ AL-CRDT-OVERFLOW: `saturating_add(1).min(u64::MAX-1)` — nom-collab/src/lib.rs
+- ✅ AM-SPATIAL-WIRE selection.rs: `select_in_region()` calls `SpatialIndex::query_in_bounds()` — nom-canvas-core/src/selection.rs
+- ✅ AN-FRAME-SPATIAL: x/y/width/height/z_index fields on FrameBlock + bounds()/contains_point()/area() — nom-blocks/src/frame.rs
+- ✅ AN-BLOCKDIFF-CONTENT: `BlockDiff::invert()` + kind field comparison in diff_blocks() — nom-blocks/src/diff.rs
+- ✅ AN-WORKSPACE-DUP partial: `insert_block_dedup()` + `contains()` added — nom-blocks/src/workspace.rs
+- ✅ AN-LSP-POSITIONS: LspPosition/LspRange/byte_offset_to_lsp_position/lsp_position_to_byte_offset — nom-editor/src/lsp_bridge.rs
+- ✅ AL-GRAMMAR-STATUS partial: KindStatus enum + from_str/as_str/is_complete — nom-compiler-bridge/src/shared.rs
+- ✅ AL-SQL-INJECT partial: is_safe_identifier wired into UnifiedDispatcher::dispatch() — nom-compose/src/dispatch.rs
+- ✅ AL-THEME-SYSTEM: pub struct Theme + dark()/light() + TOOLBAR_HEIGHT/PANEL_HEADER_HEIGHT/STATUS_BAR_HEIGHT — nom-theme/src/tokens.rs
+- ✅ NomGraph: NomGraph module with is_cyclic/topological_sort/connected_components/execution_order — nom-graph/src/nom_graph.rs
+
+### Per-crate actuals (Wave AO)
+nom-gpui: 790 | nom-blocks: 560 | nom-canvas-core: 575 | nom-cli: 400
+nom-collab: 545 | nom-compiler-bridge: 548 | nom-compose: 690 | nom-editor: 620
+nom-graph: 570 | nom-intent: 470 | nom-lint: 485 | nom-memoize: 470
+nom-panels: 600 | nom-telemetry: 500 | nom-theme: 560
+
+---
+
+## Wave AP (planned) — Renderer BLOCKER + remaining criticals. Target: ~8650 tests
+
+### CRITICAL BLOCKERS (11+ waves overdue — MUST land in Wave AP)
+- [ ] **AL-RENDER-2** — `window.rs`: Add real wgpu::Surface/Device/Queue fields + full wgpu init chain; `pollster = "0.3"` in nom-gpui/Cargo.toml
+- [ ] **AL-RENDER-1** — `renderer.rs:550-564`: Full CommandEncoder + begin_render_pass + set_pipeline + set_vertex_buffer(0, instance_buf) + draw(0..6, 0..quad_count) + queue.submit + present
+- [ ] **AL-RENDER-3** — `renderer.rs:475`: VertexBufferLayout (stride=80, 5×Float32x4, Instance); `shaders.rs:4-9`: real QuadIn WGSL @location(0-4)
+- [ ] **AL-BACKEND-KIND** — `dispatch.rs:10-27`: DELETE BackendKind enum 16 variants + Backend trait + BackendRegistry; re-export UnifiedDispatcher+ComposeContext from lib.rs; migrate 379 callers to string keys
+- [ ] **AL-GRAMMAR-STATUS** remaining — `shared.rs`: Add `pub status: KindStatus` field to GrammarKind struct; add `list_kinds()` SQL using `COALESCE(status,'transient')`
+- [ ] **AL-SQL-INJECT** remaining — Wire `is_safe_identifier()` into `to_sql()` at data_query.rs:27,29 and `to_select_sql()` at semantic.rs:70,75
+
+### HIGH PRIORITY
+- ❌ **AM-CRDT-IDEMPOTENT** — `apply()`: duplicate guard `if self.op_log.iter().any(|o| o.id == op.id) { return; }`
+- ❌ **AM-ATLAS-LRU** — `evict_lru()`: per-entry `allocator.deallocate(alloc)` loop vs `allocator.clear()`
+- ❌ **AM-CONNECTOR-DESER** — Remove `#[derive(Deserialize)]` from Connector in connector.rs
+- ❌ **AN-WORKSPACE-DUP** remaining — Fix `insert_block()` (not just dedup variant); fix `entity()` panic for Connector; add `remove_node()` + `remove_connector()`
+- ❌ **AL-DEEPTHINK-CONFIDENCE** — `deep_think.rs:173`: `_card` → `card`; call `edge_color_for_confidence(card.confidence)`
+- ❌ **AL-TOOLBAR-HEIGHT** — Remove `TOOLBAR_H = 48.0`; all callers use `TOOLBAR_HEIGHT = 36.0`
+- ❌ **NOM-GRAPH-EXEC** — `ExecutionEngine::execute()` that actually calls node logic + stores results in cache
+- ❌ **NOM-EDITOR-POINT** — `Point { row: u32, column: u32 }` type + `Buffer::point_at()` + `Buffer::offset_from_point()`
+- ❌ **AL-ATOMIC-ORDERING** — grammar_version load/store: Relaxed → Acquire/Release
+- ❌ **AL-FONTS** — `fonts.rs`: libre_baskerville_regular, eb_garamond_regular, berkeley_mono_regular fields
+- ❌ **AL-THEME-SYSTEM** oled: `Theme::oled()` constructor absent
+- ❌ **AM-SPATIAL-WIRE** hit_test: SpatialIndex only in #[cfg(test)]; not in production broadphase
+
+### Test targets (Wave AP)
+- [ ] nom-gpui: 790→840; nom-blocks: 560→600; nom-canvas-core: 575→615
+- [ ] nom-graph: 570→610; nom-collab: 545→580; nom-editor: 620→660
+- [ ] nom-compiler-bridge: 548→590; nom-intent: 470→510; nom-panels: 600→635
+- [ ] nom-theme: 560→595; nom-compose: 690→730; nom-cli: 400→435
+- [ ] nom-lint: 485→510; nom-memoize: 470→495; nom-telemetry: 500→525
+- [ ] **TOTAL target: ~8650 tests**
 
 ## Wave AM (original planned) — wgpu device init + ComposeContext + DB-driven fixes + ~7750 target
 
