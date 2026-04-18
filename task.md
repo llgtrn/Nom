@@ -390,13 +390,21 @@
 - ✅ CrdtMerge — VectorClock+CrdtMergeOp+MergeStrategy (9 tests)
 - ✅ SpanAggregator — SpanSample+P95Calculator+SpanAggregator+TraceReport (9 tests)
 
-## Open Items — Wave ABX targets
+## Wave ABX — COMPLETE (2026-04-19, 9663 tests)
 
-- ❌ **nom-compose audio-encode** — AudioBuffer + AudioEncoder + RodioBackend stub
-- ❌ **nom-intent rag-pipeline** — RagQuery + RagRetriever + RagPipeline (LlamaIndex pattern)
-- ❌ **nom-canvas-core bezier** — BezierPoint + BezierCurve + AnimatedBezier
-- ❌ **nom-graph content-address** — ContentHash + ContentAddressStore + ShareEntry (cross-app specialization)
-- ❌ **nom-blocks block-schema-v2** — BlockSchemaV2 + MigrationTool + RoundTripValidator
+- ✅ AudioEncode — AudioFormat+AudioBuffer+AudioEncoder+RodioBackend (9 tests)
+- ✅ RagPipeline — RagQuery+RagDocument+RagRetriever+RagPipeline (9 tests)
+- ✅ Bezier — BezierPoint+BezierCurve de Casteljau+AnimatedBezier (9 tests)
+- ✅ ContentAddress — ContentHash FNV-1a+CrossAppStore specialization sharing (9 tests)
+- ✅ BlockSchemaV2 — BlockSchemaV2+MigrationTool+RoundTripValidator (9 tests)
+
+## Open Items — Wave ABY targets
+
+- ❌ **nom-compose n8n-workflow** — WorkflowNode + WorkflowGraph + WorkflowRunner (n8n pattern)
+- ❌ **nom-intent llamaindex-postproc** — PostProcessor + DeduplicateFilter + ScoreThresholdFilter
+- ❌ **nom-canvas-core frosted-glass** — BlurLayer + FrostedGlassEffect + LayerCompositor
+- ❌ **nom-gpui texture-atlas** — AtlasRegion + TextureAtlas + AtlasAllocator
+- ❌ **nom-compose pdf-compose** — PdfPage + PdfDocument + PdfComposer (document-compose demo)
 
 ---
 

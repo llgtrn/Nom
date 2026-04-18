@@ -16,9 +16,11 @@ pub mod shaders;
 pub mod styled;
 pub mod text_layout;
 pub mod types;
+pub mod texture_atlas;
 pub mod window;
 
 pub use text_layout::{GlyphRun, TextAlign, TextLayoutEngine, TextStyle};
+pub use texture_atlas::{AtlasAllocator, AtlasRegion, AtlasShelf, TextureAtlas};
 pub use types::*;
 
 #[cfg(test)]

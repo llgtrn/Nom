@@ -60,6 +60,10 @@ pub use viewport_map::{ElementBounds as ViewportElementBounds, ViewportMap, Visi
 pub mod bezier;
 pub use bezier::{AnimatedBezier, BezierCurve, BezierPoint};
 
+/// Frosted-glass pipeline: blur layers, tinted glass effects, and layer compositing.
+pub mod frosted_glass;
+pub use frosted_glass::{BlurLayer, FrostedGlassEffect, LayerBlend, LayerCompositor};
+
 #[cfg(test)]
 mod integration_tests {
     use crate::elements::{paint_graph_node, paint_wire};

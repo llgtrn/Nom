@@ -34,6 +34,9 @@ pub use feature_stack::{FeatureStack, FeatureWeight, WordIdMap};
 pub mod rag_pipeline;
 pub use rag_pipeline::{RagDocument, RagPipeline, RagQuery, RagRetriever, RagSynthesis};
 
+pub mod postproc;
+pub use postproc::{DeduplicateFilter, PostDoc, PostPipeline, ScoreThresholdFilter};
+
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,

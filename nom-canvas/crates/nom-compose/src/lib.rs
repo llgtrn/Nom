@@ -122,6 +122,10 @@ pub mod image_dispatch;
 pub use image_dispatch::{DispatchRecord, ImageDispatcher, ModelCapability, ModelDescriptor, ModelRegistry};
 pub mod audio_encode;
 pub use audio_encode::{AudioBuffer, AudioEncoder, AudioFormat, RodioBackend};
+pub mod n8n_workflow;
+pub use n8n_workflow::{NodeStatus, WorkflowGraph, WorkflowNode, WorkflowRunner};
+pub mod pdf_compose;
+pub use pdf_compose::{PdfComposer, PdfDocument, PdfElement, PdfPage};
 
 #[cfg(test)]
 mod integration_tests {

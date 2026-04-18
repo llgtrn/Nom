@@ -128,7 +128,7 @@
 ### A9. Phase 12 — Closure-level specialization
 - [x] `entry_benchmarks` side-table populated from real runs — BenchmarkSideTable (Wave ABV)
 - [x] Bipartite min-cost assignment solver (§5.15) — MinCostSolver (Wave ABW)
-- [ ] Cross-app specialization sharing via content-address
+- [x] Cross-app specialization sharing via content-address — ContentAddressStore+CrossAppStore (Wave ABX)
 - [ ] 70–95% binary-size reduction verified on test corpus
 - [x] `nom bench regress` CLI catches regressions — RegressionChecker (Wave ABV)
 
