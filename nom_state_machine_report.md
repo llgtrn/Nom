@@ -1,8 +1,26 @@
 # Nom State Machine Report
 
-**Date:** 2026-04-19 | **HEAD:** `07ab271` | **Tests:** 8827 | **Workspace:** clean — Waves AX+AY+AZ complete. 0 clippy warnings.
+**Date:** 2026-04-19 | **HEAD:** `6a41b2b` | **Tests:** 8891 | **Workspace:** clean — Waves AX+AY+AZ+ABA complete. 0 clippy warnings. A 55%, B 73%, C 83%, D 98%.
 
 ---
+
+## Iteration 72 — Wave ABA COMPLETE (HEAD 6a41b2b, 8891 tests, 0 warnings)
+
+**11 parallel agents. FrostedRenderPass wired + LSP loop + B2 migration + A7/A11 stubs + DataLoader + editor/graph/collab/telemetry.**
+
+| Gap ID | Fix | Crate |
+|--------|-----|-------|
+| D2 render wired | FrostedRenderPass integrated into WebGpuRenderer.begin_frame() | nom-canvas-core |
+| A6 LSP loop | LspLoopState enum + LspServerLoop state machine | nom-compiler-bridge |
+| B2 migration | ConvertDirection/Options/Result + convert_source/convert_file | nom-cli |
+| A7 bootstrap | BootstrapStage/StageBuild/BootstrapProof + check_fixpoint() | nom-concept |
+| A11 LLVM IR | IrType/IrValue/IrInstr/IrFunction/IrModule typed IR | nom-concept |
+| B2 corpus | 10 .nomx golden examples in examples/ | examples/ |
+| C5 DataLoader | DataSourceKind/LoadStrategy/DataBatch/DataLoader stub | nom-compose |
+| Telemetry spans | TraceSpan + TraceCollector | nom-telemetry |
+| Collab CRDT | VectorClock + happened_before | nom-collab |
+| Graph dispatch | NodeHandler + PassThroughHandler + NodeHandlerRegistry | nom-graph |
+| Editor display | SyntaxHighlight spans + LineFoldRegion/LineDisplayMap | nom-editor |
 
 ## Iteration 71 — Wave AZ COMPLETE (HEAD 07ab271, 8827 tests, 0 warnings)
 

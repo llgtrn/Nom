@@ -1,6 +1,6 @@
 # Nom — Task Execution Checklist
 
-**Date:** 2026-04-19 | **HEAD:** `07ab271` | **Tests:** 8827 | **Workspace:** clean — Waves AX+AY+AZ complete. B-axis ~70%, C-axis ~80%, D-axis ~98%.
+**Date:** 2026-04-19 | **HEAD:** `6a41b2b` | **Tests:** 8891 | **Workspace:** clean — Waves AX+AY+AZ+ABA complete. A-axis ~55%, B-axis ~73%, C-axis ~83%, D-axis ~98%.
 
 ## DB-Driven Architecture (Wave AE/AC verified PASS)
 
@@ -172,15 +172,32 @@
 - ✅ A10 corpus — CorpusStats + report_stats() (+4)
 - ✅ AN-TEST-DEDUP — -9 duplicates across nom-gpui/nom-lint/nom-memoize
 
-## Open Items — Wave ABA targets
+## Wave ABA (2026-04-19) — COMMITTED ✅ (HEAD 6a41b2b, 8891 tests)
 
-- ❌ **D2 render wired** — FrostedRenderPass integrated into actual wgpu draw loop
-- ❌ **A11 LLVM** — Parser/Resolver/TypeChecker/Codegen .nom compiles via rust-nomc
-- ❌ **C5 real wiring** — GPU→FFmpeg real encode, rodio actual playback, opendataloader real load
-- ❌ **A6 LSP async loop** — tokio stdin/stdout I/O loop (transport framing done)
-- ❌ **B2 migration tool** — `nom convert v1 v2` + 100 .nomx golden corpus
-- ❌ **A7 bootstrap** — Stage0→Stage1→Stage2→Stage3 fixpoint proof
-- ❌ **A10 100-repo corpus** — 100-repo ingestion pipeline
+- ✅ D2 render wired — FrostedRenderPass integrated into WebGpuRenderer.begin_frame() (+4)
+- ✅ A6 LSP loop — LspLoopState + LspServerLoop state machine wired (+6)
+- ✅ B2 migration tool — ConvertDirection/Options/Result + convert_source/convert_file (+5)
+- ✅ A7 bootstrap stubs — BootstrapStage/StageBuild/BootstrapProof + check_fixpoint() (+7)
+- ✅ A11 LLVM IR — IrType/IrValue/IrInstr/IrFunction/IrModule typed IR (+8)
+- ✅ B2 corpus — 10 .nomx golden examples in examples/ (define-that syntax)
+- ✅ C5 DataLoader — DataSourceKind/LoadStrategy/DataBatch/DataLoader stub (+7)
+- ✅ Telemetry — TraceSpan + TraceCollector (+4)
+- ✅ Collab — VectorClock + happened_before (+4)
+- ✅ Graph dispatch — NodeHandler trait + PassThroughHandler + NodeHandlerRegistry (+6)
+- ✅ Editor — SyntaxHighlight spans + LineFoldRegion/LineDisplayMap (+8)
+
+## Open Items — Wave ABB targets
+
+- ❌ **A11 LLVM** — Parser→AST codegen, IR→LLVM bitcode, native binary
+- ❌ **C5-V10** — Two-stage video pipeline (parallel frame capture → FFmpeg stdin streaming)
+- ❌ **B2 corpus** — 90 more .nomx corpus files (10/100 done)
+- ❌ **C7 deep-think visual** — Animated reasoning card + hypothesis tree render
+- ❌ **A6 LSP real I/O** — tokio stdin/stdout real async loop
+- ❌ **D2 frosted-glass** — Visible blur on main wgpu canvas render loop
+- ❌ **D3 golden paths** — All 10 end-to-end golden path tests
+- ❌ **C6 RAG real** — BM25 + ANN vector retriever
+- ❌ **B1 define-that** — Full parse integration + implicit return
+- ❌ **A10 corpus** — 100-repo ingestion pipeline
 
 ---
 

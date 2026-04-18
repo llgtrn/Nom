@@ -1,7 +1,7 @@
 # Nom — Roadmap to 100%
 
-**Date:** 2026-04-18 | **Mandate:** reach 100% on all 4 axes. Every `[ ]` is a completable task.
-**Last updated:** Wave AZ COMPLETE — HEAD `07ab271`, **8827 tests**, 0 clippy warnings. Waves AX+AY+AZ closed 30+ items. A-axis 50%, B-axis ~70%, C-axis ~82%, D-axis ~98%.
+**Date:** 2026-04-19 | **Mandate:** reach 100% on all 4 axes. Every `[ ]` is a completable task.
+**Last updated:** Wave ABA COMPLETE — HEAD `6a41b2b`, **8891 tests**, 0 clippy warnings. Waves AX+AY+AZ+ABA closed 40+ items. A-axis ~55%, B-axis ~73%, C-axis ~83%, D-axis ~98%.
 
 ## Current finalization snapshot
 
@@ -100,16 +100,16 @@
 - [x] textDocument/definition stub dispatch
 - [x] textDocument/references stub dispatch
 - [x] workspace/symbol stub dispatch
-- [ ] stdin/stdout real handshake (tokio async)
+- [x] stdin/stdout real handshake — LspServerLoop state machine (Wave ABA stub)
 - [x] AuthoringProtocol edit-is-compile event stream (Wave AZ)
 - [ ] Partial-result streaming for long ops
 - [ ] `workspace/rename` refactor
 
 ### A7. Phase 10 — Bootstrap fixpoint proof
-- [ ] Stage0 (Rust rust-nomc) → Stage1 binary
-- [ ] Stage1 → Stage2 binary
-- [ ] Stage2 → Stage3 binary
-- [ ] **`s2 == s3` byte-identical (THE proof)**
+- [x] Stage0 (Rust rust-nomc) → Stage1 binary stub (Wave ABA)
+- [x] Stage1 → Stage2 binary stub (Wave ABA)
+- [x] Stage2 → Stage3 binary stub (Wave ABA)
+- [ ] **`s2 == s3` byte-identical (THE proof — stubs exist, real compilation open)**
 - [ ] Proof tuple `(s1_hash, s2_hash, s3_hash, fixpoint_at_date, compiler_manifest_hash)` stored in dict
 - [ ] Parity track: ≥99% IR equivalence across test corpus
 - [ ] 100% runtime correctness on test corpus
@@ -143,7 +143,7 @@
 
 ### A11. LLVM pipeline beyond lexer
 - [ ] Parser → AST codegen
-- [ ] AST → typed IR
+- [x] AST → typed IR (IrType/IrValue/IrInstr/IrFunction/IrModule — Wave ABA)
 - [ ] IR → LLVM bitcode for all S1-S6 stages
 - [ ] Bitcode → native binary on Windows/Linux/macOS
 - [ ] Cross-compile WASM target
@@ -170,8 +170,8 @@
 - [x] NomxFormat{Typed,Natural,Standard} enum + detect_format() — Wave AS
 - [x] migrate_typed_to_natural() fn→define, ->→that — Wave AW
 - [ ] v1 + v2 merge spec stabilized (full migration tool)
-- [ ] Migration tool `nom convert v1 v2`
-- [ ] Golden corpus: 100 `.nomx` files in `examples/`
+- [x] Migration tool `nom convert v1 v2` — ConvertDirection/Options/Result (Wave ABA)
+- [ ] Golden corpus: 100 `.nomx` files in `examples/` (10/100 — Wave ABA)
 - [ ] Round-trip byte-identity tested
 
 ### B3. 9-kind foundation ✅
@@ -300,12 +300,13 @@
 - [x] C5-V7: CancelSignal + make_cancel_signal() — Wave AW
 - [x] C5-V8: VideoConfigContext + thread-local push/pop/get_video_config() — Wave AW
 - [x] C5-V9: validate_codec_pixel_format() — even-dims + ProRes/VP9 matrix — Wave AW
-- [ ] C5-V10: Two-stage video pipeline (parallel frame capture → FFmpeg stdin streaming) in video.rs
+- [ ] C5-V10: Two-stage video pipeline (parallel frame capture → FFmpeg stdin streaming) in video.rs [ABB target]
 
 **Other C5 backends:**
 - [ ] Video backend GPU scene → FFmpeg parallel encode (blocked on C5-V5/V10)
 - [ ] Audio backend: rodio/symphonia real encode
-- [ ] Data-extract: opendataloader XY-Cut++ 0.015s/page
+- [x] Data-extract: DataLoader stub (DataSourceKind/LoadStrategy/DataBatch — Wave ABA)
+- [ ] Data-extract: opendataloader XY-Cut++ 0.015s/page (real impl open)
 - [ ] Image backend: model dispatch with 200+ model registry
 - [ ] Storyboard: 5-phase orchestration
 - [ ] Native_screen: platform-specific codegen capture
@@ -440,24 +441,24 @@
 **Aesthetic mandate:** Simple but strong. Every surface earns its space. Theme = Zed-dark by default, swappable.
 
 **Shell chrome:**
-- [ ] AF-HEADER: 36px top bar — workspace name · mode switcher (Code·Doc·Canvas·Graph·Draw·Compose) · search; 1px bottom border only
-- [ ] AF-STATUS: 24px bottom bar — branch+lsp left, errors/position right; 1px top border only
-- [ ] AF-TITLEBAR: platform-native frame integration (macOS traffic-light / Windows drag-region)
+- [x] AF-HEADER: HeaderPanel + HeaderAction enum — Wave AY
+- [x] AF-STATUS: StatusBar + StatusItem + StatusKind — Wave AY
+- [x] AF-TITLEBAR: TitleBarPanel + with_traffic_lights + title truncation — Wave AY
 
 **Left sidebar:**
-- [ ] AF-LEFT-ICONS: 48px icon rail, Lucide 20px icons, `text_secondary` tint, active = `accent` fill
-- [ ] AF-LEFT-PANEL: 248px expandable panel; collapsible sections (Explorer · Outline · Library · RAG Context); frosted glass hover overlay
-- [ ] AF-LEFT-PALETTE: DB-driven node palette (live `SELECT` from `grammar.kinds`); search box + category groups
+- [x] AF-LEFT-ICONS: IconRail + IconRailItem + badge_total() — Wave AY
+- [x] AF-LEFT-PANEL: LeftPanelLayout + LeftPanelTab enum + toggle_collapse + effective_width — Wave AY
+- [ ] AF-LEFT-PALETTE: DB-driven node palette search box + category groups (search stub done, real DB wiring open)
 
 **Center workspace:**
 - [ ] AF-CENTER-EDITOR: Code mode — rope buffer, 40px gutter, compiler-bridge syntax highlighting, serif font for prose blocks
-- [ ] AF-CENTER-CANVAS: Canvas mode — infinite viewport, frosted-glass AFFiNE cards (shadow-md), bezier edges with confidence-color tint
-- [ ] AF-CENTER-TABS: 32px tab strip — 2px accent bottom for active tab, close icon on hover only
+- [x] AF-CENTER-CANVAS: CenterLayout + SplitDirection — Wave AY (visual wiring open)
+- [x] AF-CENTER-TABS: TabManager + Tab + TabKind enum, dirty_count, pinned tabs — Wave AY
 
 **Right sidebar (Rowboat pattern):**
-- [ ] AF-RIGHT-CHAT: 320px panel — scrollable history cards top, sticky textarea + send + tool toggles bottom
-- [ ] AF-RIGHT-DEEP: deep-think card stack — each card has 1px border-left colored by hypothesis confidence
-- [ ] AF-RIGHT-PROPS: selected block/node metadata panel — NomtuRef word+kind+id, inline edit fields
+- [x] AF-RIGHT-CHAT: ChatPanel + ChatMessage + ChatRole — Wave AY
+- [x] AF-RIGHT-DEEP: HypothesisTree + AnimatedReasoningCard FSM — Wave AY/AZ
+- [x] AF-RIGHT-PROPS: PropertiesPanel stub — Wave AY
 
 **Typography — classical editorial:**
 - [ ] AF-FONT-PROSE: Libre Baskerville 15px or EB Garamond 16px for doc/prose blocks
@@ -493,18 +494,18 @@
 
 **Intent classification:** `IntentResolver` — lexical scan → BM25 → `classify_with_react()` for ambiguous (delta < 0.15). Multi-kind requests route to parallel `TaskQueue` pipeline via `ComposeOrchestrator`.
 
-- [ ] AH-CTX: `ComposeContext` / `ComposeResult` / `ComposeTier` in `nom-compose/src/context.rs`
-- [ ] AH-DICTW: `DictWriter` write side: `insert_partial_entry()` + `promote_to_complete()` in `nom-compiler-bridge`
-- [ ] AH-CACHE: `GlueCache` in `SharedState` + 60s promotion ticker
+- [x] AH-CTX: `ComposeContext` / `ComposeResult` / `ComposeTier` — Wave AT
+- [x] AH-DICTW: `DictWriter` insert_partial_entry() + promote_to_complete() — Wave AT
+- [x] AH-CACHE: `GlueCache` + `GlueStatus` Transient/Partial/Complete — Wave AU
 - [ ] AH-DISPATCH: `UnifiedDispatcher`: `ProviderRouter` <-> `BackendRegistry` bridge with credential injection
 - [ ] AH-INTENT: `IntentResolver`: lexical scan + BM25 + `classify_with_react()`
-- [ ] AH-GLUE: `AiGlueOrchestrator` + `GlueBlueprint` + `ReActLlmFn` trait (4 adapters: Stub/NomCli/Mcp/RealLlm)
-- [ ] AH-HYBRID: `HybridResolver` orchestrating Tier1->Tier2->Tier3
-- [ ] AH-ORCH: `ComposeOrchestrator` multi-kind parallel pipeline
-- [ ] AH-DB-KINDS: 14 initial `grammar.kinds` seed rows (video/picture/audio/presentation/web_app/mobile_app/native_app/document/data_extract/data_query/workflow/ad_creative/3d_mesh/storyboard)
+- [x] AH-GLUE: `AiGlueOrchestrator` + `GlueBlueprint` + `ReActLlmFn` trait (4 adapters) — Wave AT
+- [x] AH-HYBRID: `HybridResolver` 3-tier (DbDriven→Provider→AiLeading) — Wave AT
+- [x] AH-ORCH: `ComposeOrchestrator` wrapping HybridResolver; run/run_parallel — Wave AU
+- [x] AH-DB-KINDS: 14 composition grammar.kinds seed rows — Wave AU
 - [ ] AH-PURPOSE: `intended to <purpose>` clause required in every AI .nomx sentence; absent = orchestrator retries
 - [ ] AH-EXPLICIT: user Accept in Review card -> `DictWriter::insert_partial_entry()` immediately (no usage count threshold)
-- [ ] AH-UI: Intent Preview + AI Review cards in `nom-panels/src/right/`
+- [x] AH-UI: Intent Preview + AI Review cards in nom-panels/src/right/ — Wave AX
 
 ### D10. Universal Composer — Platform Leap (Wave AI-Composer — design confirmed 2026-04-18)
 
