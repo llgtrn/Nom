@@ -478,13 +478,21 @@
 - ✅ Breadcrumb — BreadcrumbKind+Segment+Path+Nav+Renderer (9 tests)
 - ✅ SyncProtocol — SyncMessageKind+Message+SyncState+SyncSession+SyncProtocol (9 tests)
 
-## Open Items — Wave ABAI targets
+## Wave ABAI — COMPLETE (2026-04-19, 10171 tests)
 
-- ❌ **nom-graph route_table** — RouteKey + RouteEntry + RouteTable + RouteResolver (9router-pattern routing)
-- ❌ **nom-compose image_pipeline** — ImageStage + ImagePipeline + PipelineResult + ImagePipelineRunner (image compose pipeline)
-- ❌ **nom-canvas-core hit_zone** — HitZoneKind + HitZone + HitZoneMap + HitTestResult (extended hit testing)
-- ❌ **nom-editor outline_view** — OutlineItem + OutlineSection + OutlineTree + OutlineRenderer (document outline)
-- ❌ **nom-blocks block_tree** — BlockNode + BlockTree + BlockTreeWalker + TreeDiff (block hierarchy)
+- ✅ RouteTable — RouteKind+Key+Entry+RouteTable+RouteResolver (9 tests)
+- ✅ ImagePipeline — ImageStageKind+Stage+Pipeline+PipelineResult+Runner (9 tests)
+- ✅ HitZone — HitZoneKind+HitZone+HitZoneMap+HitTestResult+ZoneHitTester (10 tests)
+- ✅ OutlineView — OutlineItemKind+Item+Section+OutlineTree+Renderer (9 tests)
+- ✅ BlockTree — BlockNodeKind+BlockNode+BlockTree+Walker+TreeDiff (9 tests)
+
+## Open Items — Wave ABAJ targets
+
+- ❌ **nom-graph memory_graph** — MemoryNode + MemoryEdge + MemoryGraph + MemoryQuery (graph-backed memory store)
+- ❌ **nom-compose data_compose** — DataSource + DataQuery + DataComposer + DataResult (data composition pipeline)
+- ❌ **nom-canvas-core transform_stack** — Transform2D + TransformStack + InverseTransform + TransformResult (2D transform math)
+- ❌ **nom-editor search_index** — SearchToken + SearchIndex + SearchQuery + SearchResult (editor search)
+- ❌ **nom-memoize memo_graph** — MemoKey + MemoEntry + MemoGraph + MemoInvalidator (graph-aware memoization)
 
 ---
 

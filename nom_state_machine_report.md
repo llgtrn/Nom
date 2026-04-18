@@ -1,6 +1,6 @@
 # Nom State Machine Report
 
-**Date:** 2026-04-19 | **HEAD:** `ba2e69b` | **Tests:** 10125 (canvas:10084 + compiler:41) | **Workspace:** clean — Waves AX→ABAH complete. 0 clippy warnings. A 72%, B 92%, C 95%, D 100%.
+**Date:** 2026-04-19 | **HEAD:** `1e631f8` | **Tests:** 10171 (canvas:10130 + compiler:41) | **Workspace:** clean — Waves AX→ABAI complete. 0 clippy warnings. A 72%, B 93%, C 95%, D 100%.
 
 ---
 
