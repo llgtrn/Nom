@@ -94,6 +94,10 @@ pub use embed_registry::{EmbedKind, EmbedEntry, EmbedRegistry, EmbedResolver};
 #[allow(missing_docs)]
 pub mod block_tree;
 pub use block_tree::{BlockNodeKind, BlockNode, BlockTree, BlockTreeWalker, TreeDiff};
+/// Rich text primitives — markup tags, spans, paragraphs, blocks, and serialization.
+#[allow(missing_docs)]
+pub mod rich_text;
+pub use rich_text::{MarkupTag, RichSpan, RichParagraph, RichTextBlock, RichTextSerializer};
 
 #[cfg(test)]
 mod integration_tests {

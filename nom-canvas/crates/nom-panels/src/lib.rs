@@ -23,6 +23,10 @@ pub use center::{
     CenterLayout, EditorView, SplitDirection as CenterSplitDirection, Tab, TabKind, TabManager,
 };
 pub use command_palette::{CommandPalette, CommandPaletteItem};
+pub use command_palette::{
+    CommandCategory, CommandShortcut, PaletteCommand,
+    CommandRegistry as PaletteRegistry, PaletteFilter,
+};
 pub use dock::{
     fill_quad, focus_ring_quad, rgba_to_hsla, Dock, DockPosition, Panel, PanelEntry, PanelSizeState,
 };

@@ -57,3 +57,5 @@ pub mod search_index;
 pub use search_index::{SearchTokenKind, SearchToken, SearchIndex, SearchQuery, SearchResult};
 pub mod format_range;
 pub use format_range::{FormatKind, TextRange, FormatRange, FormatMap, FormatApplier};
+pub mod symbol_table;
+pub use symbol_table::{SymbolKind, SymbolVisibility, SymbolEntry, SymbolTable, SymbolResolver};

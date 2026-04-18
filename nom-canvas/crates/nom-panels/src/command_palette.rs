@@ -289,3 +289,304 @@ mod tests {
         assert!(bg.background.is_some());
     }
 }
+
+// ---------------------------------------------------------------------------
+// Typed command palette — category, shortcut, command, registry, filter
+// ---------------------------------------------------------------------------
+
+/// High-level categories for palette commands.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CommandCategory {
+    File,
+    Edit,
+    View,
+    Run,
+    Navigate,
+}
+
+impl CommandCategory {
+    /// Short lowercase prefix string for display in labels.
+    pub fn prefix(&self) -> &'static str {
+        match self {
+            CommandCategory::File => "file",
+            CommandCategory::Edit => "edit",
+            CommandCategory::View => "view",
+            CommandCategory::Run => "run",
+            CommandCategory::Navigate => "nav",
+        }
+    }
+
+    /// Returns `true` for categories whose commands may have side effects.
+    pub fn is_destructive(&self) -> bool {
+        matches!(self, CommandCategory::Run)
+    }
+}
+
+/// A keyboard shortcut, optionally with a modifier key.
+#[derive(Debug, Clone)]
+pub struct CommandShortcut {
+    pub key: String,
+    pub modifier: Option<String>,
+}
+
+impl CommandShortcut {
+    /// Format as "Modifier+Key" when a modifier is present, otherwise just "Key".
+    pub fn display(&self) -> String {
+        match &self.modifier {
+            Some(m) => format!("{}+{}", m, self.key),
+            None => self.key.clone(),
+        }
+    }
+
+    /// Returns `true` when a modifier key is set.
+    pub fn has_modifier(&self) -> bool {
+        self.modifier.is_some()
+    }
+}
+
+/// A single command registered in the palette.
+#[derive(Debug, Clone)]
+pub struct PaletteCommand {
+    pub id: u32,
+    pub label: String,
+    pub category: CommandCategory,
+    pub shortcut: Option<CommandShortcut>,
+}
+
+impl PaletteCommand {
+    /// Full display label prefixed with the category string, e.g. "[file] Open".
+    pub fn full_label(&self) -> String {
+        format!("[{}] {}", self.category.prefix(), self.label)
+    }
+
+    /// Returns `true` when a shortcut is attached to this command.
+    pub fn has_shortcut(&self) -> bool {
+        self.shortcut.is_some()
+    }
+
+    /// Returns the shortcut display string, or "—" when no shortcut is set.
+    pub fn shortcut_display(&self) -> String {
+        match &self.shortcut {
+            Some(s) => s.display(),
+            None => "\u{2014}".to_string(), // em dash —
+        }
+    }
+}
+
+/// Registry-style command palette that holds and searches typed `PaletteCommand`s.
+///
+/// Named `CommandRegistry` in this module to avoid collision with the existing
+/// overlay-style `CommandPalette` struct above.
+#[derive(Debug, Default)]
+pub struct CommandRegistry {
+    pub commands: Vec<PaletteCommand>,
+}
+
+impl CommandRegistry {
+    /// Create an empty registry.
+    pub fn new() -> Self {
+        Self { commands: vec![] }
+    }
+
+    /// Add a command to the registry.
+    pub fn register(&mut self, cmd: PaletteCommand) {
+        self.commands.push(cmd);
+    }
+
+    /// Case-insensitive search across command labels.
+    pub fn search(&self, query: &str) -> Vec<&PaletteCommand> {
+        let q = query.to_lowercase();
+        self.commands
+            .iter()
+            .filter(|c| c.label.to_lowercase().contains(&q))
+            .collect()
+    }
+
+    /// Return all commands whose category prefix matches `cat`.
+    pub fn by_category(&self, cat: &CommandCategory) -> Vec<&PaletteCommand> {
+        let prefix = cat.prefix();
+        self.commands
+            .iter()
+            .filter(|c| c.category.prefix() == prefix)
+            .collect()
+    }
+}
+
+/// A filter that can be toggled active/inactive.
+///
+/// When active it filters a slice of commands by case-insensitive label match;
+/// when inactive it passes every command through unchanged.
+#[derive(Debug, Clone)]
+pub struct PaletteFilter {
+    pub active: bool,
+}
+
+impl PaletteFilter {
+    /// Create a new, inactive filter.
+    pub fn new() -> Self {
+        Self { active: false }
+    }
+
+    /// Enable filtering.
+    pub fn activate(&mut self) {
+        self.active = true;
+    }
+
+    /// Disable filtering.
+    pub fn deactivate(&mut self) {
+        self.active = false;
+    }
+
+    /// Apply the filter. When inactive every command is returned unchanged.
+    pub fn apply<'a>(
+        &self,
+        commands: Vec<&'a PaletteCommand>,
+        query: &str,
+    ) -> Vec<&'a PaletteCommand> {
+        if self.active {
+            let q = query.to_lowercase();
+            commands
+                .into_iter()
+                .filter(|c| c.label.to_lowercase().contains(&q))
+                .collect()
+        } else {
+            commands
+        }
+    }
+}
+
+impl Default for PaletteFilter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+mod typed_tests {
+    use super::*;
+
+    fn make_cmd(
+        id: u32,
+        label: &str,
+        cat: CommandCategory,
+        shortcut: Option<CommandShortcut>,
+    ) -> PaletteCommand {
+        PaletteCommand {
+            id,
+            label: label.to_string(),
+            category: cat,
+            shortcut,
+        }
+    }
+
+    #[test]
+    fn category_prefix_values() {
+        assert_eq!(CommandCategory::File.prefix(), "file");
+        assert_eq!(CommandCategory::Edit.prefix(), "edit");
+        assert_eq!(CommandCategory::View.prefix(), "view");
+        assert_eq!(CommandCategory::Run.prefix(), "run");
+        assert_eq!(CommandCategory::Navigate.prefix(), "nav");
+    }
+
+    #[test]
+    fn category_is_destructive_only_run() {
+        assert!(CommandCategory::Run.is_destructive());
+        assert!(!CommandCategory::File.is_destructive());
+        assert!(!CommandCategory::Edit.is_destructive());
+        assert!(!CommandCategory::View.is_destructive());
+        assert!(!CommandCategory::Navigate.is_destructive());
+    }
+
+    #[test]
+    fn shortcut_display_with_modifier() {
+        let s = CommandShortcut {
+            key: "S".to_string(),
+            modifier: Some("Ctrl".to_string()),
+        };
+        assert_eq!(s.display(), "Ctrl+S");
+        assert!(s.has_modifier());
+    }
+
+    #[test]
+    fn shortcut_display_without_modifier() {
+        let s = CommandShortcut {
+            key: "F5".to_string(),
+            modifier: None,
+        };
+        assert_eq!(s.display(), "F5");
+        assert!(!s.has_modifier());
+    }
+
+    #[test]
+    fn palette_command_full_label() {
+        let cmd = make_cmd(1, "Open File", CommandCategory::File, None);
+        assert_eq!(cmd.full_label(), "[file] Open File");
+    }
+
+    #[test]
+    fn palette_command_has_shortcut() {
+        let with_sc = make_cmd(
+            2,
+            "Save",
+            CommandCategory::File,
+            Some(CommandShortcut {
+                key: "S".to_string(),
+                modifier: Some("Ctrl".to_string()),
+            }),
+        );
+        assert!(with_sc.has_shortcut());
+
+        let without_sc = make_cmd(3, "Close", CommandCategory::File, None);
+        assert!(!without_sc.has_shortcut());
+    }
+
+    #[test]
+    fn palette_command_shortcut_display_none_is_em_dash() {
+        let cmd = make_cmd(4, "Undo", CommandCategory::Edit, None);
+        assert_eq!(cmd.shortcut_display(), "\u{2014}");
+    }
+
+    #[test]
+    fn command_registry_search_case_insensitive() {
+        let mut reg = CommandRegistry::new();
+        reg.register(make_cmd(1, "Open File", CommandCategory::File, None));
+        reg.register(make_cmd(2, "open terminal", CommandCategory::View, None));
+        reg.register(make_cmd(3, "Run Tests", CommandCategory::Run, None));
+
+        let results = reg.search("OPEN");
+        assert_eq!(results.len(), 2);
+        assert!(results.iter().any(|c| c.label == "Open File"));
+        assert!(results.iter().any(|c| c.label == "open terminal"));
+    }
+
+    #[test]
+    fn command_registry_by_category() {
+        let mut reg = CommandRegistry::new();
+        reg.register(make_cmd(1, "Open", CommandCategory::File, None));
+        reg.register(make_cmd(2, "Save", CommandCategory::File, None));
+        reg.register(make_cmd(3, "Run All", CommandCategory::Run, None));
+
+        let file_cmds = reg.by_category(&CommandCategory::File);
+        assert_eq!(file_cmds.len(), 2);
+
+        let run_cmds = reg.by_category(&CommandCategory::Run);
+        assert_eq!(run_cmds.len(), 1);
+        assert_eq!(run_cmds[0].label, "Run All");
+    }
+
+    #[test]
+    fn palette_filter_inactive_returns_all() {
+        let mut reg = CommandRegistry::new();
+        reg.register(make_cmd(1, "Open", CommandCategory::File, None));
+        reg.register(make_cmd(2, "Save", CommandCategory::File, None));
+        reg.register(make_cmd(3, "Run", CommandCategory::Run, None));
+
+        let filter = PaletteFilter::new();
+        assert!(!filter.active);
+
+        let all: Vec<&PaletteCommand> = reg.commands.iter().collect();
+        let result = filter.apply(all.clone(), "open");
+        // Inactive filter must pass everything through regardless of query
+        assert_eq!(result.len(), 3);
+    }
+}

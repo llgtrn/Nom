@@ -127,7 +127,7 @@ pub use audio_encode::{AudioBuffer, AudioEncoder, AudioFormat, RodioBackend};
 pub mod n8n_workflow;
 pub use n8n_workflow::{NodeStatus, WorkflowGraph, WorkflowNode, WorkflowRunner};
 pub mod pdf_compose;
-pub use pdf_compose::{PdfComposer, PdfDocument, PdfElement, PdfPage};
+pub use pdf_compose::{PageSize, PdfComposer, PdfDocument, PdfExportOptions, PdfPage};
 pub mod video_encode;
 pub use video_encode::{GpuVideoEncoder, VideoCodec as VideoEncodeCodec, VideoEncoder, VideoFrame};
 pub mod web_compose;

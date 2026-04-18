@@ -1,28 +1,31 @@
-/// Document-compose demo: prose → PDF
-///
-/// PdfElement — individual content item on a page
-/// PdfPage    — a single PDF page with content elements
-/// PdfDocument — collection of pages with metadata
-/// PdfComposer — assembles a PdfDocument from prose input
+/// PDF composition primitives: page sizes, pages, documents, export options,
+/// and a high-level composer that assembles them.
 
-// ─── PdfElement ──────────────────────────────────────────────────────────────
+// ─── PageSize ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum PdfElement {
-    Text(String),
-    Heading(String),
-    Image(String),
-    PageBreak,
+pub enum PageSize {
+    A4,
+    Letter,
+    Legal,
+    Custom(f32, f32),
 }
 
-impl PdfElement {
-    pub fn element_type(&self) -> &str {
+impl PageSize {
+    /// Returns (width_mm, height_mm) for this page size.
+    pub fn dimensions_mm(&self) -> (f32, f32) {
         match self {
-            PdfElement::Text(_) => "text",
-            PdfElement::Heading(_) => "heading",
-            PdfElement::Image(_) => "image",
-            PdfElement::PageBreak => "page_break",
+            PageSize::A4 => (210.0, 297.0),
+            PageSize::Letter => (215.9, 279.4),
+            PageSize::Legal => (215.9, 355.6),
+            PageSize::Custom(w, h) => (*w, *h),
         }
+    }
+
+    /// True when height >= width (portrait orientation).
+    pub fn is_portrait(&self) -> bool {
+        let (w, h) = self.dimensions_mm();
+        h >= w
     }
 }
 
@@ -31,30 +34,21 @@ impl PdfElement {
 #[derive(Debug, Clone)]
 pub struct PdfPage {
     pub page_number: u32,
-    pub elements: Vec<PdfElement>,
+    pub size: PageSize,
+    pub content_blocks: u32,
 }
 
 impl PdfPage {
-    pub fn new(page_number: u32) -> Self {
-        PdfPage {
-            page_number,
-            elements: Vec::new(),
-        }
+    /// Area of this page in square millimetres.
+    pub fn area_mm2(&self) -> f32 {
+        let (w, h) = self.size.dimensions_mm();
+        w * h
     }
 
-    pub fn add_element(&mut self, el: PdfElement) {
-        self.elements.push(el);
-    }
-
-    pub fn element_count(&self) -> usize {
-        self.elements.len()
-    }
-
-    /// Returns true if any element on this page is a Heading.
-    pub fn has_heading(&self) -> bool {
-        self.elements
-            .iter()
-            .any(|e| matches!(e, PdfElement::Heading(_)))
+    /// Human-readable label: "Page N (WxHmm)".
+    pub fn label(&self) -> String {
+        let (w, h) = self.size.dimensions_mm();
+        format!("Page {} ({}x{}mm)", self.page_number, w as u32, h as u32)
     }
 }
 
@@ -63,15 +57,13 @@ impl PdfPage {
 #[derive(Debug, Clone)]
 pub struct PdfDocument {
     pub title: String,
-    pub author: String,
     pub pages: Vec<PdfPage>,
 }
 
 impl PdfDocument {
-    pub fn new(title: impl Into<String>, author: impl Into<String>) -> Self {
+    pub fn new(title: impl Into<String>) -> Self {
         PdfDocument {
             title: title.into(),
-            author: author.into(),
             pages: Vec::new(),
         }
     }
@@ -84,14 +76,41 @@ impl PdfDocument {
         self.pages.len()
     }
 
-    /// Sum of element counts across all pages.
-    pub fn total_elements(&self) -> usize {
-        self.pages.iter().map(|p| p.element_count()).sum()
+    /// Sum of content_blocks across all pages.
+    pub fn total_content_blocks(&self) -> u32 {
+        self.pages.iter().map(|p| p.content_blocks).sum()
+    }
+}
+
+// ─── PdfExportOptions ────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone)]
+pub struct PdfExportOptions {
+    pub compress: bool,
+    pub embed_fonts: bool,
+    pub dpi: u32,
+}
+
+impl PdfExportOptions {
+    pub fn default() -> Self {
+        PdfExportOptions {
+            compress: true,
+            embed_fonts: true,
+            dpi: 300,
+        }
     }
 
-    /// Rough word estimate: total_elements * 50.
-    pub fn word_estimate(&self) -> usize {
-        self.total_elements() * 50
+    /// True when dpi >= 300 AND fonts are embedded.
+    pub fn is_high_quality(&self) -> bool {
+        self.dpi >= 300 && self.embed_fonts
+    }
+
+    pub fn quality_label(&self) -> &'static str {
+        if self.is_high_quality() {
+            "high"
+        } else {
+            "standard"
+        }
     }
 }
 
@@ -99,64 +118,31 @@ impl PdfDocument {
 
 #[derive(Debug, Clone)]
 pub struct PdfComposer {
-    pub author: String,
+    pub document: PdfDocument,
+    pub options: PdfExportOptions,
 }
 
 impl PdfComposer {
-    pub fn new(author: impl Into<String>) -> Self {
+    pub fn new(title: impl Into<String>) -> Self {
         PdfComposer {
-            author: author.into(),
+            document: PdfDocument::new(title),
+            options: PdfExportOptions::default(),
         }
     }
 
-    /// Splits prose by "\n\n" paragraphs; each paragraph becomes a Text element.
-    /// Pages are filled 5 paragraphs at a time (page 1 holds paras 1–5, page 2
-    /// holds 6–10, etc.).  An empty prose string still produces one empty page.
-    pub fn compose_from_prose(&self, title: &str, prose: &str) -> PdfDocument {
-        let mut doc = PdfDocument::new(title, self.author.clone());
-
-        let paragraphs: Vec<&str> = if prose.is_empty() {
-            vec![]
-        } else {
-            prose.split("\n\n").filter(|s| !s.trim().is_empty()).collect()
-        };
-
-        if paragraphs.is_empty() {
-            doc.add_page(PdfPage::new(1));
-            return doc;
-        }
-
-        let mut page_number: u32 = 1;
-        let mut current_page = PdfPage::new(page_number);
-
-        for (i, para) in paragraphs.iter().enumerate() {
-            // Every 5 paragraphs start a new page (after the first group).
-            if i > 0 && i % 5 == 0 {
-                doc.add_page(current_page);
-                page_number += 1;
-                current_page = PdfPage::new(page_number);
-            }
-            current_page.add_element(PdfElement::Text(para.to_string()));
-        }
-
-        doc.add_page(current_page);
-        doc
+    pub fn add_page(&mut self, page: PdfPage) {
+        self.document.add_page(page);
     }
 
-    /// Preview: how many pages compose_from_prose would create for the given prose.
-    pub fn page_count_for(&self, prose: &str) -> usize {
-        let paragraphs: Vec<&str> = if prose.is_empty() {
-            vec![]
-        } else {
-            prose.split("\n\n").filter(|s| !s.trim().is_empty()).collect()
-        };
-
-        if paragraphs.is_empty() {
-            return 1;
-        }
-
-        // ceiling division: paragraphs / 5
-        (paragraphs.len() + 4) / 5
+    /// Summary string: "{title}: {N} pages, {M} blocks, {quality} quality".
+    pub fn export_summary(&self) -> String {
+        format!(
+            "{}: {} pages, {} blocks, {} quality",
+            self.document.title,
+            self.document.page_count(),
+            self.document.total_content_blocks(),
+            self.options.quality_label(),
+        )
     }
 }
 
@@ -167,96 +153,81 @@ mod pdf_compose_tests {
     use super::*;
 
     #[test]
-    fn pdf_element_element_type_text() {
-        let el = PdfElement::Text("hello world".to_string());
-        assert_eq!(el.element_type(), "text");
+    fn page_size_dimensions_mm_a4() {
+        assert_eq!(PageSize::A4.dimensions_mm(), (210.0, 297.0));
     }
 
     #[test]
-    fn pdf_element_element_type_heading() {
-        let el = PdfElement::Heading("Chapter 1".to_string());
-        assert_eq!(el.element_type(), "heading");
+    fn page_size_is_portrait_custom_landscape() {
+        // width > height → landscape → is_portrait false
+        let landscape = PageSize::Custom(400.0, 200.0);
+        assert!(!landscape.is_portrait());
+        // height >= width → portrait → is_portrait true
+        let portrait = PageSize::Custom(200.0, 300.0);
+        assert!(portrait.is_portrait());
     }
 
     #[test]
-    fn pdf_page_add_and_count() {
-        let mut page = PdfPage::new(1);
-        assert_eq!(page.element_count(), 0);
-        page.add_element(PdfElement::Text("first".to_string()));
-        page.add_element(PdfElement::Image("cover.png".to_string()));
-        assert_eq!(page.element_count(), 2);
+    fn pdf_page_area_mm2() {
+        let page = PdfPage {
+            page_number: 1,
+            size: PageSize::A4,
+            content_blocks: 0,
+        };
+        let expected = 210.0_f32 * 297.0_f32;
+        assert!((page.area_mm2() - expected).abs() < 0.01);
     }
 
     #[test]
-    fn pdf_page_has_heading_true() {
-        let mut page = PdfPage::new(1);
-        page.add_element(PdfElement::Text("intro".to_string()));
-        page.add_element(PdfElement::Heading("Title".to_string()));
-        assert!(page.has_heading());
+    fn pdf_page_label_format() {
+        let page = PdfPage {
+            page_number: 3,
+            size: PageSize::A4,
+            content_blocks: 2,
+        };
+        assert_eq!(page.label(), "Page 3 (210x297mm)");
     }
 
     #[test]
-    fn pdf_page_has_heading_false() {
-        let mut page = PdfPage::new(2);
-        page.add_element(PdfElement::Text("body text".to_string()));
-        page.add_element(PdfElement::PageBreak);
-        assert!(!page.has_heading());
+    fn pdf_document_total_content_blocks() {
+        let mut doc = PdfDocument::new("Report");
+        doc.add_page(PdfPage { page_number: 1, size: PageSize::A4, content_blocks: 5 });
+        doc.add_page(PdfPage { page_number: 2, size: PageSize::Letter, content_blocks: 3 });
+        assert_eq!(doc.total_content_blocks(), 8);
     }
 
     #[test]
-    fn pdf_document_add_page_count() {
-        let mut doc = PdfDocument::new("My Doc", "Alice");
-        assert_eq!(doc.page_count(), 0);
-        doc.add_page(PdfPage::new(1));
-        doc.add_page(PdfPage::new(2));
-        assert_eq!(doc.page_count(), 2);
+    fn pdf_export_options_default_values() {
+        let opts = PdfExportOptions::default();
+        assert!(opts.compress);
+        assert!(opts.embed_fonts);
+        assert_eq!(opts.dpi, 300);
     }
 
     #[test]
-    fn pdf_document_total_elements() {
-        let mut doc = PdfDocument::new("Report", "Bob");
+    fn pdf_export_options_is_high_quality_true_and_false() {
+        let high = PdfExportOptions { compress: false, embed_fonts: true, dpi: 600 };
+        assert!(high.is_high_quality());
 
-        let mut p1 = PdfPage::new(1);
-        p1.add_element(PdfElement::Heading("Intro".to_string()));
-        p1.add_element(PdfElement::Text("Para 1".to_string()));
-
-        let mut p2 = PdfPage::new(2);
-        p2.add_element(PdfElement::Text("Para 2".to_string()));
-
-        doc.add_page(p1);
-        doc.add_page(p2);
-
-        assert_eq!(doc.total_elements(), 3);
-        assert_eq!(doc.word_estimate(), 150);
+        let low = PdfExportOptions { compress: true, embed_fonts: false, dpi: 72 };
+        assert!(!low.is_high_quality());
     }
 
     #[test]
-    fn pdf_composer_compose_single_para() {
-        let composer = PdfComposer::new("Carol");
-        let doc = composer.compose_from_prose("Test", "Single paragraph with no breaks.");
-        assert_eq!(doc.page_count(), 1);
-        assert_eq!(doc.total_elements(), 1);
-        assert_eq!(doc.title, "Test");
-        assert_eq!(doc.author, "Carol");
-        if let PdfElement::Text(ref t) = doc.pages[0].elements[0] {
-            assert_eq!(t, "Single paragraph with no breaks.");
-        } else {
-            panic!("expected Text element");
-        }
+    fn pdf_export_options_quality_label() {
+        let high = PdfExportOptions::default();
+        assert_eq!(high.quality_label(), "high");
+
+        let standard = PdfExportOptions { compress: true, embed_fonts: false, dpi: 150 };
+        assert_eq!(standard.quality_label(), "standard");
     }
 
     #[test]
-    fn pdf_composer_compose_multi_page() {
-        let composer = PdfComposer::new("Dave");
-        // 11 paragraphs → page 1 (5), page 2 (5), page 3 (1)
-        let paras: Vec<String> = (1..=11).map(|i| format!("Paragraph {i}")).collect();
-        let prose = paras.join("\n\n");
-
-        let doc = composer.compose_from_prose("Multi", &prose);
-        assert_eq!(doc.page_count(), 3, "11 paragraphs must span 3 pages");
-        assert_eq!(doc.total_elements(), 11);
-
-        // page_count_for must match
-        assert_eq!(composer.page_count_for(&prose), 3);
+    fn pdf_composer_export_summary_format() {
+        let mut composer = PdfComposer::new("Annual Report");
+        composer.add_page(PdfPage { page_number: 1, size: PageSize::A4, content_blocks: 4 });
+        composer.add_page(PdfPage { page_number: 2, size: PageSize::A4, content_blocks: 6 });
+        let summary = composer.export_summary();
+        assert_eq!(summary, "Annual Report: 2 pages, 10 blocks, high quality");
     }
 }
