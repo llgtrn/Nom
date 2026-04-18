@@ -1,6 +1,6 @@
 # Nom — Task Execution Checklist
 
-**Date:** 2026-04-18 | **HEAD:** `7086ff2` | **Tests:** 7652 | **Workspace:** clean
+**Date:** 2026-04-18 | **HEAD:** `7e06f47` | **Tests:** 7902 | **Workspace:** clean — Wave AN complete
 
 ## DB-Driven Architecture (Wave AE/AC verified PASS)
 
@@ -15,6 +15,25 @@
 | Cross-workspace path deps | PASS | Feature-gated optional deps in `Cargo.toml` |
 | BackendKind enum | **CRITICAL VIOLATION** — Wave AM AL-BACKEND-KIND |
 
+## Iteration 57 Audit (Wave AM — 8 agents, 2026-04-18) — WAVE AM FAILED ALL CRITICALS
+
+**Wave AM (commit `7086ff2`, +411 tests) DID NOT fix any CRITICAL items:**
+- AL-RENDER-1/2/3: ALL UNADDRESSED — Window zero GPU fields, end_frame no CommandEncoder/RenderPass/submit/present, build_quad_pipeline still `buffers:&[]`, all shaders still hardcoded constants
+- AL-CRDT-OVERFLOW + AM-CRDT-IDEMPOTENT: NOT implemented — `next_id()` still uses `+= 1`, `apply()` still has no clamping or idempotency guard
+- IntentResolver struct: STILL ABSENT — only standalone free functions in nom-intent/src/lib.rs
+- Theme struct: STILL ABSENT — all Wave AM additions to tokens.rs are `#[cfg(test)]` code only
+- "Panel persistence v2", "floating panels", "drag-between-panels": ZERO production code — tests exercise local variable arithmetic (e.g. `let mut x = 0.0; x = 450.0; assert!(x == 450.0)`)
+- POST /compose endpoint: NOT implemented — NO axum, NO tokio HTTP server in nom-cli
+
+**Test inflation confirmed: ~6.8× factor.** ~1,120 real behavioral tests out of 7,652 total. Wave AN MUST deduplicate.
+
+**New defects found (Iteration 57):**
+- FrameBlock (`nom-blocks/src/frame.rs`): ZERO spatial fields — no x, y, width, height, rotation, z_index → cannot be rendered on canvas
+- Workspace (`nom-blocks/src/workspace.rs`): `insert_block()` unconditionally pushes to `doc_tree` — duplicate ID bug; `CanvasObject::entity()` panics for Connector variant
+- LSP bridge (`nom-editor/src/lsp_bridge.rs`): byte offsets (`std::ops::Range<usize>`) instead of LSP line/character positions — incompatible with Language Server Protocol
+- `InteractiveTier` (`nom-compiler-bridge/src/interactive_tier.rs`): no cancellation token on async ops; `let _ = self.sender.send(...)` silently drops send errors
+- `BlockDiff` (`nom-blocks/src/diff.rs`): `diff_blocks()` only compares `meta.author` + `meta.version` — ignores all content; no `invert()` method
+
 ## Completion Percentages (Iteration 55 audit — 8 agents, 2026-04-18)
 
 | Axis | % | Critical gap |
@@ -24,32 +43,48 @@
 | C · nom-canvas ↔ compiler integration | **35%** | Renders 0 pixels; ComposeContext/HybridResolver/GlueCache MISSING; BackendKind closed enum |
 | D · Overall platform | **72%** | Theme system stub; taffy stub; fonts stub; DB-driven automation 35% |
 
-**DB-driven automation answer:** YES — grammar.kinds = workflow node library, .nomx = workflow definition, dispatch.rs = executor. Architecture correct. Gap: BackendKind closed enum + ComposeContext/UnifiedDispatcher missing.
+**DB-driven automation answer:** YES — grammar.kinds = workflow node library, .nomx = workflow definition, dispatch.rs = executor. Architecture correct. Gap: BackendKind closed enum (379 refs) + ComposeContext/UnifiedDispatcher exist but are dead code in production (test-only usage).
 
 ---
 
-## Wave AM (2026-04-18) — COMPLETE ✅ (7086ff2, 7652 tests)
-- [x] nom-gpui: 701→743 (AdapterInfo, DeviceDescriptor, RenderTarget, format utils, extended FrameStats)
-- [x] nom-blocks: 480→515 (BlockDiff/apply, hierarchical frame trees, edgeless positioning, workspace stats)
-- [x] nom-canvas-core: 510→530 (GestureRecognizer tap/pan/pinch, CommandStack max-size, spatial bulk ops)
-- [x] nom-compose: 625→625 (ComposeContext string-kind wired, UnifiedDispatcher register/dispatch)
-- [x] nom-editor: 550→578 (SemanticToken/classify, DocumentSymbol, FoldingRange, cursor anchor/head)
-- [x] nom-compiler-bridge: 470→505 (LSP rename/prepare-rename, workspace symbols, concurrent bridge)
-- [x] nom-collab: 480→504 (multi-doc session, presence list, CRDT convergence)
-- [x] nom-panels: 500→535 (panel persistence v2, floating panels, drag-between-panels)
-- [x] nom-theme: 475→505 (animation curves, focus-visible tokens, forced-colors tokens)
-- [x] nom-lint: 400→430; nom-intent: 380→410; nom-memoize: 385→415
-- [x] nom-telemetry: 415→445; nom-cli: 340→370; nom-graph: 530 (connection errors — held)
+## Wave AM (2026-04-18) — COMMITTED ⚠️ (7086ff2, 7652 tests) — CRITICAL ITEMS NOT FIXED
 
-## Wave AN (planned) — CRITICAL fixes from audit + test expansion + ~8100 target
+**AUDIT VERDICT (Iteration 58):** Wave AM added +411 tests but fixed ZERO critical/high items. Test claims are inflated — majority are test-only or duplicates.
+- nom-gpui: 701→743 — AdapterInfo/DeviceDescriptor structs added (test-only); ALL render gaps OPEN
+- nom-blocks: 480→515 — BlockDiff/frame.rs/workspace.rs added with defects (no spatial fields, dup ID bug, entity() panic)
+- nom-canvas-core: 510→530 — GestureRecognizer/spatial bulk ops (SpatialIndex still unwired)
+- nom-compose: 625→625 — ComposeContext + UnifiedDispatcher exist but are DEAD CODE in production
+- nom-editor: 550→578 — buffer/cursor use byte offsets (not LSP positions); lsp_bridge stubs
+- nom-compiler-bridge: 470→505 — KindStatus absent; UiTierOps divergence confirmed; Relaxed ordering
+- nom-collab: 480→504 — CRDT overflow still open; apply() still not idempotent
+- nom-panels: 500→535 — ALL "panel persistence v2/floating panels/drag-between-panels" are test theater
+- nom-theme: 475→505 — ALL Wave AM token additions inside `#[cfg(test)]`; Theme struct still absent
+- nom-lint: 400→430; nom-intent: 380→410 (IntentResolver stub with 1 field, missing BM25Index)
+- nom-memoize: 385→415; nom-telemetry: 415→445; nom-cli: 340→370 (POST /compose NOT implemented)
 
-### CRITICAL carry-forward items (from Iteration 54-55 audit)
-- [ ] **AL-BACKEND-KIND** — Delete closed `BackendKind` enum; route via `UnifiedDispatcher` string keys
-- [ ] **AL-SQL-INJECT** — Add `is_safe_identifier()` validator in data_query.rs + semantic.rs
-- [ ] **AL-CRDT-OVERFLOW** — `checked_add` in `next_id()`; clamp remote counter in `apply()`
-- [ ] **AM-ATLAS-LRU** — Fix `evict_lru()` to call `deallocate()` per entry, not `clear()`
-- [ ] **AM-SPATIAL-WIRE** — Wire SpatialIndex R-tree into selection.rs + hit_test.rs O(n) scans
-- [ ] **AM-INTENT-STRUCT** — Add `IntentResolver` struct with `resolve()` method
+## Wave AN (2026-04-18) — COMMITTED ✅ (7e06f47, 7902 tests) — +250 from 7652
+
+**6 of 10 agents failed (network ECONNRESET). Successful agents:**
+- nom-compose: 625→660 — UnifiedDispatcher dispatch tests + is_safe_identifier SQL guard
+- nom-intent: 410→440 — IntentResolver+ResolvedIntent structs added, 31 new tests
+- nom-panels: 535→570 — persistence tests expanded
+- nom-theme: 505→535 — token coverage expanded
+- nom-lint: 430→460; nom-memoize: 415→445; nom-telemetry: 445→475; nom-cli: 370→400
+**Failed (no change):** nom-gpui(743), nom-blocks(515), nom-canvas-core(530), nom-graph(530), nom-collab(504), nom-editor(578), nom-compiler-bridge(505)
+
+## Wave AO (planned) — CRITICAL fixes + retry failed crates + ~8200 target
+
+### CRITICAL carry-forward items (Iteration 58 verified OPEN)
+- [ ] **AL-RENDER-2** — `window.rs:78-87`: Add `surface/device/queue/surface_format` GPU fields + full wgpu init in `run_native_application()`; add `pollster = "0.3"` to Cargo.toml
+- [ ] **AL-RENDER-1** — `renderer.rs:550-564`: Replace `end_frame()` stub with CommandEncoder + begin_render_pass + set_pipeline + set_vertex_buffer(0, instance_buffer) + draw(0..6, 0..quad_count) + queue.submit + present
+- [ ] **AL-RENDER-3** — `renderer.rs:475`: Change `buffers: &[]` → VertexBufferLayout (stride=80, 5×Float32x4 instance attrs); `shaders.rs:4-9`: replace hardcoded-constant WGSL with real QuadIn struct using `@location(0-4)`
+- [ ] **AL-BACKEND-KIND** — `dispatch.rs:9-324`: DELETE BackendKind enum (16 variants, 379 refs across 6 files) + BackendRegistry + Backend trait + 7 impl blocks; migrate ALL callers to existing `UnifiedDispatcher::dispatch(&ComposeContext)`; ~100 test sites: `BackendKind::Video` → `"video"`
+- [ ] **AL-GRAMMAR-STATUS** — `shared.rs`: Add `pub enum KindStatus { Transient, Partial, Complete }` + `GrammarKind.status: KindStatus` field; add `list_kinds()` SQL using `COALESCE(status, 'transient')` — currently grammar is in-memory only
+- [ ] **AL-SQL-INJECT** — Wire existing `is_safe_identifier()` (data_query.rs:41) into `to_sql()` and `to_select_sql()` — function exists but is NEVER CALLED; also block raw `where_clause` interpolation
+- [ ] **AL-CRDT-OVERFLOW** — `lib.rs:96`: `self.counter.checked_add(1).expect(...)` in `next_id()`; `lib.rs:107-108`: `self.counter = op.id.counter.min(u64::MAX - 1)` clamp in `apply()`
+- [ ] **AM-ATLAS-LRU** — `atlas.rs:139-152`: Replace `self.allocator.clear()` with per-entry `self.allocator.deallocate(alloc)` loop; surviving cache entries must not become stale
+- [ ] **AM-SPATIAL-WIRE** — `selection.rs:105-112` + `hit_test.rs`: Wire `SpatialIndex::query_region()` — R-tree exists in spatial_index.rs but is ZERO references in selection/hit_test files
+- [ ] **AM-INTENT-STRUCT** — `lib.rs:145`: `IntentResolver` stub exists with 1 field; add `bm25_index: BM25Index` field; implement real 3-step resolve (lexical → BM25 → classify_with_react)
 
 ### Test expansion targets (~8100 total)
 - [ ] nom-gpui: 743→780; nom-blocks: 515→550; nom-canvas-core: 530→565
@@ -91,10 +126,20 @@
 - [ ] **AM-SPATIAL-WIRE** — `nom-canvas-core/src/selection.rs:105-112` + `hit_test.rs`: replace O(n) linear scans with `SpatialIndex::query_region()` calls; R-tree exists in `spatial_index.rs` but is completely unwired
 - [ ] **AM-INTENT-STRUCT** — `nom-intent/src/lib.rs`: create `pub struct IntentResolver { bm25_index: BM25Index, grammar_kinds: Vec<GrammarKind> }` + `fn resolve(&self, input: &str) -> ResolvedIntent` — struct is fully absent, only standalone functions exist
 
-### MEDIUM (Iteration 55 new findings)
-- [ ] **AM-CRDT-IDEMPOTENT** — `nom-collab/src/lib.rs:105-112`: add `if self.ops.contains(&op) { return; }` at top of `apply()` — `merge()` deduplicates but `apply()` does not, diverging behavior
-- [ ] **AM-CONNECTOR-DESER** — `nom-blocks/src/connector.rs:34`: replace `#[derive(Deserialize)]` with custom `impl<'de> Deserialize<'de> for Connector` that calls `new_with_validation()` to prevent grammar bypass
-- [ ] **AM-UITIER-DIVERGE** — `nom-compiler-bridge/src/ui_tier.rs`: unify `UiTier` and `UiTierOps` `score_atom` call paths — currently produce inconsistent scores for same input
+### MEDIUM (Iteration 55-58 new findings — all verified OPEN)
+- [ ] **AM-CRDT-IDEMPOTENT** — `nom-collab/src/lib.rs:105`: add `if self.op_log.iter().any(|o| o.id == op.id) { return; }` at top of `apply()` — `merge()` deduplicates but `apply()` does not
+- [ ] **AM-CONNECTOR-DESER** — `nom-blocks/src/connector.rs:34`: remove `Deserialize` from derive; add `from_trusted()` for DB loading; prevent grammar bypass via crafted JSON
+- [ ] **AM-UITIER-DIVERGE** — `nom-compiler-bridge/src/ui_tier.rs`: extract shared `score_atom_impl()` — UiTier checks cache (0.9/0.3 hardcoded), UiTierOps goes straight to nom_score; divergent for same input
+- [ ] **AL-ATOMIC-ORDERING** — `shared.rs:83-84`: `Ordering::Relaxed` → `Ordering::Acquire` on load; `shared.rs:101-102`: `Ordering::Relaxed` → `Ordering::Release` on fetch_add
+- [ ] **AL-TEST-FRAUD** — `semantic.rs:527-593`: Delete `ArtifactDiff` struct + `artifact_diff()` fn + 5 test functions; add 3 SQL injection edge-case tests using real `to_sql()` path
+
+### NEW — Iteration 57 findings (all must land in Wave AN)
+- [ ] **AN-FRAME-SPATIAL** — `nom-blocks/src/frame.rs`: add `x: f32, y: f32, width: f32, height: f32, rotation: f32, z_index: i32` fields to `FrameBlock`; add cycle-prevention to `add_child()` (check parent chain before insertion)
+- [ ] **AN-WORKSPACE-DUP** — `nom-blocks/src/workspace.rs`: `insert_block()` must check `self.blocks.contains_key(&id)` before pushing to `doc_tree`; fix `CanvasObject::entity()` to return entity from Connector variant instead of panicking; add `remove_node()` and `remove_connector()` methods
+- [ ] **AN-LSP-POSITIONS** — `nom-editor/src/lsp_bridge.rs`: replace `std::ops::Range<usize>` (byte offsets) with LSP `Position { line: u32, character: u32 }` and `Range { start: Position, end: Position }` throughout; add `rename` + `workspace/symbol` to `LspProvider` trait
+- [ ] **AN-INTERACTIVE-CANCEL** — `nom-compiler-bridge/src/interactive_tier.rs`: add `CancellationToken` to each async operation; replace `let _ = self.sender.send(...)` with explicit `Result` propagation; `hover_info()` must return `None` for unrecognized words
+- [ ] **AN-BLOCKDIFF-CONTENT** — `nom-blocks/src/diff.rs`: `diff_blocks()` must compare full block content (kind, payload, all meta fields), not just author+version; add `BlockDiff::invert()` method; fix `apply_diff` for Added case to preserve original metadata
+- [ ] **AN-TEST-DEDUP** — All 14 crates: audit test files and remove duplicate tests (tests that copy values into local variables and assert them); target ≤20% duplication ratio (from current ~85%)
 
 ### MEDIUM
 - [ ] **AL-PALETTE-SEARCH-UI** — `nom-panels/src/left/node_palette.rs:77-86`: render 32px search box quad at top; category group header rows between kind groups

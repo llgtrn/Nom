@@ -1,40 +1,42 @@
 # Nom — Roadmap to 100%
 
 **Date:** 2026-04-18 | **Mandate:** reach 100% on all 4 axes. Every `[ ]` is a completable task.
-**Last updated:** Wave AM complete — HEAD `7086ff2`, 7652 tests. Wave AN planned: CRITICAL audit fixes + test expansion + ~8100 target.
+**Last updated:** Wave AN COMPLETE — HEAD `7e06f47`, **7902 tests** (+250). Wave AO planned: retry 7 failed crates + CRITICAL fixes. Target: ~8200 tests.
 
 ## Current finalization snapshot
 
-**Iteration 54 audit (8 agents, 2026-04-18) revised C and D percentages downward:**
+**Iteration 58 audit (8 agents, 2026-04-18) — Wave AM verified, all CRITICAL items still open:**
 
 | Axis | Today | Target | Gap | Notes |
 |---|---|---|---|---|
 | A · nom-compiler | 44% | 100% | 56pp | Lexer done; self-hosting not started; 22/29 crates never called from canvas |
 | B · Nom language | 34% | 100% | 66pp | 9-kind foundation locked; C-like syntax; 30+ extended kinds unseeded |
-| C · nom-canvas ↔ compiler integration | **35%** | 100% | **65pp** | **REVISED DOWN** — AE1 never fixed (renders 0 pixels); 7/29 crates wired; ComposeContext/HybridResolver/GlueCache MISSING; BackendKind closed enum |
-| D · Overall platform | **72%** | 100% | **28pp** | **REVISED DOWN** — theme system stub; taffy stub; fonts stub; cosmic-text never called; DB-driven automation 35% |
+| C · nom-canvas ↔ compiler integration | **33%** | 100% | **67pp** | **REVISED DOWN** — renderer renders 0 pixels (8+ waves open); BackendKind 379 refs; UnifiedDispatcher/ComposeContext dead code; KindStatus absent; CRDT overflow open |
+| D · Overall platform | **70%** | 100% | **30pp** | **REVISED DOWN** — Theme struct absent; all Wave AM token additions test-only; taffy stub; cosmic-text never called; is_safe_identifier defined but unwired |
 
-**C-axis revised from 98% → 35%** because: (1) renderer renders zero pixels — AE1 claim was false, (2) DB-driven automation pipeline 35% functional — ComposeContext/UnifiedDispatcher/HybridResolver/GlueCache all missing, (3) BackendKind is a closed 16-variant Rust enum (DB-driven mandate violation), (4) only 7/29 nom-compiler crates called from canvas.
+**C-axis still at ~33%** (no improvement from Wave AM): (1) renderer still renders zero pixels, (2) BackendKind enum still 379 active references, (3) UnifiedDispatcher/ComposeContext exist but are dead code in production, (4) KindStatus/promotion lifecycle absent, (5) CRDT overflow still open.
 
-**Per-crate test counts (Wave AM actuals → Wave AN targets):**
-| Crate | Wave AM actual | Wave AN target |
-|---|---|---|
-| nom-blocks | 515 | 550 |
-| nom-canvas-core | 530 | 565 |
-| nom-cli | 370 | 400 |
-| nom-collab | 504 | 540 |
-| nom-compiler-bridge | 505 | 540 |
-| nom-compose | 625 | 660 |
-| nom-editor | 578 | 615 |
-| nom-gpui | 743 | 780 |
-| nom-graph | 530 | 565 |
-| nom-intent | 410 | 440 |
-| nom-lint | 430 | 460 |
-| nom-memoize | 415 | 445 |
-| nom-panels | 535 | 570 |
-| nom-telemetry | 445 | 475 |
-| nom-theme | 505 | 535 |
-| **TOTAL** | **7652** | **~8100** |
+**D-axis still at ~70%** (Wave AM test-inflation did not improve real features): Wave AM "theme" additions ALL inside `#[cfg(test)]`; `pub struct Theme` still absent; `is_safe_identifier()` exists but is never called; `edge_color_for_confidence()` never called from deep_think.rs.
+
+**Per-crate test counts (Wave AN actuals → Wave AO targets).**
+| Crate | Wave AN actual | Wave AO target | Wave AO priority |
+|---|---|---|---|
+| nom-blocks | 515 | 560 | AN-FRAME-SPATIAL + AN-WORKSPACE-DUP + AN-BLOCKDIFF-CONTENT |
+| nom-canvas-core | 530 | 575 | AM-SPATIAL-WIRE (R-tree wiring) |
+| nom-cli | 400 | 430 | UC-SERVE (POST /compose skeleton) |
+| nom-collab | 504 | 545 | AL-CRDT-OVERFLOW + AM-CRDT-IDEMPOTENT |
+| nom-compiler-bridge | 505 | 545 | AL-GRAMMAR-STATUS + AM-UITIER-DIVERGE + AL-ATOMIC-ORDERING |
+| nom-compose | 660 | 690 | AL-BACKEND-KIND (delete enum) + AL-SQL-INJECT (wire guard) |
+| nom-editor | 578 | 620 | AN-LSP-POSITIONS + AN-INTERACTIVE-CANCEL |
+| nom-gpui | 743 | 790 | **AL-RENDER-1/2/3 (renders 0 pixels — MUST FIX)** + AM-ATLAS-LRU |
+| nom-graph | 530 | 570 | connection pool + traversal tests |
+| nom-intent | 440 | 470 | AM-INTENT-STRUCT (add BM25Index + real resolve) |
+| nom-lint | 460 | 485 | — |
+| nom-memoize | 445 | 470 | — |
+| nom-panels | 570 | 600 | AL-DEEPTHINK-CONFIDENCE (wire edge_color_for_confidence) |
+| nom-telemetry | 475 | 500 | — |
+| nom-theme | 535 | 560 | AL-THEME-SYSTEM (pub struct Theme) + AL-FONTS |
+| **TOTAL** | **7902** | **~8210** | — |
 
 **Discipline:** tick `[x]` only after BOTH the code change AND a regression test are committed. Never tick from trackers alone. See `feedback_audit_must_also_fix.md`.
 
