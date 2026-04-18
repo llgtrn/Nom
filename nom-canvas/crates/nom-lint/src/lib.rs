@@ -2,8 +2,10 @@
 
 pub mod rules;
 pub mod lint_rules;
+pub mod skill_map;
 pub use rules::naming::{NamingLinter, NamingViolation};
 pub use rules::structure::{StructureLinter, StructureViolation, StructureViolationKind};
+pub use skill_map::{SkillCategory, SkillEntry, SkillLevel, SkillMap, SkillRecommender};
 
 // ---------------------------------------------------------------------------
 // Sealed supertrait (yara-x pattern) — prevents external implementations.

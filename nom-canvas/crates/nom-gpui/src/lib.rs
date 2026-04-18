@@ -11,6 +11,7 @@ pub mod platform;
 pub mod renderer;
 pub mod scene;
 pub mod scene_builder;
+pub mod scene_diff;
 pub mod scene_traversal;
 pub mod shaders;
 pub mod styled;
@@ -19,6 +20,7 @@ pub mod types;
 pub mod texture_atlas;
 pub mod window;
 
+pub use scene_diff::{DiffKind, PatchApplier, SceneDiff, SceneNodeId, ScenePatch};
 pub use text_layout::{GlyphRun, TextAlign, TextLayoutEngine, TextStyle};
 pub use texture_atlas::{AtlasAllocator, AtlasRegion, AtlasShelf, TextureAtlas};
 pub use types::*;

@@ -55,3 +55,5 @@ pub mod outline_view;
 pub use outline_view::{OutlineItemKind, OutlineItem, OutlineSection, OutlineTree, OutlineRenderer};
 pub mod search_index;
 pub use search_index::{SearchTokenKind, SearchToken, SearchIndex, SearchQuery, SearchResult};
+pub mod format_range;
+pub use format_range::{FormatKind, TextRange, FormatRange, FormatMap, FormatApplier};

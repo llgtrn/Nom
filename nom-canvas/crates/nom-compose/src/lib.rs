@@ -160,6 +160,8 @@ pub mod export_bundle;
 pub use export_bundle::{ExportFormat, ExportTarget, ExportJob, ExportQueue, ExportResult};
 pub mod data_compose;
 pub use data_compose::{DataSourceKind, DataSource, DataQuery, DataResult, DataComposer};
+pub mod font_compose;
+pub use font_compose::{FontStyle, FontWeight, FontSpec, FontFamily, FontComposer};
 
 #[cfg(test)]
 mod integration_tests {

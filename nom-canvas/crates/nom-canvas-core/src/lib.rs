@@ -105,6 +105,10 @@ pub use hit_zone::{HitZoneKind, HitZone, HitZoneMap, HitTestResult, ZoneHitTeste
 pub mod transform_stack;
 pub use transform_stack::{Transform2D, TransformStack, InverseTransform, TransformResult, TransformComposer};
 
+/// Motion path primitives: easing kinds, keyframes, path interpolation, and animation.
+pub mod motion_path;
+pub use motion_path::{EasingKind, MotionKeyframe, MotionPath, PathInterpolator, MotionAnimator};
+
 #[cfg(test)]
 mod integration_tests {
     use crate::elements::{paint_graph_node, paint_wire};
