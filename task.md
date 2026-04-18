@@ -1,6 +1,6 @@
 # Nom — Task Execution Checklist
 
-**Date:** 2026-04-18 | **HEAD:** `617c064` | **Tests:** 4194 | **Workspace:** clean
+**Date:** 2026-04-18 | **HEAD:** `76ba05d` | **Tests:** 4693 | **Workspace:** clean
 
 ## Wave AE Audit (2026-04-18) — Hard audit: UI rendering, bridge stubs, backend depth, security
 
@@ -202,26 +202,41 @@ Reference availability: Zed, AFFiNE, rowboat, ComfyUI, dify, n8n, LlamaIndex, Ha
 - [x] nom-collab 13 clippy warnings fixed (needless_borrows, range_loop, useless_vec)
 - [x] 5 unused deps identified for Wave AG (tokio/crossbeam in nom-compose/nom-cli/nom-graph)
 
-## Wave AG (planned) — Unused deps + doc sweep + test expansion (~4650 target)
-- [ ] Remove `tokio` from nom-compose Cargo.toml (unused async runtime)
-- [ ] Remove `crossbeam-channel` from nom-compose Cargo.toml (unused)
-- [ ] Remove `tokio` from nom-cli Cargo.toml (unused)
-- [ ] Remove `nom-panels` from nom-cli Cargo.toml (unused dep)
-- [ ] Remove `crossbeam-channel` from nom-graph Cargo.toml (unused)
-- [ ] Add `#![warn(missing_docs)]` to nom-blocks; write doc tests to bring coverage up
-- [ ] Add `#![warn(missing_docs)]` to nom-canvas-core; write doc tests
-- [ ] nom-gpui: 456→490 tests (pixel_diff baseline round-trip, wgpu pipeline unit tests)
-- [ ] nom-compose: 415→445 tests (codec enum serialization, MP4/OGG stub paths)
-- [ ] nom-graph: 335→370 tests (multi-root DAG, cache eviction corner cases)
-- [ ] nom-compiler-bridge: 261→295 tests (BM25 index, reader pool borrow/return cycle)
-- [ ] nom-canvas-core: 305→340 tests (bezier tangent, large spatial bulk inserts)
-- [ ] nom-collab: 270→305 tests (3-peer split-brain, SetMeta round-trip)
-- [ ] nom-editor: 317→355 tests (multi-cursor collapse, redo after multi-edit)
-- [ ] nom-blocks: 260→295 tests (table block, dataview block stubs)
-- [ ] nom-panels: 292→325 tests (settings panel model, keybinding rebind model)
-- [ ] nom-theme: 258→290 tests (type scale invariants, OLED palette tokens)
-- [ ] nom-lint: 220→250; nom-intent: 200→230; nom-memoize: 205→235
-- [ ] nom-telemetry: 235→265; nom-cli: 165→195
+## Wave AG (2026-04-18) — COMPLETE ✅ (76ba05d, 4693 tests)
+- [x] Remove `tokio` from nom-compose Cargo.toml (confirmed unused)
+- [x] Remove `crossbeam-channel` from nom-compose Cargo.toml
+- [x] Remove `tokio` from nom-cli Cargo.toml
+- [x] Remove `nom-panels` from nom-cli Cargo.toml
+- [x] Remove `crossbeam-channel` from nom-graph Cargo.toml
+- [x] nom-gpui: 456→492 (pixel_diff round-trip, renderer blur formula, types edge cases)
+- [x] nom-compose: 415→452 (codec/container stubs, audio/video display, semantic)
+- [x] nom-graph: 335→369 (multi-root DAG, LRU eviction, RRF dedup, hierarchical cache)
+- [x] nom-compiler-bridge: 261→295 (BM25 search, reader pool, LSP completions)
+- [x] nom-canvas-core: 305→340 (snapping grid, selection, viewport)
+- [x] nom-collab: 270→305 (3-peer split-brain, emoji, causal ordering)
+- [x] nom-editor: 317→355 (undo/redo, cursor clamping, find/replace, scroll)
+- [x] nom-blocks: 260→295 (block model hash, embed URL type, media MIME)
+- [x] nom-panels: 292→325 (settings model, entity_ref, file tree)
+- [x] nom-theme: 258→290 (type scale, OLED palette, WCAG contrast, icon)
+- [x] nom-lint: 220→250; nom-intent: 200→230; nom-memoize: 205→235
+- [x] nom-telemetry: 235→265; nom-cli: 165→195
+
+## Wave AH (planned) — wgpu renderer depth + table/dataview blocks + missing_docs (~5100 target)
+- [ ] nom-gpui: implement real wgpu device init + pipeline creation + quad draw call (AE1 partial fix)
+- [ ] nom-gpui: 492→530 tests (GPU pipeline unit, shader compilation, atlas allocator)
+- [ ] nom-blocks: add table block (row/col model) and dataview block stub
+- [ ] nom-blocks: 295→330 tests (table/dataview CRUD, column schema)
+- [ ] Add `#![warn(missing_docs)]` to nom-blocks + nom-canvas-core
+- [ ] nom-canvas-core: 340→375 tests (bezier tangent, bulk spatial insert, hit-test precision)
+- [ ] nom-compose: 452→485 tests (scenario_workflow real step exec, data_query SQL store)
+- [ ] nom-graph: 369→405 tests (sandbox checked ops, sanitizer stubs, viewport edge cases)
+- [ ] nom-collab: 305→340 tests (CRDT undo stack, snapshot diff, large concurrent batch)
+- [ ] nom-editor: 355→390 tests (multi-cursor merge, tab_map depth, redo after branch)
+- [ ] nom-compiler-bridge: 295→330 tests (BM25 ranking, SharedState concurrent stress)
+- [ ] nom-panels: 325→360 tests (settings serialization, keybinding list invariants)
+- [ ] nom-theme: 290→325 tests (frosted glass blur curve, shadow depth scale)
+- [ ] nom-lint: 250→280; nom-intent: 230→260; nom-memoize: 235→265
+- [ ] nom-telemetry: 265→295; nom-cli: 195→225
 
 ## Wave W (2026-04-18) — COMPLETE (fc20fc8, 1044 tests)
 - [x] nom-lint: +28 → 45 tests

@@ -1,7 +1,7 @@
 # Nom — Roadmap to 100%
 
 **Date:** 2026-04-18 | **Mandate:** reach 100% on all 4 axes. Every `[ ]` is a completable task.
-**Last updated:** Wave AF complete — HEAD `617c064`, 4194 tests. Wave AG planned: unused dep removal + doc sweep + ~4650 test target.
+**Last updated:** Wave AG complete — HEAD `76ba05d`, 4693 tests. Wave AH planned: wgpu renderer + table blocks + missing_docs sweep + ~5100 target.
 
 ## Current finalization snapshot
 
@@ -9,28 +9,28 @@
 |---|---|---|---|---|
 | A · nom-compiler | 44% | 100% | 56pp | (upstream, unchanged) |
 | B · Nom language | 34% | 100% | 66pp | (upstream, unchanged) |
-| C · nom-canvas ↔ compiler integration | 93% | 100% | 7pp | 4194 tests; Wave AF complete |
-| D · Overall platform | 77% | 100% | 23pp | 15/15 crates; Wave AG next |
+| C · nom-canvas ↔ compiler integration | 94% | 100% | 6pp | 4693 tests; Wave AG complete |
+| D · Overall platform | 79% | 100% | 21pp | 15/15 crates; Wave AH next |
 
-**Per-crate test counts (Wave AF actuals → Wave AG targets):**
-| Crate | Wave AF actual | Wave AG target |
+**Per-crate test counts (Wave AG actuals → Wave AH targets):**
+| Crate | Wave AG actual | Wave AH target |
 |---|---|---|
-| nom-blocks | 260 | 295 |
-| nom-canvas-core | 305 | 340 |
-| nom-cli | 165 | 195 |
-| nom-collab | 270 | 305 |
-| nom-compiler-bridge | 261 | 295 |
-| nom-compose | 415 | 445 |
-| nom-editor | 317 | 355 |
-| nom-gpui | 456 | 490 |
-| nom-graph | 335 | 370 |
-| nom-intent | 200 | 230 |
-| nom-lint | 220 | 250 |
-| nom-memoize | 205 | 235 |
-| nom-panels | 292 | 325 |
-| nom-telemetry | 235 | 265 |
-| nom-theme | 258 | 290 |
-| **TOTAL** | **4194** | **~4665** |
+| nom-blocks | 295 | 330 |
+| nom-canvas-core | 340 | 375 |
+| nom-cli | 195 | 225 |
+| nom-collab | 305 | 340 |
+| nom-compiler-bridge | 295 | 330 |
+| nom-compose | 452 | 485 |
+| nom-editor | 355 | 390 |
+| nom-gpui | 492 | 530 |
+| nom-graph | 369 | 405 |
+| nom-intent | 230 | 260 |
+| nom-lint | 250 | 280 |
+| nom-memoize | 235 | 265 |
+| nom-panels | 325 | 360 |
+| nom-telemetry | 265 | 295 |
+| nom-theme | 290 | 325 |
+| **TOTAL** | **4693** | **~5095** |
 
 **Discipline:** tick `[x]` only after BOTH the code change AND a regression test are committed. Never tick from trackers alone. See `feedback_audit_must_also_fix.md`.
 
