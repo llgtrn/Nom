@@ -45,3 +45,5 @@ pub mod go_to_def;
 pub use go_to_def::{DefinitionKind, DefinitionLocation, DefinitionTarget, GoToDefRequest, GoToDefResolver};
 pub mod rename_preview;
 pub use rename_preview::{RenamePreviewKind, RenameChange, RenamePreviewModel, RenameConflict, RenameApplier};
+pub mod multi_file_edit;
+pub use multi_file_edit::{EditScope, MultiFileChange, MultiFileSession, MultiFileDiff, SessionApplier};

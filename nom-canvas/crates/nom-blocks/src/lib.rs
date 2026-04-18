@@ -86,6 +86,10 @@ pub use block_schema_v2::{BlockSchemaV2, FieldType, MigrationTool, RoundTripVali
 #[allow(missing_docs)]
 pub mod flow_step_table;
 pub use flow_step_table::{StepStatus, FlowStepRow, FlowStepTable, FlowStepQuery, StepTimeline};
+/// Embed registry — EmbedKind, EmbedEntry, EmbedRegistry, EmbedResolver.
+#[allow(missing_docs)]
+pub mod embed_registry;
+pub use embed_registry::{EmbedKind, EmbedEntry, EmbedRegistry, EmbedResolver};
 
 #[cfg(test)]
 mod integration_tests {

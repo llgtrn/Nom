@@ -147,6 +147,11 @@ pub mod app_bundle;
 pub use app_bundle::{BundleArtifact, BundleBuilder, BundleManifest, BundleOutput, BundleTarget};
 pub mod completion_engine;
 pub use completion_engine::{CompletionEngine, CompletionItem, CompletionKind, CompletionList, CompletionQuery};
+pub mod native_screen;
+pub use native_screen::{
+    ScreenTarget, CaptureResolution, CaptureBuffer, ScreenCapture,
+    NativeScreenBackend as NativeScreenCaptureBackend,
+};
 
 #[cfg(test)]
 mod integration_tests {

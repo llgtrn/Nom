@@ -84,6 +84,10 @@ pub use animation_card::{AnimationCard, CardAnimator, CardKeyframe, CardState, C
 pub mod pixel_diff;
 pub use pixel_diff::{DiffReport, DiffThreshold, PixelDiff, PixelRegion, RegionDiffer};
 
+/// Smart alignment guides: axis-aware guide evaluation and snap engine.
+pub mod snap_align;
+pub use snap_align::{AlignAxis, AlignGuide, AlignResult, AlignmentEngine, SnapTarget};
+
 #[cfg(test)]
 mod integration_tests {
     use crate::elements::{paint_graph_node, paint_wire};

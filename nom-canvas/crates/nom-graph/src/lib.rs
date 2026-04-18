@@ -44,3 +44,5 @@ pub mod flow_replay;
 pub use flow_replay::{ReplaySpeed, FlowReplayEntry, FlowReplay, ReplayController, ReplaySnapshot};
 pub mod semantic_cache;
 pub use semantic_cache::{SemanticKey, SemanticEntry, CacheEviction, SemanticCache, CacheStats};
+pub mod delta_compress;
+pub use delta_compress::{DeltaKind, DeltaFrame, DeltaEncoder, DeltaDecoder, DeltaStream};
