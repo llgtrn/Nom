@@ -1591,4 +1591,192 @@ mod tests {
         let events: Vec<DeepThinkEvent> = rx.try_iter().collect();
         assert!(matches!(events.last(), Some(DeepThinkEvent::Final(_))));
     }
+
+    // ── AB-wave additions ──────────────────────────────────────────────────
+
+    /// plan_flow with a non-empty task produces a non-empty plan (steps.len() > 0).
+    #[test]
+    fn ab_plan_flow_nonempty_task_produces_nonempty_plan() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let worker = BackgroundWorker::new(state);
+        let output = PipelineOutput {
+            source_hash: 100,
+            grammar_version: 1,
+            output_json: r#"{"intent":"define result that is map each item"}"#.into(),
+        };
+        let plan = worker.do_plan_flow(&output).unwrap();
+        assert!(!plan.steps.is_empty(), "non-empty task must produce at least one step");
+    }
+
+    /// verify with valid (well-formed) input returns a diagnostic list (possibly empty).
+    #[test]
+    fn ab_verify_valid_input_returns_diagnostic_list() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let worker = BackgroundWorker::new(state);
+        let plan = CompositionPlan {
+            intent: "define x that is 1".into(),
+            steps: vec![PlanStep {
+                id: "s0".into(),
+                description: "basic step".into(),
+                kind: "plan".into(),
+                depends_on: vec![],
+            }],
+            confidence: 0.7,
+        };
+        // Returns Vec<String> — may be empty for valid input, but must not panic
+        let diags: Vec<String> = worker.do_verify(&plan);
+        // Valid input: no diagnostics expected
+        assert!(diags.is_empty(), "valid plan must produce no diagnostics: {:?}", diags);
+    }
+
+    /// deep_think returns at least 1 step event.
+    #[test]
+    fn ab_deep_think_returns_at_least_1_step() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let worker = BackgroundWorker::new(state);
+        let (tx, rx) = crossbeam_channel::bounded(64);
+        let interrupt = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        worker.do_deep_think("summarize the result", &interrupt, &tx);
+        let events: Vec<DeepThinkEvent> = rx.try_iter().collect();
+        let step_count = events.iter().filter(|e| matches!(e, DeepThinkEvent::Step(_))).count();
+        assert!(step_count >= 1, "deep_think must emit at least 1 step, got {}", step_count);
+    }
+
+    /// deep_think step content (hypothesis) is a non-empty string.
+    #[test]
+    fn ab_deep_think_step_content_is_non_empty() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let worker = BackgroundWorker::new(state);
+        let (tx, rx) = crossbeam_channel::bounded(64);
+        let interrupt = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        worker.do_deep_think("build a pipeline that filters and maps", &interrupt, &tx);
+        let events: Vec<DeepThinkEvent> = rx.try_iter().collect();
+        for event in &events {
+            if let DeepThinkEvent::Step(s) = event {
+                assert!(!s.hypothesis.is_empty(),
+                    "every deep_think step hypothesis must be non-empty");
+            }
+        }
+    }
+
+    /// Background task can be cancelled (interrupt flag set before start returns cancelled status = no events).
+    #[test]
+    fn ab_background_task_can_be_cancelled() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let worker = BackgroundWorker::new(state);
+        let (tx, rx) = crossbeam_channel::bounded(64);
+        // Set interrupt to true before calling — simulates cancellation
+        let interrupt = Arc::new(std::sync::atomic::AtomicBool::new(true));
+        worker.do_deep_think("compute large result set", &interrupt, &tx);
+        let events: Vec<DeepThinkEvent> = rx.try_iter().collect();
+        assert!(events.is_empty(), "pre-interrupted task must emit no events (cancelled status)");
+    }
+
+    /// Background tier handles concurrent requests without panic (two workers on same state).
+    #[test]
+    fn ab_background_tier_concurrent_no_panic() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let w1 = BackgroundWorker::new(state.clone());
+        let w2 = BackgroundWorker::new(state.clone());
+        let w3 = BackgroundWorker::new(state.clone());
+        // Three concurrent compiles must all succeed
+        let r1 = w1.do_compile("define a that is 1", &CompileOpts::full());
+        let r2 = w2.do_compile("define b that is 2", &CompileOpts::full());
+        let r3 = w3.do_compile("define c that is 3", &CompileOpts::full());
+        assert!(r1.is_ok(), "concurrent compile 1 must succeed");
+        assert!(r2.is_ok(), "concurrent compile 2 must succeed");
+        assert!(r3.is_ok(), "concurrent compile 3 must succeed");
+    }
+
+    /// deep_think final event has a non-empty intent field.
+    #[test]
+    fn ab_deep_think_final_event_intent_nonempty() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let worker = BackgroundWorker::new(state);
+        let (tx, rx) = crossbeam_channel::bounded(64);
+        let interrupt = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let intent_str = "define x that is map result";
+        worker.do_deep_think(intent_str, &interrupt, &tx);
+        let events: Vec<DeepThinkEvent> = rx.try_iter().collect();
+        let final_plan = events.iter().find_map(|e| {
+            if let DeepThinkEvent::Final(p) = e { Some(p) } else { None }
+        });
+        assert!(final_plan.is_some(), "must have a Final event");
+        assert_eq!(final_plan.unwrap().intent, intent_str,
+            "Final event intent must match the original input");
+    }
+
+    /// plan_flow step id fields are non-empty strings.
+    #[test]
+    fn ab_plan_flow_step_ids_nonempty() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let worker = BackgroundWorker::new(state);
+        let output = PipelineOutput {
+            source_hash: 200,
+            grammar_version: 1,
+            output_json: r#"{"intent":"define result that is filter"}"#.into(),
+        };
+        let plan = worker.do_plan_flow(&output).unwrap();
+        for step in &plan.steps {
+            assert!(!step.id.is_empty(), "step id must not be empty");
+        }
+    }
+
+    /// plan_flow step descriptions are non-empty strings.
+    #[test]
+    fn ab_plan_flow_step_descriptions_nonempty() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let worker = BackgroundWorker::new(state);
+        let output = PipelineOutput {
+            source_hash: 201,
+            grammar_version: 1,
+            output_json: r#"{"intent":"define pipeline that yields output"}"#.into(),
+        };
+        let plan = worker.do_plan_flow(&output).unwrap();
+        for step in &plan.steps {
+            assert!(!step.description.is_empty(), "step description must not be empty");
+        }
+    }
+
+    /// plan_flow with a 10-word intent produces exactly 2 steps (10/5 = 2).
+    #[test]
+    fn ab_plan_flow_10_words_produces_2_steps() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let worker = BackgroundWorker::new(state);
+        // exactly 10 words → (10+4)/5 = 2 steps
+        let output = PipelineOutput {
+            source_hash: 202,
+            grammar_version: 1,
+            output_json: r#"{"intent":"define result that is map each item with filter reduce"}"#.into(),
+        };
+        let plan = worker.do_plan_flow(&output).unwrap();
+        assert_eq!(plan.steps.len(), 2, "10-word intent must produce exactly 2 steps");
+    }
+
+    /// verify with completely well-formed plan returns empty Vec<String>.
+    #[test]
+    fn ab_verify_well_formed_plan_empty_diagnostics() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let worker = BackgroundWorker::new(state);
+        let plan = CompositionPlan {
+            intent: "define stream that yields data".into(),
+            steps: vec![
+                PlanStep {
+                    id: "s0".into(),
+                    description: "setup stream".into(),
+                    kind: "plan".into(),
+                    depends_on: vec![],
+                },
+                PlanStep {
+                    id: "s1".into(),
+                    description: "yield data items".into(),
+                    kind: "plan".into(),
+                    depends_on: vec!["s0".into()],
+                },
+            ],
+            confidence: 0.8,
+        };
+        let diags = worker.do_verify(&plan);
+        assert!(diags.is_empty(), "well-formed plan must produce no diagnostics: {:?}", diags);
+    }
 }

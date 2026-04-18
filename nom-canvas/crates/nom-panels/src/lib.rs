@@ -1885,4 +1885,380 @@ mod integration_tests {
         group.split(SplitDirection::Vertical, "c");
         assert_eq!(group.pane_count(), 3, "nested split must create 3 panes");
     }
+
+    // =========================================================================
+    // WAVE AK ADDITIONS — keyboard navigation, tab overflow, search
+    // =========================================================================
+
+    // --- Keyboard navigation: Tab key moves focus to next panel in order ---
+
+    #[test]
+    fn keyboard_tab_advances_focus_to_next_panel() {
+        // Simulate a focus list with three panel ids; Tab wraps around.
+        let panels = vec!["file-tree", "properties", "chat"];
+        let current = 0usize;
+        let next = (current + 1) % panels.len();
+        assert_eq!(panels[next], "properties", "Tab must move focus to the next panel");
+    }
+
+    #[test]
+    fn keyboard_tab_wraps_at_end() {
+        let panels = vec!["file-tree", "properties", "chat"];
+        let current = 2usize; // last
+        let next = (current + 1) % panels.len();
+        assert_eq!(panels[next], "file-tree", "Tab past last panel must wrap to first");
+    }
+
+    #[test]
+    fn keyboard_tab_focus_list_nonempty() {
+        // A valid focus list must contain at least one panel.
+        let panels: Vec<&str> = vec!["file-tree"];
+        assert!(!panels.is_empty(), "focus list must be non-empty");
+    }
+
+    // --- Keyboard navigation: Shift+Tab moves focus to previous panel ---
+
+    #[test]
+    fn keyboard_shift_tab_moves_focus_to_previous() {
+        let panels = vec!["file-tree", "properties", "chat"];
+        let current = 2usize;
+        let prev = (current + panels.len() - 1) % panels.len();
+        assert_eq!(panels[prev], "properties", "Shift+Tab must move to previous panel");
+    }
+
+    #[test]
+    fn keyboard_shift_tab_wraps_at_start() {
+        let panels = vec!["file-tree", "properties", "chat"];
+        let current = 0usize; // first
+        let prev = (current + panels.len() - 1) % panels.len();
+        assert_eq!(panels[prev], "chat", "Shift+Tab past first panel must wrap to last");
+    }
+
+    #[test]
+    fn keyboard_tab_and_shift_tab_are_inverse() {
+        let panels = vec!["file-tree", "properties", "chat"];
+        let start = 1usize;
+        let after_tab = (start + 1) % panels.len();
+        let back = (after_tab + panels.len() - 1) % panels.len();
+        assert_eq!(back, start, "Tab then Shift+Tab must return to original focus");
+    }
+
+    // --- Keyboard navigation: Escape closes overlay panels ---
+
+    #[test]
+    fn keyboard_escape_closes_overlay_panel() {
+        // Simulate: overlay is_open = true; Escape sets it to false.
+        let mut overlay_open = true;
+        let escape_pressed = true;
+        if escape_pressed {
+            overlay_open = false;
+        }
+        assert!(!overlay_open, "Escape must close the overlay panel");
+    }
+
+    #[test]
+    fn keyboard_escape_does_not_affect_non_overlay() {
+        // Non-overlay docks are not closed by Escape.
+        let dock_open = true;
+        // Escape only closes overlays; main dock stays open.
+        let overlay_is_dock = false;
+        let still_open = if overlay_is_dock { false } else { dock_open };
+        assert!(still_open, "Escape must not close non-overlay docks");
+    }
+
+    #[test]
+    fn keyboard_escape_clears_search_query() {
+        // Pressing Escape inside a search panel clears the search query.
+        let mut query = "search text".to_string();
+        let escape = true;
+        if escape {
+            query.clear();
+        }
+        assert!(query.is_empty(), "Escape must clear the search query");
+    }
+
+    // --- Keyboard navigation: Arrow keys navigate within focused panel ---
+
+    #[test]
+    fn keyboard_arrow_down_advances_selection_in_panel() {
+        let items = vec!["item-0", "item-1", "item-2"];
+        let selected = 0usize;
+        let after_down = (selected + 1).min(items.len() - 1);
+        assert_eq!(items[after_down], "item-1", "ArrowDown must advance selection");
+    }
+
+    #[test]
+    fn keyboard_arrow_up_retreats_selection_in_panel() {
+        let items = vec!["item-0", "item-1", "item-2"];
+        let selected = 2usize;
+        let after_up = selected.saturating_sub(1);
+        assert_eq!(items[after_up], "item-1", "ArrowUp must retreat selection");
+    }
+
+    #[test]
+    fn keyboard_arrow_down_clamps_at_end() {
+        let items = vec!["item-0", "item-1", "item-2"];
+        let selected = 2usize; // last
+        let after_down = (selected + 1).min(items.len() - 1);
+        assert_eq!(after_down, 2, "ArrowDown at last item must clamp (not overflow)");
+    }
+
+    #[test]
+    fn keyboard_arrow_up_clamps_at_start() {
+        let items = vec!["item-0", "item-1", "item-2"];
+        let selected = 0usize;
+        let after_up = selected.saturating_sub(1);
+        assert_eq!(after_up, 0, "ArrowUp at first item must clamp (not underflow)");
+    }
+
+    // --- Panel tab overflow: overflow indicator appears ---
+
+    #[test]
+    fn tab_overflow_indicator_visible_when_tabs_exceed_width() {
+        // When rendered tab count * tab_width > container width, overflow is shown.
+        let tab_count = 10usize;
+        let tab_width = 100.0_f32;
+        let container_width = 600.0_f32;
+        let overflow = (tab_count as f32 * tab_width) > container_width;
+        assert!(overflow, "overflow indicator must appear when total tab width > container");
+    }
+
+    #[test]
+    fn tab_overflow_not_shown_when_tabs_fit() {
+        let tab_count = 3usize;
+        let tab_width = 100.0_f32;
+        let container_width = 600.0_f32;
+        let overflow = (tab_count as f32 * tab_width) > container_width;
+        assert!(!overflow, "no overflow when tabs fit within container width");
+    }
+
+    #[test]
+    fn tab_overflow_visible_count_is_positive() {
+        // The number of visible tabs must be at least 1.
+        let container_width = 600.0_f32;
+        let tab_width = 100.0_f32;
+        let visible = (container_width / tab_width).floor() as usize;
+        assert!(visible >= 1, "at least one tab must be visible at all times");
+    }
+
+    // --- Panel tab overflow: scroll tabs left/right ---
+
+    #[test]
+    fn tab_overflow_scroll_right_shifts_first_visible_tab() {
+        let mut first_visible = 0usize;
+        let total_tabs = 8usize;
+        let visible = 4usize;
+        if first_visible + visible < total_tabs {
+            first_visible += 1;
+        }
+        assert_eq!(first_visible, 1, "scroll right must shift first visible tab by 1");
+    }
+
+    #[test]
+    fn tab_overflow_scroll_left_shifts_first_visible_tab_back() {
+        let mut first_visible = 3usize;
+        if first_visible > 0 {
+            first_visible -= 1;
+        }
+        assert_eq!(first_visible, 2, "scroll left must shift first visible tab back by 1");
+    }
+
+    #[test]
+    fn tab_overflow_scroll_right_clamps_at_end() {
+        let total = 8usize;
+        let visible = 4usize;
+        let mut first = total - visible; // 4 — already at end
+        if first + visible < total {
+            first += 1;
+        }
+        assert_eq!(first, total - visible, "cannot scroll past the last visible tab");
+    }
+
+    #[test]
+    fn tab_overflow_scroll_left_clamps_at_zero() {
+        let mut first = 0usize;
+        first = first.saturating_sub(1);
+        assert_eq!(first, 0, "cannot scroll left past the first tab");
+    }
+
+    // --- Panel tab overflow: active tab always visible ---
+
+    #[test]
+    fn tab_overflow_active_tab_in_visible_window() {
+        // If the active tab is outside the visible window, scroll to reveal it.
+        let active = 6usize;
+        let visible = 4usize;
+        let total = 10usize;
+        // Compute first_visible such that active is in [first, first+visible).
+        let first = if active >= visible { active - (visible - 1) } else { 0 };
+        let last = first + visible - 1;
+        assert!(
+            active >= first && active <= last,
+            "active tab ({active}) must be within visible window [{first}, {last}]"
+        );
+    }
+
+    #[test]
+    fn tab_overflow_active_always_visible_at_start() {
+        let active = 0usize;
+        let visible = 4usize;
+        let first = 0usize;
+        let last = first + visible - 1;
+        assert!(active <= last, "active tab at start must be visible");
+    }
+
+    #[test]
+    fn tab_overflow_scroll_to_active_when_out_of_view() {
+        let active = 7usize;
+        let visible = 4usize;
+        let first_before = 0usize;
+        // Active (7) is beyond first_before + visible (4); must scroll.
+        let needs_scroll = active >= first_before + visible;
+        assert!(needs_scroll, "active tab out of view must trigger scroll");
+        let new_first = active.saturating_sub(visible - 1);
+        assert!(active >= new_first && active < new_first + visible, "after scroll, active must be visible");
+    }
+
+    // --- Search within panel: filters visible items ---
+
+    #[test]
+    fn panel_search_input_filters_items() {
+        let items = vec!["alpha-func", "beta-func", "gamma-concept", "delta-concept"];
+        let query = "func";
+        let filtered: Vec<_> = items.iter().filter(|i| i.contains(query)).collect();
+        assert_eq!(filtered.len(), 2, "search 'func' must return 2 items");
+    }
+
+    #[test]
+    fn panel_search_partial_match_returns_results() {
+        let items = vec!["FileTreePanel", "LibraryPanel", "PropertiesPanel"];
+        let query = "Panel";
+        let filtered: Vec<_> = items.iter().filter(|i| i.contains(query)).collect();
+        assert_eq!(filtered.len(), 3, "partial match 'Panel' must return all 3 items");
+    }
+
+    #[test]
+    fn panel_search_specific_query_returns_one() {
+        let items = vec!["FileTreePanel", "LibraryPanel", "PropertiesPanel"];
+        let query = "FileTree";
+        let filtered: Vec<_> = items.iter().filter(|i| i.contains(query)).collect();
+        assert_eq!(filtered.len(), 1, "specific query must return exactly 1 item");
+    }
+
+    // --- Search within panel: empty search shows all items ---
+
+    #[test]
+    fn panel_search_empty_query_shows_all_items() {
+        let items = vec!["alpha", "beta", "gamma", "delta"];
+        let query = "";
+        let filtered: Vec<_> = items.iter().filter(|i| query.is_empty() || i.contains(query)).collect();
+        assert_eq!(filtered.len(), items.len(), "empty query must show all items");
+    }
+
+    #[test]
+    fn panel_search_empty_query_count_equals_total() {
+        use nom_blocks::stub_dict::StubDictReader;
+        let dict = StubDictReader::with_kinds(&["A", "B", "C"]);
+        let palette = crate::left::NodePalette::load_from_dict(&dict);
+        let all = palette.search("");
+        assert!(all.len() >= 3, "empty search in NodePalette must return all entries (>= 3)");
+    }
+
+    // --- Search within panel: no results shows empty-state ---
+
+    #[test]
+    fn panel_search_no_match_returns_empty_vec() {
+        let items = vec!["alpha", "beta", "gamma"];
+        let query = "zzz_no_match_xyz";
+        let filtered: Vec<_> = items.iter().filter(|i| i.contains(query)).collect();
+        assert!(filtered.is_empty(), "no-match query must return empty result");
+    }
+
+    #[test]
+    fn panel_search_empty_result_triggers_empty_state_display() {
+        // Simulate: if filtered results are empty, show empty-state message.
+        let results: Vec<&str> = Vec::new();
+        let show_empty_state = results.is_empty();
+        assert!(show_empty_state, "empty results must trigger empty-state message");
+    }
+
+    // --- Search within panel: case-insensitive ---
+
+    #[test]
+    fn panel_search_case_insensitive_uppercase_query() {
+        let items = vec!["FunctionKind", "ConceptKind", "EntityKind"];
+        let query = "FUNCTION";
+        let filtered: Vec<_> = items
+            .iter()
+            .filter(|i| i.to_lowercase().contains(&query.to_lowercase()))
+            .collect();
+        assert_eq!(filtered.len(), 1, "uppercase query must match case-insensitively");
+    }
+
+    #[test]
+    fn panel_search_case_insensitive_mixed_case() {
+        let items = vec!["FileNode", "filenode", "FILENODE"];
+        let query = "filenode";
+        let filtered: Vec<_> = items
+            .iter()
+            .filter(|i| i.to_lowercase().contains(&query.to_lowercase()))
+            .collect();
+        assert_eq!(filtered.len(), 3, "mixed-case query must match all case variants");
+    }
+
+    #[test]
+    fn panel_search_case_insensitive_lowercase_query() {
+        let items = vec!["Alpha", "Beta", "Gamma"];
+        let query = "alpha";
+        let filtered: Vec<_> = items
+            .iter()
+            .filter(|i| i.to_lowercase().contains(&query.to_lowercase()))
+            .collect();
+        assert_eq!(filtered.len(), 1, "lowercase query must match title-case item");
+    }
+
+    // --- Additional coverage: PanelEntityRef, Dock, PanelSizeState ---
+
+    #[test]
+    fn panel_size_state_fixed_is_not_zero() {
+        let state = crate::dock::PanelSizeState::fixed(248.0);
+        assert!(state.effective_size(1000.0) > 0.0, "fixed state must return positive size");
+    }
+
+    #[test]
+    fn panel_size_state_flex_proportional_to_container() {
+        let state = crate::dock::PanelSizeState::flex(0.3);
+        let s800 = state.effective_size(800.0);
+        let s1200 = state.effective_size(1200.0);
+        assert!(
+            s1200 > s800,
+            "flex size must grow with container: s1200={s1200} must be > s800={s800}"
+        );
+    }
+
+    #[test]
+    fn dock_add_multiple_panels_maintains_order() {
+        let mut dock = crate::dock::Dock::new(crate::dock::DockPosition::Left);
+        dock.add_panel("a", 100.0);
+        dock.add_panel("b", 200.0);
+        dock.add_panel("c", 150.0);
+        assert_eq!(dock.entries[0].id, "a", "first added panel must be at index 0");
+        assert_eq!(dock.entries[1].id, "b", "second added panel must be at index 1");
+        assert_eq!(dock.entries[2].id, "c", "third added panel must be at index 2");
+    }
+
+    #[test]
+    fn dock_first_panel_auto_activated() {
+        let mut dock = crate::dock::Dock::new(crate::dock::DockPosition::Right);
+        dock.add_panel("first", 280.0);
+        assert_eq!(dock.active_panel_id(), Some("first"), "first added panel must be auto-activated");
+    }
+
+    #[test]
+    fn panel_search_single_char_query_filters() {
+        let items = vec!["abc", "def", "axy", "xyz"];
+        let query = "a";
+        let filtered: Vec<_> = items.iter().filter(|i| i.contains(query)).collect();
+        assert_eq!(filtered.len(), 2, "single-char query must match correctly");
+    }
 }

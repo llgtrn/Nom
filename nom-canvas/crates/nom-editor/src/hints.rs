@@ -281,4 +281,127 @@ mod tests {
         assert_eq!(provider.hints_for_line(2)[0].label, "x:");
         assert_eq!(provider.hints_for_line(3)[0].label, "-> bool");
     }
+
+    // ── wave AB: inlay hint tests ────────────────────────────────────────────
+
+    /// Inlay hint at column 0 has correct position.
+    #[test]
+    fn inlay_hint_at_column_zero_correct_position() {
+        let mut provider = InlayHintProvider::new();
+        provider.add_hint(0, 0, ": i64", HintKind::Type);
+        let hints = provider.hints_for_line(0);
+        assert_eq!(hints.len(), 1);
+        assert_eq!(hints[0].col, 0);
+        assert_eq!(hints[0].line, 0);
+    }
+
+    /// Inlay hint label includes a type annotation marker.
+    #[test]
+    fn inlay_hint_label_includes_type_annotation() {
+        let mut provider = InlayHintProvider::new();
+        provider.add_hint(2, 5, ": f64", HintKind::Type);
+        let hints = provider.hints_for_line(2);
+        assert!(hints[0].label.contains(':'), "type annotation hint label must contain ':'");
+    }
+
+    /// Multiple hints on the same line ordered by col as inserted.
+    #[test]
+    fn inlay_hints_same_line_ordered_by_col() {
+        let mut provider = InlayHintProvider::new();
+        provider.add_hint(1, 3, ": u8", HintKind::Type);
+        provider.add_hint(1, 10, "count:", HintKind::Parameter);
+        provider.add_hint(1, 20, "-> bool", HintKind::Return);
+        let hints = provider.hints_for_line(1);
+        assert_eq!(hints.len(), 3);
+        // Verify cols in insertion order
+        assert_eq!(hints[0].col, 3);
+        assert_eq!(hints[1].col, 10);
+        assert_eq!(hints[2].col, 20);
+    }
+
+    /// Hint with tooltip preserved when set directly on the InlayHint struct.
+    #[test]
+    fn inlay_hint_tooltip_preserved_when_set() {
+        let hint = InlayHint {
+            line: 5,
+            col: 8,
+            label: ": str".into(),
+            kind: HintKind::Type,
+            tooltip: Some("The name of the entity".into()),
+        };
+        assert_eq!(hint.tooltip.as_deref(), Some("The name of the entity"));
+    }
+
+    /// Clear hints empties the hint list completely.
+    #[test]
+    fn inlay_hint_clear_empties_list() {
+        let mut provider = InlayHintProvider::new();
+        provider.add_hint(0, 0, ": i32", HintKind::Type);
+        provider.add_hint(1, 0, ": str", HintKind::Type);
+        provider.add_hint(2, 0, "-> bool", HintKind::Return);
+        assert_eq!(provider.hint_count(), 3);
+        provider.clear();
+        assert_eq!(provider.hint_count(), 0);
+        assert!(provider.hints_for_line(0).is_empty());
+        assert!(provider.hints_for_line(1).is_empty());
+    }
+
+    /// Return kind hint has label starting with "->".
+    #[test]
+    fn inlay_hint_return_kind_label_format() {
+        let mut provider = InlayHintProvider::new();
+        provider.add_hint(7, 0, "-> u32", HintKind::Return);
+        let hints = provider.hints_for_line(7);
+        assert_eq!(hints.len(), 1);
+        assert_eq!(hints[0].kind, HintKind::Return);
+        assert!(hints[0].label.starts_with("->"), "return hint label must start with '->'");
+    }
+
+    /// Reference kind hint is distinct from type hint.
+    #[test]
+    fn inlay_hint_reference_kind_distinct_from_type() {
+        let mut provider = InlayHintProvider::new();
+        provider.add_hint(0, 0, "ref", HintKind::Reference);
+        provider.add_hint(1, 0, ": u8", HintKind::Type);
+        assert_eq!(provider.hints_for_line(0)[0].kind, HintKind::Reference);
+        assert_eq!(provider.hints_for_line(1)[0].kind, HintKind::Type);
+        assert_ne!(
+            provider.hints_for_line(0)[0].kind,
+            provider.hints_for_line(1)[0].kind
+        );
+    }
+
+    /// from_lsp_response with empty slice produces zero hints.
+    #[test]
+    fn inlay_hint_from_lsp_response_empty_produces_zero() {
+        let raw: &[(u32, u32, &str, &str)] = &[];
+        let provider = InlayHintProvider::from_lsp_response(raw);
+        assert_eq!(provider.hint_count(), 0);
+    }
+
+    /// Default provider constructed via Default trait has zero hints.
+    #[test]
+    fn inlay_hint_provider_default_has_zero_hints() {
+        let provider = InlayHintProvider::default();
+        assert_eq!(provider.hint_count(), 0);
+    }
+
+    /// Hint added to high line number is retrievable.
+    #[test]
+    fn inlay_hint_high_line_number_retrievable() {
+        let mut provider = InlayHintProvider::new();
+        provider.add_hint(9999, 0, ": u64", HintKind::Type);
+        let hints = provider.hints_for_line(9999);
+        assert_eq!(hints.len(), 1);
+        assert_eq!(hints[0].label, ": u64");
+    }
+
+    /// hints_for_line returns empty for a line with no hints.
+    #[test]
+    fn inlay_hint_line_with_no_hints_returns_empty() {
+        let mut provider = InlayHintProvider::new();
+        provider.add_hint(5, 0, ": u8", HintKind::Type);
+        // Line 6 has no hints
+        assert!(provider.hints_for_line(6).is_empty());
+    }
 }

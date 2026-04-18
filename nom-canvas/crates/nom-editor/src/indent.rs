@@ -382,4 +382,92 @@ mod tests {
         result.swap(target, target + 1);
         assert_eq!(result, vec!["line1", "line3", "line2"]);
     }
+
+    // ── wave AB: indentation tests ───────────────────────────────────────────
+
+    /// Auto-indent after `{`: next line gets one extra indent level relative to the line with `{`.
+    #[test]
+    fn auto_indent_after_open_brace_adds_level() {
+        let prev_line = "define foo {";
+        // base leading whitespace of prev_line is empty (no leading spaces)
+        let base = auto_indent_text(prev_line, 4);
+        assert_eq!(base, ""); // no leading whitespace
+        // smart indent: base + one level
+        let smart = indent_line(&base, 4);
+        assert_eq!(smart, "    ");
+    }
+
+    /// Auto-indent after `}`: closing brace line is dedented relative to body.
+    #[test]
+    fn auto_indent_after_close_brace_decreases_level() {
+        let body_line = "    result 42";
+        let base = auto_indent_text(body_line, 4);
+        assert_eq!(base, "    ");
+        // Closing brace is at one level less
+        let close = dedent_line(&base, 4);
+        assert_eq!(close, "");
+    }
+
+    /// Blank line preserves previous indent level.
+    #[test]
+    fn auto_indent_blank_line_preserves_prev_indent() {
+        // Prev line has 8 spaces indent; blank next line should keep 8 spaces.
+        let prev = "        define nested";
+        let indent = auto_indent_text(prev, 4);
+        assert_eq!(indent, "        ");
+    }
+
+    /// Tab width 4 produces exactly 4 spaces per indent_line call.
+    #[test]
+    fn indent_tab_width_4_produces_4_spaces() {
+        let result = indent_line("code", 4);
+        assert!(result.starts_with("    "), "must start with 4 spaces");
+        assert!(!result.starts_with("     "), "must not start with 5 spaces");
+    }
+
+    /// Mixed tabs/spaces normalized to spaces via tab replacement.
+    #[test]
+    fn indent_mixed_tabs_spaces_normalized_to_spaces() {
+        let mixed = "\t    mixed";
+        let normalized = mixed.replace('\t', "    ");
+        assert!(!normalized.contains('\t'), "no tabs after normalization");
+        assert!(normalized.starts_with("        "), "tab(4) + 4 spaces = 8 spaces");
+    }
+
+    /// auto_indent_text on a 2-space-indented line returns 2 spaces.
+    #[test]
+    fn auto_indent_two_space_indent_preserved() {
+        let prev = "  code";
+        let result = auto_indent_text(prev, 2);
+        assert_eq!(result, "  ");
+    }
+
+    /// dedent_line on a line with fewer spaces than tab_size removes all leading spaces.
+    #[test]
+    fn dedent_fewer_spaces_than_tab_size_removes_all() {
+        let result = dedent_line("  x", 8); // only 2 spaces, tab_size=8
+        assert_eq!(result, "x");
+    }
+
+    /// indent_line with tab_size=8 produces 8 spaces.
+    #[test]
+    fn indent_tab_width_8_produces_8_spaces() {
+        let result = indent_line("x", 8);
+        assert_eq!(&result[..8], "        ");
+        assert!(result.ends_with('x'));
+    }
+
+    /// auto_indent_text on a tab-only line returns the tab character.
+    #[test]
+    fn auto_indent_tab_only_line_returns_tab() {
+        let result = auto_indent_text("\t", 4);
+        assert_eq!(result, "\t");
+    }
+
+    /// dedent_line on an already-clean line (no spaces) returns unchanged.
+    #[test]
+    fn dedent_line_already_clean_unchanged() {
+        let result = dedent_line("clean", 4);
+        assert_eq!(result, "clean");
+    }
 }

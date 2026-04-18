@@ -322,4 +322,188 @@ mod tests {
         let menu = CompletionMenu::new(items, 0);
         assert_eq!(menu.visible_items().len(), 100);
     }
+
+    // ── wave AB: completion tests ────────────────────────────────────────────
+
+    /// Empty prefix returns all completions via visible_items.
+    #[test]
+    fn completion_empty_prefix_returns_all() {
+        let menu = CompletionMenu::new(
+            vec![make_item("alpha"), make_item("beta"), make_item("gamma"), make_item("delta")],
+            0,
+        );
+        // No filter set — all 4 items visible
+        assert_eq!(menu.visible_items().len(), 4);
+    }
+
+    /// Filter is applied case-insensitively.
+    #[test]
+    fn completion_filter_case_insensitive() {
+        let mut menu = CompletionMenu::new(
+            vec![make_item("Define"), make_item("DEFINE"), make_item("describe")],
+            0,
+        );
+        menu.filter_items("define");
+        let visible = menu.visible_items();
+        // "Define" and "DEFINE" both lowercased start with "define"
+        assert_eq!(visible.len(), 2);
+    }
+
+    /// CompletionItem with a documentation/detail field is preserved.
+    #[test]
+    fn completion_item_detail_field_preserved() {
+        use crate::lsp_bridge::CompletionKind;
+        let item = CompletionItem {
+            label: "summarize".into(),
+            kind: CompletionKind::Function,
+            detail: Some("fn summarize(text: str) -> str".into()),
+            insert_text: "summarize".into(),
+            sort_text: None,
+        };
+        assert!(item.detail.is_some());
+        assert_eq!(item.detail.as_deref(), Some("fn summarize(text: str) -> str"));
+    }
+
+    /// CompletionKind::Keyword round-trips through construction.
+    #[test]
+    fn completion_kind_keyword_round_trip() {
+        use crate::lsp_bridge::CompletionKind;
+        let item = CompletionItem {
+            label: "define".into(),
+            kind: CompletionKind::Keyword,
+            detail: None,
+            insert_text: "define".into(),
+            sort_text: None,
+        };
+        assert_eq!(item.kind, CompletionKind::Keyword);
+    }
+
+    /// CompletionKind::Value round-trips through construction.
+    #[test]
+    fn completion_kind_value_round_trip() {
+        use crate::lsp_bridge::CompletionKind;
+        let item = CompletionItem {
+            label: "count".into(),
+            kind: CompletionKind::Value,
+            detail: None,
+            insert_text: "count".into(),
+            sort_text: None,
+        };
+        assert_eq!(item.kind, CompletionKind::Value);
+    }
+
+    /// Empty completion list returns empty vec, not an error.
+    #[test]
+    fn completion_empty_list_returns_empty_vec() {
+        let menu = CompletionMenu::new(vec![], 0);
+        assert!(menu.visible_items().is_empty());
+        assert!(menu.is_empty());
+        assert!(menu.selected_item().is_none());
+    }
+
+    /// insert_text overwrites the prefix range — insert_text does not contain the prefix again.
+    #[test]
+    fn completion_insert_text_overwrites_prefix() {
+        // The insert_text is the full replacement, not prefix + suffix.
+        use crate::lsp_bridge::CompletionKind;
+        let item = CompletionItem {
+            label: "describe".into(),
+            kind: CompletionKind::Function,
+            detail: None,
+            insert_text: "describe".into(),
+            sort_text: None,
+        };
+        // When triggered at prefix "des", the insert_text replaces the full word.
+        let prefix = "des";
+        assert!(item.insert_text.starts_with(prefix));
+        // insert_text is the whole word, not prefix repeated
+        assert_eq!(item.insert_text, "describe");
+    }
+
+    /// Max completions limit: only first N items are shown when sliced.
+    #[test]
+    fn completion_max_limit_respected() {
+        let items: Vec<_> = (0..20).map(|i| make_item(&format!("item_{i:02}"))).collect();
+        let menu = CompletionMenu::new(items, 0);
+        let max = 5usize;
+        let limited: Vec<_> = menu.visible_items().into_iter().take(max).collect();
+        assert_eq!(limited.len(), max);
+    }
+
+    /// sort_text field is preserved when set.
+    #[test]
+    fn completion_sort_text_preserved() {
+        use crate::lsp_bridge::CompletionKind;
+        let item = CompletionItem {
+            label: "foo".into(),
+            kind: CompletionKind::Function,
+            detail: None,
+            insert_text: "foo".into(),
+            sort_text: Some("aaa_foo".into()),
+        };
+        assert_eq!(item.sort_text.as_deref(), Some("aaa_foo"));
+    }
+
+    /// filter_items resets selected index to 0.
+    #[test]
+    fn completion_filter_resets_selected_index() {
+        let mut menu = CompletionMenu::new(
+            vec![make_item("alpha"), make_item("beta"), make_item("almond")],
+            0,
+        );
+        menu.select_next(); // selected = 1
+        menu.filter_items("al");
+        assert_eq!(menu.selected, 0);
+    }
+
+    /// visible_items after filter contains only matching items.
+    #[test]
+    fn completion_visible_items_only_matching_after_filter() {
+        let mut menu = CompletionMenu::new(
+            vec![make_item("map"), make_item("filter"), make_item("fold"), make_item("flat_map")],
+            0,
+        );
+        menu.filter_items("f");
+        let visible = menu.visible_items();
+        assert!(visible.iter().all(|i| i.label.starts_with('f')));
+        // "filter", "fold", "flat_map" match; "map" does not
+        assert_eq!(visible.len(), 3);
+    }
+
+    /// is_empty returns false when items exist.
+    #[test]
+    fn completion_is_empty_false_when_items_present() {
+        let menu = CompletionMenu::new(vec![make_item("foo")], 0);
+        assert!(!menu.is_empty());
+    }
+
+    /// trigger_pos is preserved through the menu lifecycle.
+    #[test]
+    fn completion_trigger_pos_preserved() {
+        let menu = CompletionMenu::new(vec![make_item("bar")], 42);
+        assert_eq!(menu.trigger_pos, 42);
+    }
+
+    /// CompletionKind::Module round-trips through construction.
+    #[test]
+    fn completion_kind_module_round_trip() {
+        use crate::lsp_bridge::CompletionKind;
+        let item = CompletionItem {
+            label: "std".into(),
+            kind: CompletionKind::Module,
+            detail: None,
+            insert_text: "std".into(),
+            sort_text: None,
+        };
+        assert_eq!(item.kind, CompletionKind::Module);
+    }
+
+    /// CompletionKind::Snippet is distinct from all other kinds.
+    #[test]
+    fn completion_kind_snippet_distinct() {
+        use crate::lsp_bridge::CompletionKind;
+        assert_ne!(CompletionKind::Snippet, CompletionKind::Function);
+        assert_ne!(CompletionKind::Snippet, CompletionKind::Keyword);
+        assert_ne!(CompletionKind::Snippet, CompletionKind::Value);
+    }
 }

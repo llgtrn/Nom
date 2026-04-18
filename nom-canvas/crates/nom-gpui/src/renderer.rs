@@ -2838,4 +2838,300 @@ mod tests {
             "vertex shader must consume vertex_index builtin (documents no separate UBO in stubs)"
         );
     }
+
+    // ------------------------------------------------------------------
+    // Wave AK: Additional coverage for new struct/enum variants
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn wgpu_instance_config_is_copy() {
+        // WgpuInstanceConfig derives Copy; assigning must not move the original.
+        let cfg = WgpuInstanceConfig::default();
+        let copy = cfg;
+        assert_eq!(cfg.backends, copy.backends, "Copy must produce identical value");
+    }
+
+    #[test]
+    fn wgpu_instance_config_partial_eq() {
+        let a = WgpuInstanceConfig::default();
+        let b = WgpuInstanceConfig::default();
+        assert_eq!(a, b, "two defaults must be equal");
+        let c = WgpuInstanceConfig { backends: "dx12", ..WgpuInstanceConfig::default() };
+        assert_ne!(a, c, "different backends must not be equal");
+    }
+
+    #[test]
+    fn wgpu_instance_config_gl_backend() {
+        let cfg = WgpuInstanceConfig { backends: "gl", ..WgpuInstanceConfig::default() };
+        assert_eq!(cfg.backends, "gl");
+        assert_eq!(cfg.dx12_shader_compiler, "fxc");
+        assert_eq!(cfg.gles_minor_version, 2);
+    }
+
+    #[test]
+    fn wgpu_instance_config_gles_minor_version_can_be_0() {
+        let cfg = WgpuInstanceConfig { gles_minor_version: 0, ..WgpuInstanceConfig::default() };
+        assert_eq!(cfg.gles_minor_version, 0);
+    }
+
+    #[test]
+    fn wgpu_instance_config_gles_minor_version_can_be_3() {
+        let cfg = WgpuInstanceConfig { gles_minor_version: 3, ..WgpuInstanceConfig::default() };
+        assert_eq!(cfg.gles_minor_version, 3);
+    }
+
+    #[test]
+    fn wgpu_instance_config_dx12_dxc_compiler() {
+        let cfg = WgpuInstanceConfig { dx12_shader_compiler: "dxc", ..WgpuInstanceConfig::default() };
+        assert_eq!(cfg.dx12_shader_compiler, "dxc");
+    }
+
+    #[test]
+    fn swapchain_config_is_copy() {
+        let cfg = SwapchainConfig::default_for_size(100, 200);
+        let copy = cfg;
+        assert_eq!(cfg.width, copy.width);
+        assert_eq!(cfg.height, copy.height);
+    }
+
+    #[test]
+    fn swapchain_config_partial_eq() {
+        let a = SwapchainConfig::default_for_size(800, 600);
+        let b = SwapchainConfig::default_for_size(800, 600);
+        assert_eq!(a, b, "two identical configs must be equal");
+        let c = SwapchainConfig::default_for_size(1920, 1080);
+        assert_ne!(a, c, "different sizes must not be equal");
+    }
+
+    #[test]
+    fn swapchain_config_format_never_empty() {
+        let cfg = SwapchainConfig::default_for_size(640, 480);
+        assert!(!cfg.format.is_empty(), "format must not be empty string");
+    }
+
+    #[test]
+    fn swapchain_config_present_mode_never_empty() {
+        let cfg = SwapchainConfig::default_for_size(640, 480);
+        assert!(!cfg.present_mode.is_empty(), "present_mode must not be empty");
+    }
+
+    #[test]
+    fn swapchain_config_alpha_mode_never_empty() {
+        let cfg = SwapchainConfig::default_for_size(640, 480);
+        assert!(!cfg.alpha_mode.is_empty(), "alpha_mode must not be empty");
+    }
+
+    #[test]
+    fn color_space_linear_and_gamma_differ() {
+        assert_ne!(ColorSpace::Linear, ColorSpace::Gamma, "Linear and Gamma must be distinct");
+    }
+
+    #[test]
+    fn color_space_linear_is_copy() {
+        let cs = ColorSpace::Linear;
+        let copy = cs;
+        assert_eq!(cs, copy);
+    }
+
+    #[test]
+    fn color_space_gamma_is_copy() {
+        let cs = ColorSpace::Gamma;
+        let copy = cs;
+        assert_eq!(cs, copy);
+    }
+
+    #[test]
+    fn gpu_state_unavailable_is_copy() {
+        // GpuState derives Clone but is not Copy (contains wgpu::TextureFormat which is not Copy).
+        // Verify Unavailable can be cloned.
+        let s = GpuState::Unavailable;
+        let cloned = s.clone();
+        assert_eq!(s, cloned);
+    }
+
+    #[test]
+    fn gpu_state_requested_is_clone() {
+        let s = GpuState::Requested;
+        let cloned = s.clone();
+        assert_eq!(s, cloned);
+    }
+
+    #[test]
+    fn gpu_state_three_variants_all_distinct() {
+        let unavailable = GpuState::Unavailable;
+        let requested = GpuState::Requested;
+        let ready = GpuState::Ready { surface_format: wgpu::TextureFormat::Bgra8UnormSrgb };
+        assert_ne!(unavailable, requested);
+        assert_ne!(unavailable, ready);
+        assert_ne!(requested, ready);
+    }
+
+    #[test]
+    fn negotiate_surface_format_prefers_bgra_over_rgba() {
+        // bgra8unorm-srgb before rgba8unorm-srgb → bgra8 wins.
+        let candidates = &["rgba8unorm-srgb", "bgra8unorm-srgb"];
+        // rgba comes first but bgra is not "preferred" — the function returns the first match.
+        // Since rgba appears before bgra, the first-match result must be rgba8unorm-srgb.
+        let result = Renderer::negotiate_surface_format(candidates);
+        assert_eq!(result, Some("rgba8unorm-srgb"), "first matching format wins");
+    }
+
+    #[test]
+    fn negotiate_surface_format_single_unsupported_returns_none() {
+        assert_eq!(Renderer::negotiate_surface_format(&["r32float"]), None);
+    }
+
+    #[test]
+    fn negotiate_surface_format_with_duplicates_returns_first() {
+        let candidates = &["bgra8unorm-srgb", "bgra8unorm-srgb"];
+        assert_eq!(
+            Renderer::negotiate_surface_format(candidates),
+            Some("bgra8unorm-srgb"),
+            "duplicate candidates: first must be returned"
+        );
+    }
+
+    #[test]
+    fn negotiate_surface_format_mixed_valid_invalid() {
+        let candidates = &["r8unorm", "rgba8unorm-srgb", "r32float"];
+        assert_eq!(
+            Renderer::negotiate_surface_format(candidates),
+            Some("rgba8unorm-srgb"),
+            "must skip unsupported and return first supported"
+        );
+    }
+
+    #[test]
+    fn device_request_required_limits_preserved() {
+        let req = DeviceRequest {
+            power_preference: "low-power",
+            required_features: vec![],
+            required_limits: "downlevel_webgl2",
+        };
+        assert_eq!(req.required_limits, "downlevel_webgl2");
+    }
+
+    #[test]
+    fn device_request_required_features_can_be_nonempty() {
+        let req = DeviceRequest {
+            power_preference: "high-performance",
+            required_features: vec!["texture_compression_bc"],
+            required_limits: "default",
+        };
+        assert_eq!(req.required_features.len(), 1);
+        assert_eq!(req.required_features[0], "texture_compression_bc");
+    }
+
+    #[test]
+    fn create_instance_config_backends_is_all() {
+        let cfg = Renderer::create_instance_config();
+        assert_eq!(cfg.backends, "all", "create_instance_config must return backends=all");
+    }
+
+    #[test]
+    fn create_instance_config_dx12_is_fxc() {
+        let cfg = Renderer::create_instance_config();
+        assert_eq!(cfg.dx12_shader_compiler, "fxc");
+    }
+
+    #[test]
+    fn create_instance_config_gles_version_is_2() {
+        let cfg = Renderer::create_instance_config();
+        assert_eq!(cfg.gles_minor_version, 2);
+    }
+
+    #[test]
+    fn pipeline_descriptor_is_copy() {
+        let d = describe_quad_pipeline();
+        let copy = d;
+        assert_eq!(d.topology, copy.topology);
+        assert_eq!(d.color_format, copy.color_format);
+    }
+
+    #[test]
+    fn describe_quad_pipeline_color_format_not_empty() {
+        let d = describe_quad_pipeline();
+        assert!(!d.color_format.is_empty(), "color_format must not be empty");
+    }
+
+    #[test]
+    fn describe_sprite_pipeline_color_format_not_empty() {
+        let d = describe_sprite_pipeline();
+        assert!(!d.color_format.is_empty(), "color_format must not be empty");
+    }
+
+    #[test]
+    fn describe_sprite_pipeline_vertex_entry_is_vs_main() {
+        let d = describe_sprite_pipeline();
+        assert_eq!(d.vertex_entry, "vs_main");
+    }
+
+    #[test]
+    fn describe_sprite_pipeline_fragment_entry_is_fs_main() {
+        let d = describe_sprite_pipeline();
+        assert_eq!(d.fragment_entry, "fs_main");
+    }
+
+    #[test]
+    fn sprite_pipeline_vertex_shader_nonempty() {
+        let d = describe_sprite_pipeline();
+        assert!(!d.vertex_shader.trim().is_empty(), "sprite vertex shader must not be empty");
+    }
+
+    #[test]
+    fn sprite_pipeline_fragment_shader_nonempty() {
+        let d = describe_sprite_pipeline();
+        assert!(!d.fragment_shader.trim().is_empty(), "sprite fragment shader must not be empty");
+    }
+
+    #[test]
+    fn gpu_state_ready_clone_preserves_format() {
+        let original = GpuState::Ready { surface_format: wgpu::TextureFormat::Rgba8UnormSrgb };
+        let cloned = original.clone();
+        assert_eq!(original, cloned, "cloned Ready state must equal original");
+    }
+
+    #[test]
+    fn renderer_request_gpu_default_limits_is_default() {
+        let req = Renderer::request_gpu("high-performance");
+        assert_eq!(req.required_limits, "default");
+    }
+
+    #[test]
+    fn frame_stats_copy_semantics() {
+        let stats = FrameStats { quads_drawn: 5, frames: 2, ..FrameStats::default() };
+        let copy = stats;
+        assert_eq!(stats.quads_drawn, copy.quads_drawn);
+        assert_eq!(stats.frames, copy.frames);
+    }
+
+    #[test]
+    fn linear_rgba_is_pod_zeroable() {
+        // bytemuck::Zeroable requires that all-zeros is a valid value.
+        let zeroed: LinearRgba = bytemuck::Zeroable::zeroed();
+        for ch in zeroed.0 {
+            assert_eq!(ch, 0.0, "zeroed LinearRgba channels must all be 0");
+        }
+    }
+
+    #[test]
+    fn sprite_instance_is_pod_zeroable() {
+        let zeroed: SpriteInstance = bytemuck::Zeroable::zeroed();
+        assert_eq!(zeroed.bounds, [0.0f32; 4]);
+        assert_eq!(zeroed.tile_rect, [0.0f32; 4]);
+        assert_eq!(zeroed.color, [0.0f32; 4]);
+    }
+
+    #[test]
+    fn ortho_projection_negative_y_axis() {
+        // The renderer uses top-left origin; y-axis is flipped → y scale must be negative.
+        let m = ortho_projection(1920.0, 1080.0);
+        assert!(m[1][1] < 0.0, "y scale must be negative (top-left origin convention)");
+    }
+
+    #[test]
+    fn ortho_projection_positive_x_axis() {
+        let m = ortho_projection(1920.0, 1080.0);
+        assert!(m[0][0] > 0.0, "x scale must be positive");
+    }
 }

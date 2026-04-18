@@ -346,4 +346,124 @@ mod tests {
         assert_eq!(cloned.steps[0].input_key, "a");
         assert_eq!(cloned.steps[1].input_key, "c");
     }
+
+    // ── Wave AE new tests ────────────────────────────────────────────────────
+
+    #[test]
+    fn plan_zero_steps_topo_is_empty_and_dag_is_valid() {
+        // An empty plan is technically a valid DAG (trivially); topo order is empty.
+        let plan = CompositionPlan::new();
+        assert!(plan.steps.is_empty(), "new plan must have zero steps");
+        let order = plan.topo_order();
+        assert!(order.is_empty(), "zero-step plan must have empty topo order");
+        // is_valid_dag returns true for empty plan since len==0==0.
+        assert!(plan.is_valid_dag(), "empty plan is a valid (trivial) DAG");
+    }
+
+    #[test]
+    fn plan_step_insertion_order_preserved_in_steps_vec() {
+        // Steps must appear in insertion order in plan.steps regardless of dependencies.
+        let mut plan = CompositionPlan::new();
+        let keys = ["alpha", "beta", "gamma", "delta"];
+        for k in &keys {
+            plan.add_step(BackendKind::Transform, *k, "out");
+        }
+        for (i, k) in keys.iter().enumerate() {
+            assert_eq!(plan.steps[i].input_key, *k, "step {i} input key must be '{k}'");
+        }
+    }
+
+    #[test]
+    fn plan_round_trip_fields_via_clone() {
+        // Simulate serialization round-trip: build → clone → verify all fields intact.
+        let mut plan = CompositionPlan::new();
+        let a = plan.add_step(BackendKind::Video, "v_src", "v_out");
+        let b = plan.add_step_after(BackendKind::Export, "v_out", "exported", vec![a]);
+        let rt = plan.clone();
+        assert_eq!(rt.steps.len(), 2);
+        assert_eq!(rt.steps[0].step_id, a);
+        assert_eq!(rt.steps[0].input_key, "v_src");
+        assert_eq!(rt.steps[0].output_key, "v_out");
+        assert!(rt.steps[0].depends_on.is_empty());
+        assert_eq!(rt.steps[1].step_id, b);
+        assert_eq!(rt.steps[1].input_key, "v_out");
+        assert_eq!(rt.steps[1].output_key, "exported");
+        assert_eq!(rt.steps[1].depends_on, vec![a]);
+    }
+
+    #[test]
+    fn plan_step_ids_are_unique_and_sequential() {
+        // The API auto-assigns step IDs so duplicates are impossible; verify uniqueness.
+        let mut plan = CompositionPlan::new();
+        let mut ids = Vec::new();
+        for _ in 0..8 {
+            let id = plan.add_step(BackendKind::Transform, "x", "y");
+            ids.push(id);
+        }
+        let unique: std::collections::HashSet<usize> = ids.iter().copied().collect();
+        assert_eq!(unique.len(), ids.len(), "all step IDs must be unique");
+        // Also sequential from 0.
+        for (i, &id) in ids.iter().enumerate() {
+            assert_eq!(id, i);
+        }
+    }
+
+    #[test]
+    fn plan_large_step_count_topo_order_contains_all() {
+        // A flat plan with 50 independent steps must have all 50 in topo order.
+        let mut plan = CompositionPlan::new();
+        for _ in 0..50 {
+            plan.add_step(BackendKind::Transform, "in", "out");
+        }
+        assert_eq!(plan.steps.len(), 50);
+        assert!(plan.is_valid_dag());
+        let order = plan.topo_order();
+        assert_eq!(order.len(), 50, "all 50 steps must appear in topo order");
+    }
+
+    #[test]
+    fn plan_step_ordering_respected_in_three_level_chain() {
+        // A → B → C: topo order must be A, B, C.
+        let mut plan = CompositionPlan::new();
+        let a = plan.add_step(BackendKind::Video, "raw", "v");
+        let b = plan.add_step_after(BackendKind::Audio, "v", "av", vec![a]);
+        let c = plan.add_step_after(BackendKind::Export, "av", "final", vec![b]);
+        let order = plan.topo_order();
+        let pos = |id| order.iter().position(|&x| x == id).unwrap();
+        assert!(pos(a) < pos(b), "A must come before B");
+        assert!(pos(b) < pos(c), "B must come before C");
+    }
+
+    #[test]
+    fn plan_parallel_then_merge_ordering() {
+        // A and B are independent; both feed C.  A and B can be in any order but must precede C.
+        let mut plan = CompositionPlan::new();
+        let a = plan.add_step(BackendKind::Video, "v", "v_out");
+        let b = plan.add_step(BackendKind::Audio, "a", "a_out");
+        let c = plan.add_step_after(BackendKind::Export, "merged", "final", vec![a, b]);
+        assert!(plan.is_valid_dag());
+        let order = plan.topo_order();
+        let pos = |id| order.iter().position(|&x| x == id).unwrap();
+        assert!(pos(a) < pos(c), "A must precede C");
+        assert!(pos(b) < pos(c), "B must precede C");
+    }
+
+    #[test]
+    fn plan_add_step_after_with_multiple_deps_preserves_all() {
+        let mut plan = CompositionPlan::new();
+        let a = plan.add_step(BackendKind::Video, "a", "va");
+        let b = plan.add_step(BackendKind::Audio, "b", "ab");
+        let c = plan.add_step(BackendKind::Image, "c", "ic");
+        let d = plan.add_step_after(BackendKind::Export, "combo", "out", vec![a, b, c]);
+        assert_eq!(plan.steps[d].depends_on, vec![a, b, c]);
+    }
+
+    #[test]
+    fn plan_single_step_is_dag_and_topo_contains_it() {
+        let mut plan = CompositionPlan::new();
+        let id = plan.add_step(BackendKind::Render, "in", "out");
+        assert!(plan.is_valid_dag());
+        let order = plan.topo_order();
+        assert_eq!(order, vec![id]);
+    }
 }

@@ -2400,4 +2400,328 @@ mod tests {
         assert!((dag.edges[0].confidence - 0.4).abs() < 1e-6);
         assert!((dag.edges[1].confidence - 0.9).abs() < 1e-6);
     }
+
+    // ------------------------------------------------------------------
+    // Cycle detection: DAG with no cycle returns Ok
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_no_cycle_returns_ok() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("n1", "verb"));
+        dag.add_node(ExecNode::new("n2", "verb"));
+        dag.add_node(ExecNode::new("n3", "verb"));
+        dag.add_edge("n1", "out", "n2", "in");
+        dag.add_edge("n2", "out", "n3", "in");
+        assert!(
+            dag.topological_sort().is_ok(),
+            "acyclic chain n1→n2→n3 must return Ok"
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // Cycle detection: graph with cycle returns Err containing cycle nodes
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_cycle_returns_err_with_cycle_nodes_v2() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("A", "verb"));
+        dag.add_node(ExecNode::new("B", "verb"));
+        dag.add_node(ExecNode::new("C", "verb"));
+        dag.add_node(ExecNode::new("outside", "verb"));
+        dag.add_edge("outside", "out", "A", "in"); // outside is not in cycle
+        dag.add_edge("A", "out", "B", "in");
+        dag.add_edge("B", "out", "C", "in");
+        dag.add_edge("C", "out", "A", "in"); // back-edge creates cycle A→B→C→A
+        let err = dag.topological_sort().unwrap_err();
+        // All three cycle nodes must appear; outside must NOT be in the error set.
+        assert!(err.contains(&"A".to_string()), "A must be in cycle error");
+        assert!(err.contains(&"B".to_string()), "B must be in cycle error");
+        assert!(err.contains(&"C".to_string()), "C must be in cycle error");
+        assert!(
+            !err.contains(&"outside".to_string()),
+            "outside (acyclic) must NOT appear in cycle error"
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // Cycle detection: self-loop is detected
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_self_loop_detected_v2() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("loop_node", "verb"));
+        dag.add_edge("loop_node", "out", "loop_node", "in");
+        assert!(
+            dag.topological_sort().is_err(),
+            "self-loop loop_node→loop_node must be detected as cycle"
+        );
+        let err = dag.topological_sort().unwrap_err();
+        assert!(
+            err.contains(&"loop_node".to_string()),
+            "loop_node must appear in cycle error set"
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // Subgraph extraction: reachable nodes from a source via BFS
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_subgraph_reachable_from_source() {
+        // Graph: src → a → b, src → c, d is isolated
+        let mut dag = Dag::new();
+        for n in &["src", "a", "b", "c", "d"] {
+            dag.add_node(ExecNode::new(*n, "verb"));
+        }
+        dag.add_edge("src", "out", "a", "in");
+        dag.add_edge("a", "out", "b", "in");
+        dag.add_edge("src", "out", "c", "in");
+
+        // BFS from "src" to collect reachable nodes.
+        let mut reachable = std::collections::HashSet::new();
+        let mut queue = std::collections::VecDeque::new();
+        queue.push_back("src".to_string());
+        reachable.insert("src".to_string());
+        while let Some(cur) = queue.pop_front() {
+            for edge in &dag.edges {
+                if edge.src_node == cur && !reachable.contains(&edge.dst_node) {
+                    reachable.insert(edge.dst_node.clone());
+                    queue.push_back(edge.dst_node.clone());
+                }
+            }
+        }
+
+        assert!(reachable.contains("src"), "src must be reachable from itself");
+        assert!(reachable.contains("a"), "a must be reachable from src");
+        assert!(reachable.contains("b"), "b must be reachable from src via a");
+        assert!(reachable.contains("c"), "c must be reachable from src");
+        assert!(
+            !reachable.contains("d"),
+            "d is isolated and must NOT be reachable from src"
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // Subgraph extraction: node with no outgoing edges = singleton subgraph
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_subgraph_leaf_has_no_outgoing_edges() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("root", "verb"));
+        dag.add_node(ExecNode::new("leaf", "verb"));
+        dag.add_edge("root", "out", "leaf", "in");
+
+        // BFS from "leaf": leaf has no outgoing edges, so reachable set = {leaf}.
+        let mut reachable = std::collections::HashSet::new();
+        let mut queue = std::collections::VecDeque::new();
+        queue.push_back("leaf".to_string());
+        reachable.insert("leaf".to_string());
+        while let Some(cur) = queue.pop_front() {
+            for edge in &dag.edges {
+                if edge.src_node == cur && !reachable.contains(&edge.dst_node) {
+                    reachable.insert(edge.dst_node.clone());
+                    queue.push_back(edge.dst_node.clone());
+                }
+            }
+        }
+        assert_eq!(reachable.len(), 1, "leaf has no outgoing edges; subgraph = singleton");
+        assert!(reachable.contains("leaf"));
+        assert!(!reachable.contains("root"), "root is not reachable from leaf (directed graph)");
+    }
+
+    // ------------------------------------------------------------------
+    // Graph diffing: identical graphs produce empty diff
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_diff_identical_graphs_empty() {
+        let make = || {
+            let mut d = Dag::new();
+            d.add_node(ExecNode::new("x", "verb"));
+            d.add_node(ExecNode::new("y", "verb"));
+            d.add_edge("x", "out", "y", "in");
+            d
+        };
+        let dag1 = make();
+        let dag2 = make();
+
+        // Diff = nodes in dag1 but not dag2, and edges in dag1 but not dag2.
+        let added_nodes: Vec<_> = dag2
+            .nodes
+            .keys()
+            .filter(|id| !dag1.nodes.contains_key(*id))
+            .collect();
+        let removed_nodes: Vec<_> = dag1
+            .nodes
+            .keys()
+            .filter(|id| !dag2.nodes.contains_key(*id))
+            .collect();
+        let dag1_edge_set: std::collections::HashSet<(&str, &str)> = dag1
+            .edges
+            .iter()
+            .map(|e| (e.src_node.as_str(), e.dst_node.as_str()))
+            .collect();
+        let dag2_edge_set: std::collections::HashSet<(&str, &str)> = dag2
+            .edges
+            .iter()
+            .map(|e| (e.src_node.as_str(), e.dst_node.as_str()))
+            .collect();
+        let added_edges: Vec<_> = dag2_edge_set.difference(&dag1_edge_set).collect();
+        let removed_edges: Vec<_> = dag1_edge_set.difference(&dag2_edge_set).collect();
+
+        assert!(added_nodes.is_empty(), "no nodes added between identical graphs");
+        assert!(removed_nodes.is_empty(), "no nodes removed between identical graphs");
+        assert!(added_edges.is_empty(), "no edges added between identical graphs");
+        assert!(removed_edges.is_empty(), "no edges removed between identical graphs");
+    }
+
+    // ------------------------------------------------------------------
+    // Graph diffing: added edge shows in diff
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_diff_added_edge_shows_in_diff() {
+        let mut dag1 = Dag::new();
+        dag1.add_node(ExecNode::new("a", "verb"));
+        dag1.add_node(ExecNode::new("b", "verb"));
+        dag1.add_node(ExecNode::new("c", "verb"));
+        dag1.add_edge("a", "out", "b", "in");
+
+        let mut dag2 = Dag::new();
+        dag2.add_node(ExecNode::new("a", "verb"));
+        dag2.add_node(ExecNode::new("b", "verb"));
+        dag2.add_node(ExecNode::new("c", "verb"));
+        dag2.add_edge("a", "out", "b", "in");
+        dag2.add_edge("b", "out", "c", "in"); // new edge
+
+        let dag1_edges: std::collections::HashSet<(&str, &str)> = dag1
+            .edges
+            .iter()
+            .map(|e| (e.src_node.as_str(), e.dst_node.as_str()))
+            .collect();
+        let dag2_edges: std::collections::HashSet<(&str, &str)> = dag2
+            .edges
+            .iter()
+            .map(|e| (e.src_node.as_str(), e.dst_node.as_str()))
+            .collect();
+        let added: Vec<_> = dag2_edges.difference(&dag1_edges).collect();
+
+        assert_eq!(added.len(), 1, "exactly one edge was added");
+        assert!(
+            added.iter().any(|&&(s, d)| s == "b" && d == "c"),
+            "the added edge must be b→c"
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // Graph diffing: removed node shows in diff
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_diff_removed_node_shows_in_diff() {
+        let mut dag1 = Dag::new();
+        dag1.add_node(ExecNode::new("a", "verb"));
+        dag1.add_node(ExecNode::new("b", "verb"));
+        dag1.add_node(ExecNode::new("c", "verb"));
+
+        let mut dag2 = Dag::new();
+        dag2.add_node(ExecNode::new("a", "verb"));
+        dag2.add_node(ExecNode::new("b", "verb"));
+        // "c" was removed
+
+        let removed: Vec<_> = dag1
+            .nodes
+            .keys()
+            .filter(|id| !dag2.nodes.contains_key(*id))
+            .collect();
+        assert_eq!(removed.len(), 1, "exactly one node was removed");
+        assert_eq!(removed[0].as_str(), "c", "the removed node must be c");
+    }
+
+    // ------------------------------------------------------------------
+    // Topological sort with tie-breaking produces stable order
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_topological_sort_tie_breaking_stable() {
+        // Four independent nodes with no edges: alphabetical sort gives stable order.
+        let mut dag = Dag::new();
+        for n in &["delta", "alpha", "gamma", "beta"] {
+            dag.add_node(ExecNode::new(*n, "verb"));
+        }
+        let s1 = dag.topological_sort().unwrap();
+        let s2 = dag.topological_sort().unwrap();
+        assert_eq!(s1, s2, "topological_sort must produce the same order on repeated calls");
+        // Kahn sorts roots alphabetically, so the result must be alphabetically sorted.
+        assert_eq!(s1, vec!["alpha", "beta", "delta", "gamma"], "no-edge DAG must sort alphabetically");
+    }
+
+    // ------------------------------------------------------------------
+    // Topological sort on disconnected graph includes all nodes
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_topological_sort_disconnected_includes_all() {
+        // Two disconnected chains: a→b and c→d, plus an isolated node e.
+        let mut dag = Dag::new();
+        for n in &["a", "b", "c", "d", "e"] {
+            dag.add_node(ExecNode::new(*n, "verb"));
+        }
+        dag.add_edge("a", "out", "b", "in");
+        dag.add_edge("c", "out", "d", "in");
+        // e has no edges.
+
+        let sorted = dag.topological_sort().unwrap();
+        assert_eq!(sorted.len(), 5, "all 5 nodes must appear in topo sort");
+        for n in &["a", "b", "c", "d", "e"] {
+            assert!(sorted.contains(&n.to_string()), "{n} must appear in sorted output");
+        }
+        // Within each chain, order must be respected.
+        let pos = |id: &str| sorted.iter().position(|x| x == id).unwrap();
+        assert!(pos("a") < pos("b"), "a must precede b");
+        assert!(pos("c") < pos("d"), "c must precede d");
+    }
+
+    // ------------------------------------------------------------------
+    // Cycle detection: 4-node cycle is fully detected
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_four_node_cycle_detected() {
+        let mut dag = Dag::new();
+        for n in &["A", "B", "C", "D"] {
+            dag.add_node(ExecNode::new(*n, "verb"));
+        }
+        dag.add_edge("A", "out", "B", "in");
+        dag.add_edge("B", "out", "C", "in");
+        dag.add_edge("C", "out", "D", "in");
+        dag.add_edge("D", "out", "A", "in"); // closes the cycle
+        let err = dag.topological_sort().unwrap_err();
+        assert_eq!(err.len(), 4, "all 4 cycle nodes must appear in the error set");
+    }
+
+    // ------------------------------------------------------------------
+    // Subgraph: node with multiple outgoing edges reaches all destinations
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_subgraph_fan_out_reaches_all() {
+        let mut dag = Dag::new();
+        for n in &["hub", "t1", "t2", "t3", "isolated"] {
+            dag.add_node(ExecNode::new(*n, "verb"));
+        }
+        dag.add_edge("hub", "out", "t1", "in");
+        dag.add_edge("hub", "out", "t2", "in");
+        dag.add_edge("hub", "out", "t3", "in");
+
+        let mut reachable = std::collections::HashSet::new();
+        let mut queue = std::collections::VecDeque::new();
+        queue.push_back("hub".to_string());
+        reachable.insert("hub".to_string());
+        while let Some(cur) = queue.pop_front() {
+            for edge in &dag.edges {
+                if edge.src_node == cur && !reachable.contains(&edge.dst_node) {
+                    reachable.insert(edge.dst_node.clone());
+                    queue.push_back(edge.dst_node.clone());
+                }
+            }
+        }
+        assert_eq!(reachable.len(), 4, "hub + 3 targets = 4 reachable nodes");
+        for n in &["hub", "t1", "t2", "t3"] {
+            assert!(reachable.contains(*n), "{n} must be reachable from hub");
+        }
+        assert!(!reachable.contains("isolated"), "isolated must not be reachable");
+    }
 }

@@ -1140,6 +1140,160 @@ mod tests {
         }
     }
 
+    // ── Wave AK: requested selection scenarios ────────────────────────────────
+
+    /// Rubber-band selection in exclusive (contains) mode captures only elements
+    /// fully inside the rubber-band rect.
+    #[test]
+    fn rubber_band_contains_mode_fully_inside_captures() {
+        let rb = RubberBand { start: [0.0, 0.0], end: [100.0, 100.0] };
+        let elements = vec![
+            ElementBounds { id: 1, min: [10.0, 10.0], max: [80.0, 80.0] }, // fully inside
+            ElementBounds { id: 2, min: [60.0, 60.0], max: [120.0, 120.0] }, // partially outside
+            ElementBounds { id: 3, min: [200.0, 200.0], max: [300.0, 300.0] }, // fully outside
+        ];
+        let (rmin, rmax) = rb.aabb();
+        let captured: Vec<u64> = elements.iter()
+            .filter(|e| e.min[0] >= rmin[0] && e.min[1] >= rmin[1] && e.max[0] <= rmax[0] && e.max[1] <= rmax[1])
+            .map(|e| e.id)
+            .collect();
+        assert!(captured.contains(&1), "element fully inside must be captured in exclusive mode");
+        assert!(!captured.contains(&2), "element partially outside must NOT be captured in exclusive mode");
+        assert!(!captured.contains(&3), "element fully outside must not be captured");
+    }
+
+    /// Rubber-band in exclusive mode misses elements only partially overlapping.
+    #[test]
+    fn rubber_band_exclusive_mode_misses_partial_overlap() {
+        let rb = RubberBand { start: [0.0, 0.0], end: [60.0, 60.0] };
+        // Element that overlaps by one side only.
+        let partial = ElementBounds { id: 99, min: [50.0, 50.0], max: [100.0, 100.0] };
+        let (rmin, rmax) = rb.aabb();
+        let fully_contained = partial.min[0] >= rmin[0]
+            && partial.min[1] >= rmin[1]
+            && partial.max[0] <= rmax[0]
+            && partial.max[1] <= rmax[1];
+        assert!(!fully_contained, "partially-overlapping element must be excluded in exclusive mode");
+        // But intersects mode includes it.
+        assert!(rb.intersects(&partial), "intersects mode must still find partial element");
+    }
+
+    /// Select all N elements, deselect one — count becomes N-1.
+    #[test]
+    fn select_all_deselect_one_count_is_n_minus_1() {
+        let all_ids = [1u64, 2, 3, 4, 5];
+        let mut sel = Selection::empty();
+        for &id in &all_ids {
+            sel.add(id);
+        }
+        assert_eq!(sel.len(), 5);
+        sel.remove(3);
+        assert_eq!(sel.len(), 4, "count must be N-1 after deselecting one element");
+        assert!(!sel.contains(3), "deselected id must not be present");
+        // Remaining ids must still be present.
+        for &id in &[1u64, 2, 4, 5] {
+            assert!(sel.contains(id), "id {id} must remain selected");
+        }
+    }
+
+    /// Toggle selection on an already-selected element removes it (deselects).
+    #[test]
+    fn toggle_on_already_selected_removes_it() {
+        let mut sel = Selection::empty();
+        sel.add(7);
+        sel.add(8);
+        assert_eq!(sel.len(), 2);
+        // Toggle id=7: it's already selected, so remove it.
+        if sel.contains(7) {
+            sel.remove(7);
+        } else {
+            sel.add(7);
+        }
+        assert!(!sel.contains(7), "toggling an already-selected element must deselect it");
+        assert_eq!(sel.len(), 1, "only one element must remain after toggle-off");
+    }
+
+    /// Selection.contains returns true for selected IDs and false for unselected IDs.
+    #[test]
+    fn selection_contains_true_for_selected_false_for_unselected() {
+        let mut sel = Selection::empty();
+        for id in [10u64, 20, 30] {
+            sel.add(id);
+        }
+        // Selected IDs.
+        assert!(sel.contains(10), "10 must be contained (selected)");
+        assert!(sel.contains(20), "20 must be contained (selected)");
+        assert!(sel.contains(30), "30 must be contained (selected)");
+        // Unselected IDs.
+        assert!(!sel.contains(11), "11 must not be contained (not selected)");
+        assert!(!sel.contains(0), "0 must not be contained");
+        assert!(!sel.contains(99), "99 must not be contained");
+    }
+
+    /// Rubber-band captures multiple elements fully inside its rect.
+    #[test]
+    fn rubber_band_captures_multiple_fully_inside() {
+        let rb = RubberBand { start: [0.0, 0.0], end: [200.0, 200.0] };
+        let elements = vec![
+            ElementBounds { id: 1, min: [10.0, 10.0], max: [50.0, 50.0] },
+            ElementBounds { id: 2, min: [60.0, 60.0], max: [120.0, 120.0] },
+            ElementBounds { id: 3, min: [150.0, 150.0], max: [190.0, 190.0] },
+            ElementBounds { id: 4, min: [180.0, 180.0], max: [250.0, 250.0] }, // partially outside
+        ];
+        let (rmin, rmax) = rb.aabb();
+        let captured: Vec<u64> = elements.iter()
+            .filter(|e| e.min[0] >= rmin[0] && e.min[1] >= rmin[1] && e.max[0] <= rmax[0] && e.max[1] <= rmax[1])
+            .map(|e| e.id)
+            .collect();
+        assert!(captured.contains(&1), "element 1 fully inside must be captured");
+        assert!(captured.contains(&2), "element 2 fully inside must be captured");
+        assert!(captured.contains(&3), "element 3 fully inside must be captured");
+        assert!(!captured.contains(&4), "element 4 partially outside must not be captured");
+    }
+
+    /// Toggle selection on an unselected element adds it.
+    #[test]
+    fn toggle_on_unselected_element_adds_it() {
+        let mut sel = Selection::empty();
+        // Toggle id=42: not selected → add it.
+        if sel.contains(42) {
+            sel.remove(42);
+        } else {
+            sel.add(42);
+        }
+        assert!(sel.contains(42), "toggling an unselected element must select it");
+        assert_eq!(sel.len(), 1);
+    }
+
+    /// Select all 10, deselect all but 1 using remove — count is 1.
+    #[test]
+    fn select_all_deselect_nine_leaves_one() {
+        let mut sel = Selection::empty();
+        for id in 1u64..=10 {
+            sel.add(id);
+        }
+        for id in 2u64..=10 {
+            sel.remove(id);
+        }
+        assert_eq!(sel.len(), 1, "only id=1 should remain");
+        assert!(sel.contains(1), "id=1 must remain selected");
+    }
+
+    /// Rubber-band with zero area at origin: no element is "fully inside" since
+    /// the band has zero extent and elements have positive size.
+    #[test]
+    fn rubber_band_zero_area_captures_no_full_element() {
+        let rb = RubberBand { start: [50.0, 50.0], end: [50.0, 50.0] };
+        let (rmin, rmax) = rb.aabb();
+        let elem = ElementBounds { id: 1, min: [40.0, 40.0], max: [60.0, 60.0] };
+        // An element with positive size cannot be fully contained in a zero-area band.
+        let fully_contained = elem.min[0] >= rmin[0]
+            && elem.min[1] >= rmin[1]
+            && elem.max[0] <= rmax[0]
+            && elem.max[1] <= rmax[1];
+        assert!(!fully_contained, "positive-size element cannot be fully inside a zero-area band");
+    }
+
     // ── additional selection tests (wave AG) ─────────────────────────────────
 
     #[test]

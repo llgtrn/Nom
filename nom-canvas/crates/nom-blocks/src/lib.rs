@@ -7,6 +7,15 @@ pub mod block_model;
 #[allow(missing_docs)]
 pub mod compose;
 pub mod connector;
+/// Edgeless (free-floating) text block.
+#[allow(missing_docs)]
+pub mod edgeless_text;
+/// Frame block: a named container for grouping child blocks.
+#[allow(missing_docs)]
+pub mod frame;
+/// LaTeX formula block.
+#[allow(missing_docs)]
+pub mod latex;
 pub mod dataview;
 pub mod dict_reader;
 /// Drawing/shape block types.

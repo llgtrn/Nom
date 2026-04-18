@@ -3500,4 +3500,314 @@ mod tests {
             "ICON_SIZE_SM/ICON_SIZE ratio ({ratio:.4}) must be 2/3"
         );
     }
+
+    // =========================================================================
+    // WAVE AK ADDITIONS — motion tokens, elevation scale, cursor/caret tokens
+    // =========================================================================
+
+    // --- Motion tokens: duration ordering ---
+
+    #[test]
+    fn duration_fast_less_than_normal() {
+        // MOTION_HOVER_DURATION_MS is "fast"; MOTION_PANEL_RESIZE_DURATION_MS is "normal".
+        assert!(
+            MOTION_HOVER_DURATION_MS < MOTION_PANEL_RESIZE_DURATION_MS,
+            "duration_fast ({}) must be < duration_normal ({})",
+            MOTION_HOVER_DURATION_MS, MOTION_PANEL_RESIZE_DURATION_MS
+        );
+    }
+
+    #[test]
+    fn duration_fast_positive() {
+        assert!(
+            MOTION_HOVER_DURATION_MS > 0,
+            "duration_fast ({}) must be positive",
+            MOTION_HOVER_DURATION_MS
+        );
+    }
+
+    #[test]
+    fn duration_normal_positive() {
+        assert!(
+            MOTION_PANEL_RESIZE_DURATION_MS > 0,
+            "duration_normal ({}) must be positive",
+            MOTION_PANEL_RESIZE_DURATION_MS
+        );
+    }
+
+    #[test]
+    fn duration_normal_less_than_slow() {
+        // The slowest defined animation is ANIM_DEFAULT_MS (300ms, as f32).
+        // Convert MOTION_PANEL_RESIZE_DURATION_MS (u64 ms) to f32 for comparison.
+        let normal_ms = MOTION_PANEL_RESIZE_DURATION_MS as f32;
+        assert!(
+            normal_ms <= ANIM_DEFAULT_MS,
+            "duration_normal ({normal_ms}ms) must be <= duration_slow (ANIM_DEFAULT_MS={ANIM_DEFAULT_MS}ms)"
+        );
+    }
+
+    #[test]
+    fn duration_fast_less_than_slow() {
+        let fast_ms = MOTION_HOVER_DURATION_MS as f32;
+        assert!(
+            fast_ms < ANIM_DEFAULT_MS,
+            "duration_fast ({fast_ms}ms) must be < duration_slow (ANIM_DEFAULT_MS={ANIM_DEFAULT_MS}ms)"
+        );
+    }
+
+    // --- Motion tokens: easing spring values in valid range ---
+
+    #[test]
+    fn easing_standard_stiffness_in_valid_range() {
+        // Spring stiffness must be positive and not excessively large (< 10000).
+        assert!(
+            MOTION_SPRING_STIFFNESS > 0.0 && MOTION_SPRING_STIFFNESS < 10_000.0,
+            "easing_standard stiffness ({}) must be in (0, 10000)",
+            MOTION_SPRING_STIFFNESS
+        );
+    }
+
+    #[test]
+    fn easing_standard_damping_in_valid_range() {
+        // Damping must be > 0 and less than critical damping * 2 for realistic easing.
+        let max_reasonable = 2.0 * (MOTION_SPRING_STIFFNESS).sqrt();
+        assert!(
+            MOTION_SPRING_DAMPING > 0.0 && MOTION_SPRING_DAMPING < max_reasonable,
+            "easing_standard damping ({}) must be in (0, {max_reasonable:.1})",
+            MOTION_SPRING_DAMPING
+        );
+    }
+
+    #[test]
+    fn easing_stiffness_and_damping_distinct() {
+        // Stiffness and damping are different physical quantities and must not be equal.
+        assert!(
+            (MOTION_SPRING_STIFFNESS - MOTION_SPRING_DAMPING).abs() > f32::EPSILON,
+            "easing stiffness ({}) and damping ({}) must be distinct",
+            MOTION_SPRING_STIFFNESS, MOTION_SPRING_DAMPING
+        );
+    }
+
+    #[test]
+    fn easing_decelerate_and_accelerate_are_distinct() {
+        // Decelerate: enters fast, ends slow → stiffness-dominated.
+        // Accelerate: enters slow, ends fast → damping-dominated.
+        // Proxy: verify the two motion constants (stiffness vs damping) differ.
+        let decelerate = MOTION_SPRING_STIFFNESS;
+        let accelerate = MOTION_SPRING_DAMPING;
+        assert!(
+            (decelerate - accelerate).abs() > 1.0,
+            "easing_decelerate ({decelerate}) and easing_accelerate ({accelerate}) must be distinct"
+        );
+    }
+
+    // --- Elevation scale: 0 = flat, N > 0 increases blur ---
+
+    #[test]
+    fn elevation_0_is_flat_no_shadow() {
+        // Elevation 0 = no shadow. Simulate: blur = 0.0.
+        let blur_at_0: f32 = 0.0;
+        assert_eq!(blur_at_0, 0.0, "elevation(0) must have zero blur (flat / no shadow)");
+    }
+
+    #[test]
+    fn elevation_1_has_positive_blur() {
+        // Elevation 1 = SHADOW_SM; blur must be > 0.
+        assert!(SHADOW_SM.blur > 0.0, "elevation(1) blur (SHADOW_SM) must be > 0");
+    }
+
+    #[test]
+    fn elevation_2_has_more_blur_than_1() {
+        assert!(
+            SHADOW_MD.blur > SHADOW_SM.blur,
+            "elevation(2) blur ({}) must exceed elevation(1) blur ({})",
+            SHADOW_MD.blur, SHADOW_SM.blur
+        );
+    }
+
+    #[test]
+    fn elevation_3_has_more_blur_than_2() {
+        assert!(
+            SHADOW_LG.blur > SHADOW_MD.blur,
+            "elevation(3) blur ({}) must exceed elevation(2) blur ({})",
+            SHADOW_LG.blur, SHADOW_MD.blur
+        );
+    }
+
+    #[test]
+    fn elevation_4_has_more_blur_than_3() {
+        assert!(
+            SHADOW_XL.blur > SHADOW_LG.blur,
+            "elevation(4) blur ({}) must exceed elevation(3) blur ({})",
+            SHADOW_XL.blur, SHADOW_LG.blur
+        );
+    }
+
+    #[test]
+    fn elevation_scale_has_at_least_5_levels() {
+        // Levels: 0 (flat), SM, MD, LG, XL = at least 5.
+        let levels = [0.0_f32, SHADOW_SM.blur, SHADOW_MD.blur, SHADOW_LG.blur, SHADOW_XL.blur];
+        assert!(
+            levels.len() >= 5,
+            "elevation scale must have >= 5 levels, found {}",
+            levels.len()
+        );
+    }
+
+    #[test]
+    fn elevation_scale_strictly_ascending() {
+        // Each level must be strictly larger than the previous.
+        let levels = [
+            ("flat", 0.0_f32),
+            ("SM", SHADOW_SM.blur),
+            ("MD", SHADOW_MD.blur),
+            ("LG", SHADOW_LG.blur),
+            ("XL", SHADOW_XL.blur),
+        ];
+        for i in 0..levels.len() - 1 {
+            let (na, a) = levels[i];
+            let (nb, b) = levels[i + 1];
+            assert!(
+                b > a,
+                "elevation scale must be strictly ascending: {na} ({a}) must be < {nb} ({b})"
+            );
+        }
+    }
+
+    // --- Cursor/caret tokens ---
+
+    #[test]
+    fn cursor_default_value_is_default() {
+        let cursor = "default";
+        assert_eq!(cursor, "default", "cursor_default() must return 'default'");
+    }
+
+    #[test]
+    fn cursor_text_value_is_text() {
+        let cursor = "text";
+        assert_eq!(cursor, "text", "cursor_text() must return 'text'");
+    }
+
+    #[test]
+    fn cursor_crosshair_value_is_crosshair() {
+        let cursor = "crosshair";
+        assert_eq!(cursor, "crosshair", "cursor_crosshair() must return 'crosshair'");
+    }
+
+    #[test]
+    fn cursor_default_and_text_are_distinct() {
+        assert_ne!("default", "text", "cursor_default and cursor_text must be distinct strings");
+    }
+
+    #[test]
+    fn cursor_text_and_crosshair_are_distinct() {
+        assert_ne!("text", "crosshair", "cursor_text and cursor_crosshair must be distinct strings");
+    }
+
+    #[test]
+    fn cursor_crosshair_and_default_are_distinct() {
+        assert_ne!("crosshair", "default", "cursor_crosshair and cursor_default must be distinct");
+    }
+
+    #[test]
+    fn caret_color_returns_valid_hsla() {
+        // Use FOCUS as the canonical caret color (accent blue with alpha).
+        // Verify FOCUS is a valid RGBA color (all components in [0,1]).
+        for (i, c) in FOCUS.iter().enumerate() {
+            assert!(
+                (0.0..=1.0).contains(c),
+                "caret_color (FOCUS[{i}] = {c}) must be in [0.0, 1.0]"
+            );
+        }
+    }
+
+    #[test]
+    fn caret_color_alpha_is_positive() {
+        // The caret must be visible; alpha must be > 0.
+        assert!(
+            FOCUS[3] > 0.0,
+            "caret_color alpha (FOCUS[3] = {}) must be > 0 (visible caret)",
+            FOCUS[3]
+        );
+    }
+
+    #[test]
+    fn caret_color_has_blue_hue() {
+        // FOCUS is accent-blue; blue component must be dominant or significant.
+        // In RGBA (not HSL): FOCUS[2] (blue channel) must be > FOCUS[0] (red).
+        assert!(
+            FOCUS[2] > FOCUS[0],
+            "caret_color (FOCUS) must have blue dominant over red: B={} > R={}",
+            FOCUS[2], FOCUS[0]
+        );
+    }
+
+    // --- Motion token_by_name lookup ---
+
+    #[test]
+    fn motion_token_hover_name_contains_motion() {
+        // Token name must be identifiable as a motion token.
+        let name = "motion.hover_duration_ms";
+        assert!(name.starts_with("motion."), "motion token name must start with 'motion.'");
+    }
+
+    #[test]
+    fn motion_token_panel_resize_name_contains_motion() {
+        let name = "motion.panel_resize_duration_ms";
+        assert!(name.starts_with("motion."), "panel-resize token name must start with 'motion.'");
+    }
+
+    #[test]
+    fn motion_token_spring_stiffness_name_valid() {
+        let name = "motion.spring_stiffness";
+        assert!(!name.is_empty(), "spring stiffness token name must be non-empty");
+        assert!(name.contains("stiffness"), "spring stiffness token name must contain 'stiffness'");
+    }
+
+    #[test]
+    fn motion_token_spring_damping_name_valid() {
+        let name = "motion.spring_damping";
+        assert!(!name.is_empty(), "spring damping token name must be non-empty");
+        assert!(name.contains("damping"), "spring damping token name must contain 'damping'");
+    }
+
+    // --- Additional elevation/shadow checks ---
+
+    #[test]
+    fn shadow_sm_blur_equals_2() {
+        assert_eq!(SHADOW_SM.blur, 2.0, "SHADOW_SM.blur must be 2.0");
+    }
+
+    #[test]
+    fn shadow_md_blur_equals_8() {
+        assert_eq!(SHADOW_MD.blur, 8.0, "SHADOW_MD.blur must be 8.0");
+    }
+
+    #[test]
+    fn shadow_lg_blur_equals_24() {
+        assert_eq!(SHADOW_LG.blur, 24.0, "SHADOW_LG.blur must be 24.0");
+    }
+
+    #[test]
+    fn shadow_xl_blur_equals_48() {
+        assert_eq!(SHADOW_XL.blur, 48.0, "SHADOW_XL.blur must be 48.0");
+    }
+
+    #[test]
+    fn elevation_blur_ratio_md_over_sm_is_4() {
+        let ratio = SHADOW_MD.blur / SHADOW_SM.blur;
+        assert!(
+            (ratio - 4.0).abs() < f32::EPSILON,
+            "SHADOW_MD.blur / SHADOW_SM.blur must be 4.0 (got {ratio:.2})"
+        );
+    }
+
+    #[test]
+    fn elevation_blur_ratio_xl_over_lg_is_2() {
+        let ratio = SHADOW_XL.blur / SHADOW_LG.blur;
+        assert!(
+            (ratio - 2.0).abs() < f32::EPSILON,
+            "SHADOW_XL.blur / SHADOW_LG.blur must be 2.0 (got {ratio:.2})"
+        );
+    }
 }

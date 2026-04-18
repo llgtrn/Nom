@@ -1314,4 +1314,138 @@ mod tests {
         assert!(vp.is_point_visible([rx, ry]), "top-left of selection must be visible");
         assert!(vp.is_point_visible([rx + rw, ry + rh]), "bottom-right of selection must be visible");
     }
+
+    // ── Wave AK: requested viewport scenarios ────────────────────────────────
+
+    /// zoom_toward with a value below min_scale (0.1) clamps to 0.1.
+    #[test]
+    fn viewport_clamp_prevents_zoom_below_min_scale() {
+        let mut vp = Viewport::new(800.0, 600.0);
+        vp.zoom_toward(0.05, [400.0, 300.0]);
+        assert!(
+            (vp.zoom - 0.1).abs() < 1e-6,
+            "zoom must be clamped to min 0.1, got {}",
+            vp.zoom
+        );
+    }
+
+    /// zoom_toward with a value above max_scale (32.0) clamps to 32.0.
+    #[test]
+    fn viewport_clamp_prevents_zoom_above_max_scale() {
+        let mut vp = Viewport::new(800.0, 600.0);
+        vp.zoom_toward(64.0, [400.0, 300.0]);
+        assert!(
+            (vp.zoom - 32.0).abs() < 1e-6,
+            "zoom must be clamped to max 32.0, got {}",
+            vp.zoom
+        );
+    }
+
+    /// pan_by adds the delta to the current pan offset.
+    #[test]
+    fn pan_by_delta_updates_offset_correctly() {
+        let mut vp = Viewport::new(800.0, 600.0);
+        assert!((vp.pan[0]).abs() < 1e-6);
+        assert!((vp.pan[1]).abs() < 1e-6);
+        vp.pan_by([40.0, -15.0]);
+        assert!((vp.pan[0] - 40.0).abs() < 1e-6, "pan.x must be 40, got {}", vp.pan[0]);
+        assert!((vp.pan[1] - (-15.0)).abs() < 1e-6, "pan.y must be -15, got {}", vp.pan[1]);
+    }
+
+    /// world-to-screen and screen-to-world are inverse operations at default zoom/pan.
+    #[test]
+    fn world_to_screen_and_screen_to_world_are_inverses_default() {
+        let vp = Viewport::new(800.0, 600.0);
+        let world_pt = [123.0_f32, -77.0];
+        let screen = vp.canvas_to_screen(world_pt);
+        let back = vp.screen_to_canvas(screen);
+        assert!((back[0] - world_pt[0]).abs() < 1e-4, "world x must survive round-trip");
+        assert!((back[1] - world_pt[1]).abs() < 1e-4, "world y must survive round-trip");
+    }
+
+    /// world-to-screen and screen-to-world are inverses at non-trivial zoom+pan.
+    #[test]
+    fn world_to_screen_and_screen_to_world_are_inverses_at_zoom_and_pan() {
+        let mut vp = Viewport::new(1024.0, 768.0);
+        vp.zoom_toward(2.5, [512.0, 384.0]);
+        vp.pan_by([80.0, -40.0]);
+        let world_pt = [-55.5_f32, 33.3];
+        let screen = vp.canvas_to_screen(world_pt);
+        let back = vp.screen_to_canvas(screen);
+        assert!((back[0] - world_pt[0]).abs() < 1e-3, "x round-trip at non-trivial viewport");
+        assert!((back[1] - world_pt[1]).abs() < 1e-3, "y round-trip at non-trivial viewport");
+    }
+
+    /// screen-to-world and world-to-screen are inverses (reverse direction).
+    #[test]
+    fn screen_to_world_and_world_to_screen_are_inverses() {
+        let mut vp = Viewport::new(800.0, 600.0);
+        vp.zoom_toward(3.0, [400.0, 300.0]);
+        let screen_pt = [200.0_f32, 450.0];
+        let world = vp.screen_to_canvas(screen_pt);
+        let back = vp.canvas_to_screen(world);
+        assert!((back[0] - screen_pt[0]).abs() < 1e-3, "screen x must survive round-trip");
+        assert!((back[1] - screen_pt[1]).abs() < 1e-3, "screen y must survive round-trip");
+    }
+
+    /// reset() returns to identity: zoom=1, pan=[0,0]; screen-centre maps to canvas origin.
+    #[test]
+    fn viewport_reset_returns_to_identity() {
+        let mut vp = Viewport::new(800.0, 600.0);
+        vp.zoom_toward(6.0, [400.0, 300.0]);
+        vp.pan_by([200.0, -100.0]);
+        vp.reset();
+        assert!((vp.zoom - 1.0).abs() < 1e-6, "zoom must be 1.0 after reset");
+        assert!((vp.pan[0]).abs() < 1e-6, "pan.x must be 0 after reset");
+        assert!((vp.pan[1]).abs() < 1e-6, "pan.y must be 0 after reset");
+        // Verify that after reset, screen-to-canvas at the screen centre gives canvas origin.
+        let canvas = vp.screen_to_canvas([400.0, 300.0]);
+        assert!(canvas[0].abs() < 1e-5, "canvas.x must be 0 after reset");
+        assert!(canvas[1].abs() < 1e-5, "canvas.y must be 0 after reset");
+    }
+
+    /// Clamping to min_scale: after clamping, zoom stays >= 0.1 on successive
+    /// very-small zoom requests.
+    #[test]
+    fn zoom_clamp_min_is_persistent_across_attempts() {
+        let mut vp = Viewport::new(800.0, 600.0);
+        for _ in 0..5 {
+            vp.zoom_toward(0.0, [400.0, 300.0]);
+        }
+        assert!(vp.zoom >= 0.1 - 1e-6, "zoom must never fall below 0.1");
+    }
+
+    /// Clamping to max_scale: after clamping, zoom stays <= 32.0 on successive
+    /// very-large zoom requests.
+    #[test]
+    fn zoom_clamp_max_is_persistent_across_attempts() {
+        let mut vp = Viewport::new(800.0, 600.0);
+        for _ in 0..5 {
+            vp.zoom_toward(f32::MAX, [400.0, 300.0]);
+        }
+        assert!(vp.zoom <= 32.0 + 1e-6, "zoom must never exceed 32.0");
+    }
+
+    /// pan_by with zero delta leaves pan unchanged.
+    #[test]
+    fn pan_by_zero_delta_leaves_pan_unchanged() {
+        let mut vp = Viewport::new(800.0, 600.0);
+        vp.pan_by([100.0, -50.0]);
+        let pan_before = vp.pan;
+        vp.pan_by([0.0, 0.0]);
+        assert!((vp.pan[0] - pan_before[0]).abs() < 1e-6, "pan.x must be unchanged after zero delta");
+        assert!((vp.pan[1] - pan_before[1]).abs() < 1e-6, "pan.y must be unchanged after zero delta");
+    }
+
+    /// reset() after only pan (no zoom change) also resets pan to zero.
+    #[test]
+    fn viewport_reset_after_pan_only() {
+        let mut vp = Viewport::new(800.0, 600.0);
+        vp.pan_by([300.0, 150.0]);
+        assert!((vp.pan[0] - 300.0).abs() < 1e-6);
+        vp.reset();
+        assert!((vp.pan[0]).abs() < 1e-6, "pan.x must be 0 after reset");
+        assert!((vp.pan[1]).abs() < 1e-6, "pan.y must be 0 after reset");
+        assert!((vp.zoom - 1.0).abs() < 1e-6, "zoom must be 1.0 after reset");
+    }
 }

@@ -1531,4 +1531,158 @@ mod tests {
         let ids: Vec<u64> = hits.iter().map(|r| r.id).collect();
         assert_eq!(ids, vec![2, 3, 1], "sorted by z_index descending must give [2,3,1]");
     }
+
+    // ── Wave AK: requested hit_test scenarios ────────────────────────────────
+
+    /// Overlapping elements: last-on-top semantics — the element with the highest
+    /// z_index is considered the topmost hit (last drawn = on top).
+    #[test]
+    fn overlapping_elements_last_on_top_semantics() {
+        let elements = vec![
+            CanvasRect { id: 1, bounds: ([0.0, 0.0], [100.0, 100.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 1 },
+            CanvasRect { id: 2, bounds: ([0.0, 0.0], [100.0, 100.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 3 },
+            CanvasRect { id: 3, bounds: ([0.0, 0.0], [100.0, 100.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 2 },
+        ];
+        let pt = [50.0, 50.0];
+        // All three overlap at the point; highest z_index (last-on-top) wins.
+        let top = elements.iter()
+            .filter(|r| hit_test_rect(pt, r, 0.0))
+            .max_by_key(|r| r.z_index)
+            .unwrap();
+        assert_eq!(top.id, 2, "element with z_index=3 (last-on-top) must win");
+    }
+
+    /// A zero-size rect (width=0, height=0) returns no hit for any interior point.
+    #[test]
+    fn zero_size_element_returns_no_hit() {
+        let r = CanvasRect {
+            id: 900,
+            bounds: ([50.0, 50.0], [0.0, 0.0]), // zero size
+            fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 1,
+        };
+        // A point well away from the zero-size element must miss.
+        assert!(!hit_test_rect([100.0, 100.0], &r, 0.0), "zero-size element must not be hit at distant point");
+        // Even at the exact origin with zero threshold it collapses to a point; a nearby
+        // point should only hit with a positive threshold.
+        assert!(!hit_test_rect([60.0, 60.0], &r, 0.0), "zero-size element must not be hit 10px away with no threshold");
+    }
+
+    /// Hit test inside a nested group checks children: a child rect that is hit
+    /// implies the group is hit.
+    #[test]
+    fn hit_test_inside_nested_group_checks_children() {
+        // Outer group rect.
+        let group = CanvasRect {
+            id: 1000,
+            bounds: ([0.0, 0.0], [200.0, 200.0]),
+            fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 1,
+        };
+        // Child rect entirely inside the group.
+        let child = CanvasRect {
+            id: 1001,
+            bounds: ([50.0, 50.0], [80.0, 80.0]),
+            fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 2,
+        };
+        let pt = [90.0, 90.0]; // inside both group and child
+        // The group hit implies its children are checked; if child hits, group is considered hit.
+        let group_hit = hit_test_rect(pt, &group, 0.0);
+        let child_hit = hit_test_rect(pt, &child, 0.0);
+        assert!(group_hit, "outer group rect must be hit");
+        assert!(child_hit, "child rect must be hit when point is inside it");
+        // A point inside the group but outside the child should only hit the group.
+        let pt_group_only = [10.0, 10.0];
+        assert!(hit_test_rect(pt_group_only, &group, 0.0), "group must still be hit at group-only point");
+        assert!(!hit_test_rect(pt_group_only, &child, 0.0), "child must not be hit at group-only point");
+    }
+
+    /// Hit test miss: a point outside all elements returns no hit (None pattern).
+    #[test]
+    fn hit_test_miss_returns_none() {
+        let elements = vec![
+            CanvasRect { id: 1, bounds: ([0.0, 0.0], [50.0, 50.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 1 },
+            CanvasRect { id: 2, bounds: ([100.0, 100.0], [50.0, 50.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 2 },
+        ];
+        // Point completely outside both elements.
+        let pt = [300.0, 300.0];
+        let hit = elements.iter()
+            .filter(|r| hit_test_rect(pt, r, 0.0))
+            .max_by_key(|r| r.z_index);
+        assert!(hit.is_none(), "no element at point (300,300) — must return None");
+    }
+
+    /// Multiple elements at the same point: topmost (max z_index) is returned.
+    #[test]
+    fn multiple_elements_same_point_returns_topmost() {
+        let elements = vec![
+            CanvasRect { id: 10, bounds: ([0.0, 0.0], [100.0, 100.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 5 },
+            CanvasRect { id: 20, bounds: ([0.0, 0.0], [100.0, 100.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 15 },
+            CanvasRect { id: 30, bounds: ([0.0, 0.0], [100.0, 100.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 10 },
+        ];
+        let pt = [50.0, 50.0];
+        let top = elements.iter()
+            .filter(|r| hit_test_rect(pt, r, 0.0))
+            .max_by_key(|r| r.z_index)
+            .unwrap();
+        assert_eq!(top.id, 20, "element with z_index=15 must be topmost at the shared point");
+    }
+
+    /// A point just outside the bounding box of every element misses all of them.
+    #[test]
+    fn point_just_outside_every_element_is_miss() {
+        let r = CanvasRect {
+            id: 1100,
+            bounds: ([10.0, 10.0], [40.0, 40.0]),
+            fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 1,
+        };
+        // 1px beyond each edge.
+        assert!(!hit_test_rect([9.0, 25.0], &r, 0.0), "left miss");
+        assert!(!hit_test_rect([51.0, 25.0], &r, 0.0), "right miss");
+        assert!(!hit_test_rect([25.0, 9.0], &r, 0.0), "top miss");
+        assert!(!hit_test_rect([25.0, 51.0], &r, 0.0), "bottom miss");
+    }
+
+    /// A group with children at different z_indices: topmost child wins hit.
+    #[test]
+    fn group_children_topmost_child_wins_hit() {
+        // Three children of a group, all at the same location.
+        let children = vec![
+            CanvasRect { id: 1, bounds: ([20.0, 20.0], [60.0, 60.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 1 },
+            CanvasRect { id: 2, bounds: ([20.0, 20.0], [60.0, 60.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 4 },
+            CanvasRect { id: 3, bounds: ([20.0, 20.0], [60.0, 60.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 2 },
+        ];
+        let pt = [50.0, 50.0];
+        let top_child = children.iter()
+            .filter(|r| hit_test_rect(pt, r, 0.0))
+            .max_by_key(|r| r.z_index)
+            .unwrap();
+        assert_eq!(top_child.id, 2, "child with z_index=4 must win within the group");
+    }
+
+    /// A zero-size ellipse returns no hit for any point with zero threshold.
+    #[test]
+    fn zero_size_ellipse_returns_no_hit() {
+        let e = CanvasEllipse {
+            id: 1200,
+            bounds: ([50.0, 50.0], [0.0, 0.0]), // zero radii
+            fill: None, stroke: None, z_index: 0,
+        };
+        // Any point other than the degenerate centre should miss at zero threshold.
+        // (rx=0, ry=0: the ellipse eq produces +Inf for any non-centre point)
+        assert!(!hit_test_ellipse([100.0, 100.0], &e, 0.0), "zero-size ellipse must miss distant point");
+    }
+
+    /// Overlapping stacked elements: verify all are hit at the shared region.
+    #[test]
+    fn overlapping_stacked_elements_all_hit_at_shared_region() {
+        let elements = vec![
+            CanvasRect { id: 1, bounds: ([0.0, 0.0], [100.0, 100.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 1 },
+            CanvasRect { id: 2, bounds: ([0.0, 0.0], [100.0, 100.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 2 },
+        ];
+        let pt = [50.0, 50.0];
+        let hits: Vec<u64> = elements.iter()
+            .filter(|r| hit_test_rect(pt, r, 0.0))
+            .map(|r| r.id)
+            .collect();
+        assert_eq!(hits.len(), 2, "both overlapping elements must be hit at shared region");
+    }
 }

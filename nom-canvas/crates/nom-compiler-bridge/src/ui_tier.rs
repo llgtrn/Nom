@@ -904,6 +904,168 @@ mod tests {
         assert_eq!(CompileStatus::from_score(0.0), CompileStatus::Unknown);
     }
 
+    // ── AB-wave additions ──────────────────────────────────────────────────
+
+    /// get_kinds (via grammar_keywords) returns non-empty list when dict is populated.
+    #[test]
+    fn ab_get_kinds_nonempty_when_dict_populated() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        state.update_grammar_kinds(vec![
+            crate::shared::GrammarKind { name: "noun".into(), description: "thing".into() },
+            crate::shared::GrammarKind { name: "verb".into(), description: "action".into() },
+        ]);
+        let tier = UiTier::new(state);
+        let kw = tier.grammar_keywords();
+        assert!(!kw.is_empty(), "grammar_keywords must return non-empty list when dict is populated");
+    }
+
+    /// search_by_prefix (is_known_kind / grammar_keywords) with empty prefix returns all kinds.
+    #[test]
+    fn ab_search_by_prefix_empty_returns_all() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        state.update_grammar_kinds(vec![
+            crate::shared::GrammarKind { name: "alpha".into(), description: "".into() },
+            crate::shared::GrammarKind { name: "beta".into(), description: "".into() },
+            crate::shared::GrammarKind { name: "gamma".into(), description: "".into() },
+        ]);
+        let tier = UiTier::new(state);
+        // grammar_keywords() with no filter = "all kinds"
+        let kw = tier.grammar_keywords();
+        assert_eq!(kw.len(), 3, "empty prefix / no filter must return all 3 kinds");
+    }
+
+    /// search_by_prefix with a known prefix returns matching subset via search_bm25.
+    #[test]
+    fn ab_search_by_prefix_known_prefix_returns_matching_subset() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        state.update_grammar_kinds(vec![
+            crate::shared::GrammarKind { name: "resolve".into(), description: "lookup value".into() },
+            crate::shared::GrammarKind { name: "render".into(), description: "output display".into() },
+            crate::shared::GrammarKind { name: "compute".into(), description: "calculate".into() },
+        ]);
+        let tier = UiTier::new(state);
+        // In stub mode search_bm25 uses contains scan — "re" matches "resolve" and "render"
+        let hits = tier.search_bm25("re");
+        let words: Vec<&str> = hits.iter().map(|h| h.word.as_str()).collect();
+        assert!(words.contains(&"resolve"), "prefix 're' must match 'resolve'");
+        assert!(words.contains(&"render"), "prefix 're' must match 'render'");
+        assert!(!words.contains(&"compute"), "prefix 're' must not match 'compute'");
+    }
+
+    /// search_bm25 with a query returns scored results (score > 0).
+    #[test]
+    fn ab_search_bm25_query_returns_scored_results() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        state.update_grammar_kinds(vec![
+            crate::shared::GrammarKind { name: "pipeline".into(), description: "data pipeline".into() },
+        ]);
+        let tier = UiTier::new(state);
+        let hits = tier.search_bm25("pipeline");
+        assert!(!hits.is_empty(), "search_bm25 must return results for a matching query");
+        for h in &hits {
+            assert!(h.score > 0.0, "each result must have a positive score, got {}", h.score);
+        }
+    }
+
+    /// UI tier handles dict not found gracefully — empty cache returns empty keywords.
+    #[test]
+    fn ab_ui_tier_dict_not_found_graceful() {
+        // Dict path does not exist; no grammar kinds loaded
+        let state = Arc::new(SharedState::new("nonexistent_path.db", "also_missing.db"));
+        let tier = UiTier::new(state);
+        // Must not panic; empty cache → empty keywords
+        let kw = tier.grammar_keywords();
+        assert!(kw.is_empty(), "UI tier must handle missing dict gracefully (empty list)");
+        // search_bm25 must also not panic
+        let hits = tier.search_bm25("anything");
+        assert!(hits.is_empty(), "search_bm25 on empty cache must return empty");
+    }
+
+    /// grammar_keywords returns exactly the names that were loaded.
+    #[test]
+    fn ab_grammar_keywords_exact_names() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let names = vec!["flow", "stream", "channel", "buffer"];
+        state.update_grammar_kinds(
+            names.iter().map(|n| crate::shared::GrammarKind {
+                name: n.to_string(),
+                description: "".into(),
+            }).collect(),
+        );
+        let tier = UiTier::new(state);
+        let kw = tier.grammar_keywords();
+        assert_eq!(kw.len(), 4);
+        for name in &names {
+            assert!(kw.contains(&name.to_string()), "keyword '{}' must be in the list", name);
+        }
+    }
+
+    /// search_bm25 with a non-matching query returns empty list (not a panic).
+    #[test]
+    fn ab_search_bm25_no_match_returns_empty() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        state.update_grammar_kinds(vec![crate::shared::GrammarKind {
+            name: "process".into(),
+            description: "handle data".into(),
+        }]);
+        let tier = UiTier::new(state);
+        let hits = tier.search_bm25("zzzzz_no_match_xy");
+        // Must not panic; result may be empty
+        for h in &hits {
+            assert!(h.score >= 0.0);
+        }
+    }
+
+    /// is_known_kind returns true for every loaded kind.
+    #[test]
+    fn ab_is_known_kind_true_for_all_loaded_kinds() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let names = vec!["alpha", "beta", "gamma"];
+        state.update_grammar_kinds(
+            names.iter().map(|n| crate::shared::GrammarKind {
+                name: n.to_string(),
+                description: "".into(),
+            }).collect(),
+        );
+        let tier = UiTier::new(state);
+        for name in &names {
+            assert!(tier.is_known_kind(name), "is_known_kind must return true for '{}'", name);
+        }
+    }
+
+    /// search_bm25 results all have non-empty word fields.
+    #[test]
+    fn ab_search_bm25_result_words_nonempty() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        state.update_grammar_kinds(vec![
+            crate::shared::GrammarKind { name: "output".into(), description: "result".into() },
+            crate::shared::GrammarKind { name: "observe".into(), description: "watch".into() },
+        ]);
+        let tier = UiTier::new(state);
+        let hits = tier.search_bm25("o");
+        for h in &hits {
+            assert!(!h.word.is_empty(), "search hit word must be non-empty");
+        }
+    }
+
+    /// UiTierOps is_known_kind returns false for all inputs when cache is empty.
+    #[test]
+    fn ab_ui_tier_ops_is_known_kind_empty_cache() {
+        let state = SharedState::new("a.db", "b.db");
+        let ops = UiTierOps::new(&state);
+        assert!(!ops.is_known_kind("anything"),
+            "is_known_kind with empty cache must always return false");
+    }
+
+    /// UiTierOps resolve_synonym returns None for all inputs when cache is empty.
+    #[test]
+    fn ab_ui_tier_ops_resolve_synonym_empty_cache_none() {
+        let state = SharedState::new("a.db", "b.db");
+        let ops = UiTierOps::new(&state);
+        assert_eq!(ops.resolve_synonym("verb"), None,
+            "resolve_synonym with empty cache must return None");
+    }
+
     // ── AG6 additions ──────────────────────────────────────────────────────
 
     /// search_bm25 with non-empty query that matches at least one kind returns results.

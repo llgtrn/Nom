@@ -392,4 +392,163 @@ mod tests {
             assert!(!item.insert_text.is_empty());
         }
     }
+
+    // ── AB-wave additions ──────────────────────────────────────────────────
+
+    /// Completion with empty source (empty prefix, empty cache) returns empty list.
+    #[test]
+    fn completion_empty_source_returns_empty() {
+        let state = SharedState::new("a.db", "b.db");
+        // no grammar kinds loaded — empty cache
+        let items = complete_from_dict("", None, &state);
+        assert!(items.is_empty(), "empty source with empty cache must return empty list");
+    }
+
+    /// Completion with a valid prefix (non-empty cache, prefix matches) returns non-empty list.
+    #[test]
+    fn completion_valid_prefix_returns_non_empty() {
+        let state = SharedState::new("a.db", "b.db");
+        state.update_grammar_kinds(vec![crate::shared::GrammarKind {
+            name: "transform".into(),
+            description: "map data".into(),
+        }]);
+        let items = complete_from_dict("tr", None, &state);
+        assert!(!items.is_empty(), "valid prefix 'tr' must return at least one completion");
+    }
+
+    /// All completion result items have non-empty label fields.
+    #[test]
+    fn completion_results_have_non_empty_labels() {
+        let state = SharedState::new("a.db", "b.db");
+        state.update_grammar_kinds(vec![
+            crate::shared::GrammarKind { name: "action".into(), description: "do".into() },
+            crate::shared::GrammarKind { name: "aspect".into(), description: "view".into() },
+        ]);
+        let items = complete_from_dict("a", None, &state);
+        assert!(!items.is_empty());
+        for item in &items {
+            assert!(!item.label.is_empty(), "every completion must have non-empty label");
+        }
+    }
+
+    /// Completion kind field is CompletionKind::Keyword for cached completions.
+    #[test]
+    fn completion_kind_field_is_keyword() {
+        let state = SharedState::new("a.db", "b.db");
+        state.update_grammar_kinds(vec![crate::shared::GrammarKind {
+            name: "validate".into(),
+            description: "check constraint".into(),
+        }]);
+        let items = complete_from_dict("v", None, &state);
+        assert!(!items.is_empty());
+        assert_eq!(items[0].kind, CompletionKind::Keyword,
+            "cached completions must have Keyword kind");
+    }
+
+    /// Max results limit: 25 matching entries returns at most 20.
+    #[test]
+    fn completion_max_results_limit_capped_at_20() {
+        let state = SharedState::new("a.db", "b.db");
+        let kinds: Vec<_> = (0..25)
+            .map(|i| crate::shared::GrammarKind {
+                name: format!("zz_item_{i:02}"),
+                description: "test".into(),
+            })
+            .collect();
+        state.update_grammar_kinds(kinds);
+        let items = complete_from_dict("zz", None, &state);
+        assert!(items.len() <= 20,
+            "complete_from_dict must return at most 20 items, got {}", items.len());
+    }
+
+    /// Completion at EOF position (prefix is the full kind name) still returns that kind.
+    #[test]
+    fn completion_at_eof_position_handled_gracefully() {
+        let state = SharedState::new("a.db", "b.db");
+        state.update_grammar_kinds(vec![crate::shared::GrammarKind {
+            name: "finalize".into(),
+            description: "end the pipeline".into(),
+        }]);
+        // "EOF" position = prefix equals the full word
+        let items = complete_from_dict("finalize", None, &state);
+        assert!(!items.is_empty(), "prefix matching full word must still return the item");
+        assert_eq!(items[0].label, "finalize");
+    }
+
+    /// Completion with single-character prefix returns all items starting with that char.
+    #[test]
+    fn completion_single_char_prefix_returns_matching() {
+        let state = SharedState::new("a.db", "b.db");
+        state.update_grammar_kinds(vec![
+            crate::shared::GrammarKind { name: "flow".into(), description: "".into() },
+            crate::shared::GrammarKind { name: "filter".into(), description: "".into() },
+            crate::shared::GrammarKind { name: "generate".into(), description: "".into() },
+        ]);
+        let items = complete_from_dict("f", None, &state);
+        assert_eq!(items.len(), 2, "single char 'f' must match 'flow' and 'filter'");
+        for item in &items {
+            assert!(item.label.starts_with('f'));
+        }
+    }
+
+    /// Completion kind_filter with None returns all matching items regardless of kind.
+    #[test]
+    fn completion_no_kind_filter_returns_all_matching() {
+        let state = SharedState::new("a.db", "b.db");
+        state.update_grammar_kinds(vec![
+            crate::shared::GrammarKind { name: "noun_x".into(), description: "".into() },
+            crate::shared::GrammarKind { name: "noun_y".into(), description: "".into() },
+            crate::shared::GrammarKind { name: "verb_x".into(), description: "".into() },
+        ]);
+        // No kind_filter — all items with empty prefix are returned
+        let items = complete_from_dict("", None, &state);
+        assert_eq!(items.len(), 3, "no kind filter must return all 3 items");
+    }
+
+    /// Completion with prefix longer than any kind name returns empty.
+    #[test]
+    fn completion_prefix_longer_than_any_kind_returns_empty() {
+        let state = SharedState::new("a.db", "b.db");
+        state.update_grammar_kinds(vec![crate::shared::GrammarKind {
+            name: "run".into(),
+            description: "execute".into(),
+        }]);
+        // "running" is longer than "run" — "run".starts_with("running") is false
+        let items = complete_from_dict("running", None, &state);
+        assert!(items.is_empty(), "prefix longer than any kind must return empty");
+    }
+
+    /// Completion with multiple kinds that all share the same prefix returns all of them.
+    #[test]
+    fn completion_all_items_share_prefix_returns_all() {
+        let state = SharedState::new("a.db", "b.db");
+        state.update_grammar_kinds(vec![
+            crate::shared::GrammarKind { name: "stream".into(), description: "".into() },
+            crate::shared::GrammarKind { name: "stride".into(), description: "".into() },
+            crate::shared::GrammarKind { name: "strip".into(), description: "".into() },
+        ]);
+        let items = complete_from_dict("str", None, &state);
+        assert_eq!(items.len(), 3, "all 3 'str*' items must be returned");
+    }
+
+    /// kind_to_completion_kind maps "metric" to Value.
+    #[test]
+    fn kind_mapping_metric_to_value() {
+        assert_eq!(kind_to_completion_kind("metric"), CompletionKind::Value);
+    }
+
+    /// Completion items returned have detail field set (from description).
+    #[test]
+    fn completion_detail_is_set_from_description() {
+        let state = SharedState::new("a.db", "b.db");
+        state.update_grammar_kinds(vec![crate::shared::GrammarKind {
+            name: "ingest".into(),
+            description: "consume input".into(),
+        }]);
+        let items = complete_from_dict("in", None, &state);
+        assert!(!items.is_empty());
+        // detail is Some and contains the description text
+        assert!(items[0].detail.is_some(), "detail must be Some");
+        assert_eq!(items[0].detail.as_deref(), Some("consume input"));
+    }
 }

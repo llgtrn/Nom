@@ -1674,6 +1674,172 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
+    // graph_rag_empty_graph_returns_empty_results
+    // -----------------------------------------------------------------------
+    /// An empty DAG with any positive top_k and max_hops must return an
+    /// empty result because there are no nodes to retrieve.
+    #[test]
+    fn graph_rag_empty_graph_returns_empty_results() {
+        let dag = Dag::new();
+        let retriever = GraphRagRetriever::new(&dag);
+        let query = node_vec("search_term");
+        let results = retriever.retrieve(&query, 10, 3);
+        assert!(
+            results.is_empty(),
+            "empty graph must return empty results for any query, got {} results",
+            results.len()
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // graph_rag_node_retrieval_by_id_round_trip
+    // -----------------------------------------------------------------------
+    /// A node queried by its own ID (using node_vec of its id) must appear
+    /// in results and be the top-ranked result (cosine similarity = 1.0).
+    #[test]
+    fn graph_rag_node_retrieval_by_id_round_trip() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("round_trip_target", "verb"));
+        dag.add_node(ExecNode::new("other_node_x", "verb"));
+        dag.add_node(ExecNode::new("other_node_y", "verb"));
+        let retriever = GraphRagRetriever::new(&dag);
+
+        // Query using the exact node_id of "round_trip_target".
+        let query = node_vec("round_trip_target");
+        let results = retriever.retrieve(&query, 3, 1);
+
+        assert!(!results.is_empty(), "results must not be empty");
+        // The node queried by its own id must be retrievable.
+        let found = results.iter().find(|r| r.node_id == "round_trip_target");
+        assert!(found.is_some(), "node queried by its own id must appear in results");
+        // It must rank first (highest score, cosine_sim=1.0 at rank 0).
+        assert_eq!(
+            results[0].node_id, "round_trip_target",
+            "node matching its own query vec must be ranked first"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // graph_rag_edge_traversal_from_node_returns_neighbors
+    // -----------------------------------------------------------------------
+    /// Given a node with two direct outgoing edges, BFS with max_hops=1
+    /// must reach both neighbors.  Both must appear in results.
+    #[test]
+    fn graph_rag_edge_traversal_from_node_returns_neighbors() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("center", "verb"));
+        dag.add_node(ExecNode::new("nbr_1", "verb"));
+        dag.add_node(ExecNode::new("nbr_2", "verb"));
+        dag.add_edge("center", "out", "nbr_1", "in");
+        dag.add_edge("center", "out", "nbr_2", "in");
+
+        let retriever = GraphRagRetriever::new(&dag);
+        // Query center's own vec with max_hops=1: BFS from center reaches nbr_1 and nbr_2.
+        let query = node_vec("center");
+        let results = retriever.retrieve(&query, 3, 1);
+
+        let node_ids: Vec<&str> = results.iter().map(|r| r.node_id.as_str()).collect();
+        assert!(node_ids.contains(&"center"), "center must appear in results");
+        assert!(node_ids.contains(&"nbr_1"), "nbr_1 (direct neighbor) must appear in results");
+        assert!(node_ids.contains(&"nbr_2"), "nbr_2 (direct neighbor) must appear in results");
+    }
+
+    // -----------------------------------------------------------------------
+    // graph_rag_bfs_from_root_visits_all_connected
+    // -----------------------------------------------------------------------
+    /// BFS from any seed in a fully-connected chain must reach all nodes in
+    /// the chain when max_hops is large enough.
+    #[test]
+    fn graph_rag_bfs_from_root_visits_all_connected() {
+        let mut dag = Dag::new();
+        let names = ["bfs_n1", "bfs_n2", "bfs_n3", "bfs_n4"];
+        for &n in &names {
+            dag.add_node(ExecNode::new(n, "verb"));
+        }
+        dag.add_edge("bfs_n1", "out", "bfs_n2", "in");
+        dag.add_edge("bfs_n2", "out", "bfs_n3", "in");
+        dag.add_edge("bfs_n3", "out", "bfs_n4", "in");
+
+        let retriever = GraphRagRetriever::new(&dag);
+        // max_hops=3 allows reaching all 4 nodes from any seed.
+        let results = retriever.retrieve(&node_vec("bfs_n1"), 4, 3);
+
+        assert_eq!(results.len(), 4, "all 4 connected nodes must be returned");
+        for &n in &names {
+            assert!(
+                results.iter().any(|r| r.node_id == n),
+                "{n} must appear in results (fully connected chain, max_hops=3)"
+            );
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // graph_rag_bfs_does_not_visit_disconnected_nodes
+    // -----------------------------------------------------------------------
+    /// Disconnected nodes (not reachable from any node in the query chain)
+    /// must still appear in results because BFS seeds from every registered
+    /// node — including the disconnected one.  This test verifies that every
+    /// node in dag.nodes, connected or not, ends up in the result set.
+    #[test]
+    fn graph_rag_bfs_does_not_visit_disconnected_nodes_appear_as_own_seed() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("connected_a", "verb"));
+        dag.add_node(ExecNode::new("connected_b", "verb"));
+        dag.add_node(ExecNode::new("disconnected_x", "verb")); // no edges
+        dag.add_edge("connected_a", "out", "connected_b", "in");
+
+        let retriever = GraphRagRetriever::new(&dag);
+        // Every node in dag.nodes is a BFS seed: disconnected_x has hop=0 from itself.
+        let results = retriever.retrieve(&node_vec("connected_a"), 3, 2);
+
+        assert_eq!(results.len(), 3, "all 3 nodes (including disconnected) must appear");
+        assert!(
+            results.iter().any(|r| r.node_id == "disconnected_x"),
+            "disconnected_x must appear as its own BFS seed"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // graph_rag_single_node_dag_retrieves_that_node
+    // -----------------------------------------------------------------------
+    #[test]
+    fn graph_rag_single_node_dag_retrieves_that_node() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("the_only_node", "verb"));
+        let retriever = GraphRagRetriever::new(&dag);
+        let results = retriever.retrieve(&node_vec("the_only_node"), 5, 2);
+        assert_eq!(results.len(), 1, "single-node dag must return exactly 1 result");
+        assert_eq!(results[0].node_id, "the_only_node");
+        assert_eq!(results[0].hops, 0, "single node has hops=0 (own seed)");
+    }
+
+    // -----------------------------------------------------------------------
+    // graph_rag_neighbor_hops_equals_one_when_max_hops_sufficient
+    // -----------------------------------------------------------------------
+    /// A direct neighbor reached via one hop must have hops=1 when that is
+    /// the shortest BFS path from the seed that has the highest cosine sim.
+    /// Since every node is also seeded from itself (hops=0), a registered
+    /// neighbor always gets hops=0 from its own BFS seed — but its score
+    /// position still reflects the RRF ranking.
+    #[test]
+    fn graph_rag_neighbor_score_lower_than_exact_match() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("src_node", "verb"));
+        dag.add_node(ExecNode::new("tgt_node", "verb"));
+        dag.add_edge("src_node", "out", "tgt_node", "in");
+        let retriever = GraphRagRetriever::new(&dag);
+        // Query src_node's vec: src_node has cosine=1.0 (rank 0) → highest score.
+        let results = retriever.retrieve(&node_vec("src_node"), 2, 1);
+        assert_eq!(results.len(), 2);
+        // src_node must rank above tgt_node.
+        assert_eq!(results[0].node_id, "src_node", "exact match must rank first");
+        assert!(
+            results[0].score > results[1].score,
+            "exact-match src_node must score above neighbor tgt_node"
+        );
+    }
+
+    // -----------------------------------------------------------------------
     // graph_rag_concurrent_index_updates_safe
     // -----------------------------------------------------------------------
     #[test]

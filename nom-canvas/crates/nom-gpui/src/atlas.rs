@@ -547,4 +547,78 @@ mod tests {
             assert!(atlas.get(&key).is_none(), "cleared atlas must not contain key {i}");
         }
     }
+
+    // ------------------------------------------------------------------
+    // Wave AK: additional atlas tests
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn atlas_default_size_is_2048() {
+        assert_eq!(TextureAtlas::DEFAULT_SIZE, 2048, "default atlas size must be 2048");
+    }
+
+    #[test]
+    fn atlas_max_size_is_4096() {
+        assert_eq!(TextureAtlas::MAX_SIZE, 4096, "max atlas size must be 4096");
+    }
+
+    #[test]
+    fn atlas_eviction_threshold_is_0_9() {
+        let threshold = TextureAtlas::EVICTION_THRESHOLD;
+        assert!((threshold - 0.9).abs() < 1e-6, "eviction threshold must be 0.9, got {threshold}");
+    }
+
+    #[test]
+    fn atlas_eviction_batch_is_32() {
+        assert_eq!(TextureAtlas::EVICTION_BATCH, 32, "eviction batch size must be 32");
+    }
+
+    #[test]
+    fn atlas_subpixel_variants_is_16() {
+        assert_eq!(TextureAtlas::SUBPIXEL_VARIANTS, 16, "must have 16 subpixel variants (4x4 grid)");
+    }
+
+    #[test]
+    fn atlas_initial_fill_ratio_is_zero() {
+        let atlas = TextureAtlas::new(0);
+        assert_eq!(atlas.fill_ratio(), 0.0, "new atlas must have 0 fill ratio");
+    }
+
+    #[test]
+    fn atlas_tile_padding_is_one() {
+        let mut atlas = TextureAtlas::new(0);
+        let key = make_key(8001);
+        let tile = atlas.pack_glyph(key, 10, 10).unwrap();
+        assert!((tile.padding - 1.0).abs() < 1e-6, "tile padding must be 1.0, got {}", tile.padding);
+    }
+
+    #[test]
+    fn atlas_subpixel_index_covers_full_range() {
+        // Verify all 16 possible subpixel indices are reachable.
+        let mut found = [false; 16];
+        for xi in 0..4u8 {
+            for yi in 0..4u8 {
+                let fx = (xi as f32) * 0.25 + 0.01;
+                let fy = (yi as f32) * 0.25 + 0.01;
+                let idx = subpixel_index(fx, fy) as usize;
+                assert!(idx < 16, "subpixel_index must be in 0..16, got {idx}");
+                found[idx] = true;
+            }
+        }
+        assert!(found.iter().all(|&x| x), "all 16 subpixel indices must be reachable");
+    }
+
+    #[test]
+    fn atlas_get_returns_none_for_unknown_key() {
+        let atlas = TextureAtlas::new(0);
+        let key = make_key(9999);
+        assert!(atlas.get(&key).is_none(), "get on unknown key must return None");
+    }
+
+    #[test]
+    fn atlas_width_and_height_match_default_size() {
+        let atlas = TextureAtlas::new(0);
+        assert_eq!(atlas.width, TextureAtlas::DEFAULT_SIZE);
+        assert_eq!(atlas.height, TextureAtlas::DEFAULT_SIZE);
+    }
 }
