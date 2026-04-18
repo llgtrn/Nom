@@ -1,5 +1,8 @@
 #![deny(unsafe_code)]
 
+pub mod merge;
+pub use merge::{MergeRecord, MergeStrategy};
+
 /// Unique identifier for a peer in the collaborative session.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PeerId(pub u64);

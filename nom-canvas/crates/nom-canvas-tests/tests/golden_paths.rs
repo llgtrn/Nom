@@ -281,3 +281,63 @@ fn golden_theme_tokens_non_empty() {
         "dark theme must expose at least one color token; N_TOKENS = {N_TOKENS}"
     );
 }
+
+// --- D3 golden paths (compose demo) ---
+
+// Golden path 15: ComponentPipeline with defaults runs and returns output
+#[test]
+fn golden_compose_pipeline_runs() {
+    use nom_compose::ComponentPipeline;
+
+    let pipeline = ComponentPipeline::with_defaults();
+    let outputs = pipeline.run("define greeting that says hello world to everyone");
+    assert!(
+        !outputs.is_empty(),
+        "ComponentPipeline with defaults must produce at least one output"
+    );
+}
+
+// Golden path 16: Counter increments correctly
+#[test]
+fn golden_metrics_counter_increments() {
+    use nom_telemetry::Counter;
+
+    let mut counter = Counter::new("requests");
+    counter.increment();
+    assert_eq!(
+        counter.value(),
+        1,
+        "counter value must be 1 after one increment"
+    );
+}
+
+// Golden path 17: BM25Retriever retrieves top result from two documents
+#[test]
+fn golden_bm25_retriever_retrieve() {
+    use nom_intent::BM25Retriever;
+
+    let mut retriever = BM25Retriever::new();
+    retriever.add_document("doc-a", "define greeting that says hello world");
+    retriever.add_document("doc-b", "define farewell that says goodbye");
+    let results = retriever.retrieve("hello greeting", 1);
+    assert!(
+        !results.is_empty(),
+        "BM25Retriever must return at least one result for a matching query"
+    );
+}
+
+// Golden path 18: IngestionPipeline ingest emits a Completed event
+#[test]
+fn golden_ingestion_pipeline() {
+    use nom_intent::{IngestionEvent, IngestionPipeline};
+
+    let mut pipeline = IngestionPipeline::new();
+    let events = pipeline.ingest("src-golden", "define concept that holds value");
+    let has_completed = events
+        .iter()
+        .any(|e| matches!(e, IngestionEvent::Completed { .. }));
+    assert!(
+        has_completed,
+        "IngestionPipeline::ingest must emit a Completed event"
+    );
+}

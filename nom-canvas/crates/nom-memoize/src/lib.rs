@@ -2,6 +2,7 @@
 pub mod constraint;
 pub mod hash;
 pub mod memo_cache;
+pub mod policy;
 pub mod tracked;
 
 pub use constraint::Constraint;

@@ -1,0 +1,11 @@
+define inner_op that
+  "error: validation_failed field=kind"
+
+define outer_op that
+  define inner that inner_op
+  "outer received -> " + inner
+
+define propagate_error that
+  define chain that outer_op
+  "propagated: " + chain
+propagate_error

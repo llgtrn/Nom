@@ -1,0 +1,7 @@
+define lex_source that
+  define source that "define greeting that \"hello\""
+  define token_count that 5
+  define first_token that "define"
+  define last_token that "\"hello\""
+  "lexed " + token_count + " tokens from source | first=" + first_token + " last=" + last_token
+lex_source

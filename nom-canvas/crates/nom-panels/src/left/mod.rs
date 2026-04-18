@@ -4,6 +4,7 @@ pub mod library;
 pub mod node_palette;
 pub mod panel_layout;
 pub mod quick_search;
+pub mod widget_registry;
 
 pub use file_tree::{FileNode, FileNodeKind, FileTreePanel};
 pub use icon_rail::{IconRail, IconRailItem};
@@ -11,3 +12,4 @@ pub use library::{LibraryKind, LibraryPanel};
 pub use node_palette::{NodePalette, PaletteEntry};
 pub use panel_layout::{LeftPanelLayout, LeftPanelTab};
 pub use quick_search::{QuickSearchPanel, SearchResult, SearchResultKind};
+pub use widget_registry::{WidgetCategory, WidgetKind, WidgetRegistry};

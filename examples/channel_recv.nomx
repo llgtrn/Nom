@@ -1,0 +1,6 @@
+define channel_recv that
+  define channel_id that "chan:e7a3"
+  define message that "entry_promoted hash=b7e21d"
+  define remaining that 0
+  "received from " + channel_id + " msg=[" + message + "] remaining=" + remaining
+channel_recv

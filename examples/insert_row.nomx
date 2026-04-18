@@ -1,0 +1,7 @@
+define insert_row that
+  define table that "entries"
+  define word that "render_pipeline"
+  define kind that "render_pipeline"
+  define lifecycle that "partial"
+  "inserted into " + table + " | word=" + word + " kind=" + kind + " state=" + lifecycle
+insert_row

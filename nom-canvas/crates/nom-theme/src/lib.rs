@@ -2,9 +2,11 @@
 pub mod fonts;
 pub mod icons;
 pub mod tokens;
+pub mod typography;
 pub use fonts::{FontRegistry, TypeStyle};
 pub use icons::{icon_path, Icon, IconPath};
 pub use tokens::*;
+pub use typography::{FontFamily, FontSize, TypographyScale};
 
 // ---------------------------------------------------------------------------
 // Theme mode toggle
@@ -31,6 +33,20 @@ impl ThemeMode {
     /// Returns `true` for modes that use a dark background (Dark and Oled).
     pub fn is_dark_family(self) -> bool {
         matches!(self, ThemeMode::Dark | ThemeMode::Oled)
+    }
+
+    /// The default mode is `Dark`.
+    pub fn default_mode() -> Self {
+        ThemeMode::Dark
+    }
+
+    /// Human-readable label for the mode.
+    pub fn display_name(&self) -> &str {
+        match self {
+            ThemeMode::Dark => "Dark",
+            ThemeMode::Light => "Light",
+            ThemeMode::Oled => "OLED",
+        }
     }
 }
 

@@ -10,6 +10,7 @@ pub mod pixel_diff;
 pub mod platform;
 pub mod renderer;
 pub mod scene;
+pub mod scene_builder;
 pub mod shaders;
 pub mod styled;
 pub mod types;

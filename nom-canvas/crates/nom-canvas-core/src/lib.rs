@@ -28,6 +28,9 @@ pub use webgpu::{WebGpuConfig, WebGpuPowerPreference, WebGpuRenderer};
 /// Frosted-glass render pass descriptor (two-pass blur for panel backgrounds).
 pub mod frosted_pass;
 pub use frosted_pass::{FrostedPassConfig, FrostedPassState, FrostedRenderPass};
+/// Chart primitives: types, data series, config, and chart composition.
+pub mod chart;
+pub use chart::{Chart, ChartConfig, ChartType, DataSeries};
 
 #[cfg(test)]
 mod integration_tests {

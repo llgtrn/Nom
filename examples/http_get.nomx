@@ -1,0 +1,7 @@
+define http_get that
+  define url that "https://api.example.local/entries"
+  define status that 200
+  define body_bytes that 1024
+  define content_type that "application/json"
+  "GET " + url + " -> status=" + status + " bytes=" + body_bytes + " type=" + content_type
+http_get

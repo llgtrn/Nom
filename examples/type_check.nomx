@@ -1,0 +1,7 @@
+define type_check that
+  define module_name that "greeting_module"
+  define symbol_count that 3
+  define error_count that 0
+  define warning_count that 0
+  "type-checked " + module_name + " symbols=" + symbol_count + " errors=" + error_count + " warnings=" + warning_count
+type_check

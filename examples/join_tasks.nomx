@@ -1,0 +1,7 @@
+define join_tasks that
+  define task_ids that "task:f3c8 task:a1d2 task:b9e4"
+  define completed that 3
+  define total that 3
+  define duration_ms that 210
+  "joined [" + task_ids + "] completed=" + completed + "/" + total + " in " + duration_ms + "ms"
+join_tasks

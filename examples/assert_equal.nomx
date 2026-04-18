@@ -1,0 +1,7 @@
+define assert_equal that
+  define expected that 42
+  define actual that 42
+  define label that "fibonacci_base_case"
+  define passed that "true"
+  label + " expected=" + expected + " actual=" + actual + " passed=" + passed
+assert_equal

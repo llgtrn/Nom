@@ -26,7 +26,7 @@ pub use dock::{
 pub use entity_ref::PanelEntityRef;
 pub use left::{
     FileNode, FileNodeKind, FileTreePanel, LibraryKind, LibraryPanel, NodePalette, PaletteEntry,
-    QuickSearchPanel, SearchResult, SearchResultKind,
+    QuickSearchPanel, SearchResult, SearchResultKind, WidgetCategory, WidgetKind, WidgetRegistry,
 };
 pub use pane::{Member, Pane, PaneAxis, PaneGroup, PaneTab, SplitDirection};
 pub use right::{

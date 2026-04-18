@@ -1,0 +1,8 @@
+define score_entry that
+  define entry_hash that "b7e21d"
+  define word that "render_pipeline"
+  define completeness that 0.92
+  define relevance that 0.87
+  define final_score that 0.90
+  word + " hash=" + entry_hash + " completeness=" + completeness + " relevance=" + relevance + " score=" + final_score
+score_entry

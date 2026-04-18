@@ -1,0 +1,7 @@
+define websocket_connect that
+  define endpoint that "ws://events.example.local/stream"
+  define protocol that "nom-events-v1"
+  define connection_id that "ws:c7d2a1"
+  define state that "open"
+  "connected to " + endpoint + " protocol=" + protocol + " id=" + connection_id + " state=" + state
+websocket_connect

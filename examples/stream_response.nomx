@@ -1,0 +1,7 @@
+define stream_response that
+  define url that "https://api.example.local/entries/stream"
+  define chunk_count that 8
+  define total_bytes that 4096
+  define final_status that "complete"
+  "streamed " + url + " chunks=" + chunk_count + " bytes=" + total_bytes + " status=" + final_status
+stream_response

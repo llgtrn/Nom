@@ -1,0 +1,9 @@
+define risky_op that
+  "error: db_timeout after 5000ms"
+
+define handle_error that
+  define raw that risky_op
+  define error_kind that "db_timeout"
+  define recovery that "retry with backoff"
+  "caught " + error_kind + " from [" + raw + "] -> " + recovery
+handle_error

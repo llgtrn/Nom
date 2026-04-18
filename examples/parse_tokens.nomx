@@ -1,0 +1,7 @@
+define parse_tokens that
+  define token_stream that "define greeting that \"hello\""
+  define node_kind that "define_expr"
+  define child_count that 3
+  define root_span that "0..27"
+  "parsed " + node_kind + " with " + child_count + " children at span " + root_span
+parse_tokens

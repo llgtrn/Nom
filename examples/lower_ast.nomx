@@ -1,0 +1,7 @@
+define lower_ast that
+  define ast_node that "define_expr"
+  define ir_op that "bind"
+  define ir_name that "greeting"
+  define ir_value that "const_str(hello)"
+  "lowered " + ast_node + " -> " + ir_op + " " + ir_name + " = " + ir_value
+lower_ast

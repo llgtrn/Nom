@@ -1,0 +1,7 @@
+define archive_entry that
+  define entry_hash that "c2a8e5"
+  define word that "deprecated_render"
+  define reason that "superseded by render_pipeline"
+  define archived_at that "2026-04-19T00:00:00Z"
+  "archived " + word + " hash=" + entry_hash + " reason=[" + reason + "] at=" + archived_at
+archive_entry

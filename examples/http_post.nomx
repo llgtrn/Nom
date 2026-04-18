@@ -1,0 +1,7 @@
+define http_post that
+  define url that "https://api.example.local/entries"
+  define payload that "{\"word\":\"render_pipeline\",\"kind\":\"render_pipeline\"}"
+  define status that 201
+  define location that "/entries/b7e21d"
+  "POST " + url + " -> status=" + status + " location=" + location
+http_post

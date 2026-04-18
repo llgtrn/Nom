@@ -1,0 +1,6 @@
+define delete_row that
+  define table that "entries"
+  define predicate that "lifecycle = archived"
+  define deleted_count that 7
+  "deleted " + deleted_count + " rows from " + table + " where " + predicate
+delete_row

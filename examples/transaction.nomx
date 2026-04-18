@@ -1,0 +1,12 @@
+define begin_tx that "tx:a3f9 started"
+
+define commit_tx that
+  define tx_id that "a3f9"
+  "tx:" + tx_id + " committed"
+
+define transaction that
+  define start that begin_tx
+  define ops that "insert_row update_row"
+  define end that commit_tx
+  start + " | ops=[" + ops + "] | " + end
+transaction

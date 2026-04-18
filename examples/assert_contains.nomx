@@ -1,0 +1,7 @@
+define assert_contains that
+  define list_repr that "[audio_buffer render_pipeline pixel_grid]"
+  define item that "render_pipeline"
+  define label that "kind_list_check"
+  define passed that "true"
+  label + " list=" + list_repr + " contains=" + item + " passed=" + passed
+assert_contains

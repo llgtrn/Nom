@@ -1,0 +1,8 @@
+define run_test_suite that
+  define suite_name that "dict_entry_tests"
+  define total that 12
+  define passed that 12
+  define failed that 0
+  define duration_ms that 34
+  suite_name + " total=" + total + " passed=" + passed + " failed=" + failed + " in " + duration_ms + "ms"
+run_test_suite

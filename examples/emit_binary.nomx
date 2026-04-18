@@ -1,0 +1,7 @@
+define emit_binary that
+  define ir_module that "greeting_module"
+  define target_triple that "x86_64-unknown-linux"
+  define output_path that "out/greeting.bin"
+  define byte_count that 4096
+  "emitted " + ir_module + " for " + target_triple + " -> " + output_path + " (" + byte_count + " bytes)"
+emit_binary

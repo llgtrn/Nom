@@ -5,6 +5,8 @@ pub mod candle_adapter;
 pub use candle_adapter::{BackendDevice, CandleAdapter, ModelConfig};
 pub mod adapters;
 pub mod background_tier;
+pub mod kind_query;
+pub mod promote_kind;
 pub mod lsp_server;
 pub use lsp_server::{
     dispatch_lsp_request, AuthoringEvent, AuthoringProtocol, LspLoopState, LspRequest, LspResponse,
@@ -20,6 +22,9 @@ pub mod ui_tier;
 
 pub use adapters::lsp::CompilerLspProvider;
 pub use background_tier::BackgroundTierOps;
+pub use kind_query::{list_kinds_stub, KindQueryClient, KindResult};
+pub use promote_kind::KindPromotion;
+pub use promote_kind::KindStatus as PromotionKindStatus;
 #[cfg(feature = "compiler")]
 pub use dictwriter::DictWriter;
 pub use interactive_tier::InteractiveTierOps;

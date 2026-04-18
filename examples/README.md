@@ -1,4 +1,4 @@
-# Nom Examples — Golden Corpus (40 files)
+# Nom Examples — Golden Corpus (70 files)
 
 Each file demonstrates the `define X that Y` natural syntax. The last statement is the result — no explicit return, no null, no panic by grammar.
 
@@ -79,6 +79,71 @@ Each file demonstrates the `define X that Y` natural syntax. The last statement 
 | `react_loop.nomx` | Execute one observe-think-act cycle of the ReAct reasoning pattern |
 | `tool_dispatch.nomx` | Invoke a named tool with structured arguments and surface the top result |
 
+### Compiler Pipeline (5)
+
+| File | Description |
+|------|-------------|
+| `lex_source.nomx` | Tokenize a source string and report token count and boundary tokens |
+| `parse_tokens.nomx` | Build an AST node from a token stream and report node kind and child count |
+| `lower_ast.nomx` | Lower an AST node to an IR binding operation |
+| `type_check.nomx` | Type check a module and report symbol count and error counts |
+| `emit_binary.nomx` | Emit a binary from an IR module for a target triple and report output path |
+
+### Database Patterns (5)
+
+| File | Description |
+|------|-------------|
+| `insert_row.nomx` | Insert a row into a named table with word, kind, and lifecycle fields |
+| `query_rows.nomx` | Query rows by a predicate and report match count and first result |
+| `update_row.nomx` | Update a single field in rows matching a predicate |
+| `delete_row.nomx` | Delete rows matching a predicate and report deleted count |
+| `transaction.nomx` | Wrap a sequence of operations in a begin/commit transaction boundary |
+
+### Network Patterns (4)
+
+| File | Description |
+|------|-------------|
+| `http_get.nomx` | Make an HTTP GET request and report status, body size, and content type |
+| `http_post.nomx` | Make an HTTP POST request with a payload and report status and location header |
+| `websocket_connect.nomx` | Open a websocket connection to an endpoint and report connection id and state |
+| `stream_response.nomx` | Stream a response body and report chunk count, byte total, and final status |
+
+### Testing Patterns (4)
+
+| File | Description |
+|------|-------------|
+| `assert_equal.nomx` | Assert two values are equal and report label and pass/fail outcome |
+| `assert_contains.nomx` | Assert a list contains a given item and report label and pass/fail outcome |
+| `run_test_suite.nomx` | Run a named test suite and report total, passed, failed, and duration |
+| `mock_dependency.nomx` | Substitute a real dependency with a stub and invoke the stub |
+
+### Concurrency Patterns (4)
+
+| File | Description |
+|------|-------------|
+| `spawn_task.nomx` | Launch a named concurrent task and report its id and initial state |
+| `join_tasks.nomx` | Wait for multiple task ids to complete and report completion ratio and duration |
+| `channel_send.nomx` | Send a message on a named channel and report resulting queue depth |
+| `channel_recv.nomx` | Receive a message from a named channel and report remaining queue depth |
+
+### Nom Meta (4)
+
+| File | Description |
+|------|-------------|
+| `load_grammar.nomx` | Load grammar kinds from the database and report kind count and edge count |
+| `seed_kind.nomx` | Seed a new kind entry into the database with hash and description |
+| `score_entry.nomx` | Score a dictionary entry on completeness and relevance and report final score |
+| `archive_entry.nomx` | Move an entry to archived lifecycle state with a reason and timestamp |
+
+### Error Handling (4)
+
+| File | Description |
+|------|-------------|
+| `handle_error.nomx` | Catch an error from an operation and transform it into a recovery strategy |
+| `retry_op.nomx` | Retry a transient-error operation with configurable attempts and delay |
+| `fallback_value.nomx` | Use a fallback value when the primary operation returns an error |
+| `propagate_error.nomx` | Propagate an error up through a chain of nested definitions |
+
 ## How to Run
 
 ```
@@ -122,6 +187,36 @@ nom compose examples/generate_response.nomx
 nom compose examples/embed_query.nomx
 nom compose examples/react_loop.nomx
 nom compose examples/tool_dispatch.nomx
+nom compose examples/lex_source.nomx
+nom compose examples/parse_tokens.nomx
+nom compose examples/lower_ast.nomx
+nom compose examples/type_check.nomx
+nom compose examples/emit_binary.nomx
+nom compose examples/insert_row.nomx
+nom compose examples/query_rows.nomx
+nom compose examples/update_row.nomx
+nom compose examples/delete_row.nomx
+nom compose examples/transaction.nomx
+nom compose examples/http_get.nomx
+nom compose examples/http_post.nomx
+nom compose examples/websocket_connect.nomx
+nom compose examples/stream_response.nomx
+nom compose examples/assert_equal.nomx
+nom compose examples/assert_contains.nomx
+nom compose examples/run_test_suite.nomx
+nom compose examples/mock_dependency.nomx
+nom compose examples/spawn_task.nomx
+nom compose examples/join_tasks.nomx
+nom compose examples/channel_send.nomx
+nom compose examples/channel_recv.nomx
+nom compose examples/load_grammar.nomx
+nom compose examples/seed_kind.nomx
+nom compose examples/score_entry.nomx
+nom compose examples/archive_entry.nomx
+nom compose examples/handle_error.nomx
+nom compose examples/retry_op.nomx
+nom compose examples/fallback_value.nomx
+nom compose examples/propagate_error.nomx
 ```
 
 Run all examples at once:

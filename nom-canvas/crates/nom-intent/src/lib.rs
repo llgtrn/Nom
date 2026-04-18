@@ -6,6 +6,9 @@ pub use skill_router::{SkillDefinition, SkillRouter};
 pub mod retrievers;
 pub use retrievers::{BM25Document, BM25Retriever, CosineSimilarityRetriever, VectorDocument};
 
+pub mod pipeline;
+pub use pipeline::{IngestionEvent, IngestionPipeline, LifecycleManager, LifecycleTransition};
+
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,

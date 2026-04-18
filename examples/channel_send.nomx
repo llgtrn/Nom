@@ -1,0 +1,6 @@
+define channel_send that
+  define channel_id that "chan:e7a3"
+  define message that "entry_promoted hash=b7e21d"
+  define queue_depth that 1
+  "sent to " + channel_id + " msg=[" + message + "] depth=" + queue_depth
+channel_send

@@ -1,0 +1,6 @@
+define spawn_task that
+  define task_name that "promote_partial_entries"
+  define task_id that "task:f3c8"
+  define state that "running"
+  "spawned " + task_name + " id=" + task_id + " state=" + state
+spawn_task

@@ -1,0 +1,7 @@
+define load_grammar that
+  define db_path that "nom.db"
+  define kind_count that 47
+  define edge_count that 83
+  define loaded_at that "2026-04-19T00:00:00Z"
+  "loaded grammar from " + db_path + " kinds=" + kind_count + " edges=" + edge_count + " at=" + loaded_at
+load_grammar

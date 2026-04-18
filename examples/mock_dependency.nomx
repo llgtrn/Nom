@@ -1,0 +1,12 @@
+define real_db_lookup that
+  "live db result"
+
+define mock_db_lookup that
+  "mock result: render_pipeline lifecycle=complete"
+
+define mock_dependency that
+  define subject that "kind_lookup"
+  define original that "real_db_lookup"
+  define stub that mock_db_lookup
+  "substituted " + original + " with mock for " + subject + " -> " + stub
+mock_dependency

@@ -1,0 +1,10 @@
+define attempt_op that
+  "error: transient_network_failure"
+
+define retry_op that
+  define max_attempts that 3
+  define delay_ms that 200
+  define attempt_1 that attempt_op
+  define attempt_2 that "ok: connected"
+  "retry max=" + max_attempts + " delay=" + delay_ms + "ms | attempt_1=[" + attempt_1 + "] attempt_2=[" + attempt_2 + "]"
+retry_op

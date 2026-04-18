@@ -1,0 +1,9 @@
+define primary_lookup that
+  "error: entry_not_found hash=unknown"
+
+define fallback_value that
+  define primary that primary_lookup
+  define fallback that "default_render_pipeline"
+  define used_fallback that "true"
+  "primary=[" + primary + "] fallback=" + fallback + " used=" + used_fallback
+fallback_value

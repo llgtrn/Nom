@@ -1,5 +1,8 @@
 #![deny(unsafe_code)]
 
+pub mod metrics;
+pub use metrics::{Counter, Histogram, MetricsRegistry};
+
 use std::sync::{Arc, Mutex};
 
 // ---------------------------------------------------------------------------

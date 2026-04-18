@@ -1,0 +1,7 @@
+define query_rows that
+  define table that "entries"
+  define predicate that "lifecycle = complete"
+  define match_count that 142
+  define first_word that "audio_buffer"
+  "queried " + table + " where " + predicate + " -> " + match_count + " rows | first=" + first_word
+query_rows

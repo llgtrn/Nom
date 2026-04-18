@@ -1,5 +1,8 @@
 #![deny(unsafe_code)]
 
+pub mod rules;
+pub use rules::naming::{NamingLinter, NamingViolation};
+
 // ---------------------------------------------------------------------------
 // Sealed supertrait (yara-x pattern) — prevents external implementations.
 // ---------------------------------------------------------------------------

@@ -471,6 +471,117 @@ impl BezierCurve {
 }
 
 // ---------------------------------------------------------------------------
+// D8 AF-THEME: color token sets
+// ---------------------------------------------------------------------------
+
+/// Complete color token set for a single theme variant.
+#[derive(Debug, Clone)]
+pub struct ColorSet {
+    /// Page / window background.
+    pub bg: &'static str,
+    /// Panel surface fill.
+    pub surface: &'static str,
+    /// Elevated surface (dropdowns, modals).
+    pub elevated: &'static str,
+    /// Interactive accent (links, focus rings, primary buttons).
+    pub accent: &'static str,
+    /// Primary text.
+    pub text: &'static str,
+    /// Secondary / muted text.
+    pub text_secondary: &'static str,
+    /// 1 px hairline border.
+    pub border: &'static str,
+}
+
+impl ColorSet {
+    /// GitHub-dark palette.
+    pub fn dark() -> Self {
+        Self {
+            bg: "#0d1117",
+            surface: "#161b22",
+            elevated: "#21262d",
+            accent: "#58a6ff",
+            text: "#f0f6fc",
+            text_secondary: "#8b949e",
+            border: "#30363d",
+        }
+    }
+
+    /// GitHub-light palette.
+    pub fn light() -> Self {
+        Self {
+            bg: "#ffffff",
+            surface: "#f6f8fa",
+            elevated: "#eaeef2",
+            accent: "#0969da",
+            text: "#1f2328",
+            text_secondary: "#656d76",
+            border: "#d0d7de",
+        }
+    }
+
+    /// OLED palette — pure black for pixel-level power savings.
+    pub fn oled() -> Self {
+        Self {
+            bg: "#000000",
+            surface: "#0a0a0a",
+            elevated: "#111111",
+            accent: "#58a6ff",
+            text: "#f0f6fc",
+            text_secondary: "#8b949e",
+            border: "#21262d",
+        }
+    }
+
+    /// Dispatch to the correct palette by mode.
+    pub fn for_mode(mode: &crate::ThemeMode) -> Self {
+        match mode {
+            crate::ThemeMode::Dark => Self::dark(),
+            crate::ThemeMode::Light => Self::light(),
+            crate::ThemeMode::Oled => Self::oled(),
+        }
+    }
+}
+
+/// All token categories for a single theme variant.
+pub struct ThemeTokens {
+    /// Color token set.
+    pub colors: ColorSet,
+    /// The active display mode.
+    pub mode: crate::ThemeMode,
+}
+
+impl ThemeTokens {
+    /// Build tokens for `mode`.
+    pub fn new(mode: crate::ThemeMode) -> Self {
+        Self {
+            colors: ColorSet::for_mode(&mode),
+            mode,
+        }
+    }
+
+    /// Tokens for the dark variant.
+    pub fn dark() -> Self {
+        Self::new(crate::ThemeMode::Dark)
+    }
+
+    /// Tokens for the light variant.
+    pub fn light() -> Self {
+        Self::new(crate::ThemeMode::Light)
+    }
+
+    /// Tokens for the OLED variant.
+    pub fn oled() -> Self {
+        Self::new(crate::ThemeMode::Oled)
+    }
+
+    /// Returns `true` for dark-family modes (Dark and Oled).
+    pub fn is_dark(&self) -> bool {
+        self.mode.is_dark_family()
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -5606,6 +5717,68 @@ mod tests {
             (y - 0.5).abs() < 0.05,
             "BezierCurve::linear().sample(0.5) = {y:.4} must be ≈ 0.5 ± 0.05"
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // D8 AF-THEME: ColorSet + ThemeTokens
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn color_set_dark_bg_is_dark() {
+        use crate::ThemeMode;
+        let cs = ColorSet::dark();
+        assert_eq!(cs.bg, "#0d1117");
+    }
+
+    #[test]
+    fn color_set_light_bg_is_light() {
+        let cs = ColorSet::light();
+        assert_eq!(cs.bg, "#ffffff");
+    }
+
+    #[test]
+    fn color_set_oled_bg_is_black() {
+        let cs = ColorSet::oled();
+        assert_eq!(cs.bg, "#000000");
+    }
+
+    #[test]
+    fn theme_mode_default_is_dark() {
+        use crate::ThemeMode;
+        assert_eq!(ThemeMode::default_mode(), ThemeMode::Dark);
+    }
+
+    #[test]
+    fn theme_mode_display_names() {
+        use crate::ThemeMode;
+        assert_eq!(ThemeMode::Dark.display_name(), "Dark");
+        assert_eq!(ThemeMode::Light.display_name(), "Light");
+        assert_eq!(ThemeMode::Oled.display_name(), "OLED");
+    }
+
+    #[test]
+    fn theme_tokens_dark() {
+        use crate::ThemeMode;
+        let tt = ThemeTokens::dark();
+        assert_eq!(tt.mode, ThemeMode::Dark);
+        assert_eq!(tt.colors.bg, "#0d1117");
+        assert!(tt.is_dark());
+    }
+
+    #[test]
+    fn theme_tokens_light() {
+        use crate::ThemeMode;
+        let tt = ThemeTokens::light();
+        assert_eq!(tt.mode, ThemeMode::Light);
+        assert_eq!(tt.colors.bg, "#ffffff");
+        assert!(!tt.is_dark());
+    }
+
+    #[test]
+    fn color_set_for_mode_oled() {
+        use crate::ThemeMode;
+        let cs = ColorSet::for_mode(&ThemeMode::Oled);
+        assert_eq!(cs.bg, "#000000");
     }
 
     #[test]

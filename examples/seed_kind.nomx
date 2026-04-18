@@ -1,0 +1,7 @@
+define seed_kind that
+  define kind_name that "flow_middleware"
+  define description that "intercepts and instruments a flow step"
+  define hash that "d9f1b3"
+  define lifecycle that "partial"
+  "seeded kind " + kind_name + " hash=" + hash + " state=" + lifecycle + " | " + description
+seed_kind

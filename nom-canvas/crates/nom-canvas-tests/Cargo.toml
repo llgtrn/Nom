@@ -17,6 +17,7 @@ nom-graph = { path = "../nom-graph" }
 nom-panels = { path = "../nom-panels" }
 nom-theme = { path = "../nom-theme" }
 nom-cli = { path = "../nom-cli" }
+nom-telemetry = { path = "../nom-telemetry" }
 
 [lints]
 workspace = true

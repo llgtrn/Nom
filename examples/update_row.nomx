@@ -1,0 +1,7 @@
+define update_row that
+  define table that "entries"
+  define predicate that "hash = b7e21d"
+  define field that "lifecycle"
+  define new_value that "complete"
+  "updated " + table + " set " + field + "=" + new_value + " where " + predicate
+update_row
