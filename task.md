@@ -470,13 +470,21 @@
 - ✅ CodeLens — CodeLensKind+CodeLens+Provider+Overlay+LensResolver (9 tests)
 - ✅ AuditLog — AuditCategory+AuditEvent+AuditFilter+AuditLog+AuditReporter (9 tests)
 
-## Open Items — Wave ABAH targets
+## Wave ABAH — COMPLETE (2026-04-19, 10125 tests)
 
-- ❌ **nom-graph schema_version** — SchemaVersionId + SchemaVersionGraph + VersionEdge + VersionDiff (graph schema evolution)
-- ❌ **nom-compose export_bundle** — ExportFormat + ExportTarget + ExportJob + ExportQueue (multi-format export)
-- ❌ **nom-canvas-core viewport_clip** — ClipRect + ClipStack + ViewportClipper + ClipResult (viewport clipping)
-- ❌ **nom-editor breadcrumb** — BreadcrumbSegment + BreadcrumbPath + BreadcrumbNav + BreadcrumbRenderer (editor nav)
-- ❌ **nom-collab sync_protocol** — SyncMessage + SyncState + SyncSession + SyncProtocol (collab sync protocol)
+- ✅ SchemaVersion — SchemaVersionId+VersionEdge+SchemaVersionGraph+VersionDiff+MigrationPlan (9 tests)
+- ✅ ExportBundle — ExportFormat×6+Target+Job+Queue+ExportResult (9 tests)
+- ✅ ViewportClip — ClipRect+ClipStack+ViewportClipper+ClipResult+ClipBatch (9 tests)
+- ✅ Breadcrumb — BreadcrumbKind+Segment+Path+Nav+Renderer (9 tests)
+- ✅ SyncProtocol — SyncMessageKind+Message+SyncState+SyncSession+SyncProtocol (9 tests)
+
+## Open Items — Wave ABAI targets
+
+- ❌ **nom-graph route_table** — RouteKey + RouteEntry + RouteTable + RouteResolver (9router-pattern routing)
+- ❌ **nom-compose image_pipeline** — ImageStage + ImagePipeline + PipelineResult + ImagePipelineRunner (image compose pipeline)
+- ❌ **nom-canvas-core hit_zone** — HitZoneKind + HitZone + HitZoneMap + HitTestResult (extended hit testing)
+- ❌ **nom-editor outline_view** — OutlineItem + OutlineSection + OutlineTree + OutlineRenderer (document outline)
+- ❌ **nom-blocks block_tree** — BlockNode + BlockTree + BlockTreeWalker + TreeDiff (block hierarchy)
 
 ---
 
