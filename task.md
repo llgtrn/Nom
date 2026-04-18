@@ -462,13 +462,21 @@
 - ✅ MultiFileEdit — EditScope+MultiFileChange+Session+MultiFileDiff+SessionApplier (9 tests)
 - ✅ EmbedRegistry — EmbedKind+Entry+EmbedRegistry+EmbedResolver (9 tests)
 
-## Open Items — Wave ABAG targets
+## Wave ABAG — COMPLETE (2026-04-19, 10080 tests)
 
-- ❌ **nom-graph intent_graph** — IntentNode + IntentEdge + IntentGraph + IntentGraphQuery (A-axis intent graph)
-- ❌ **nom-compose video_timeline** — TimelineClip + VideoTimeline + TimelineRenderer + ClipOverlap (video timeline model)
-- ❌ **nom-canvas-core layout_grid** — GridCell + GridTrack + LayoutGrid + GridPlacement (CSS-grid-like layout)
-- ❌ **nom-editor code_lens** — CodeLensKind + CodeLens + CodeLensProvider + CodeLensOverlay (C4 code lens)
-- ❌ **nom-telemetry audit_log** — AuditEvent + AuditLog + AuditFilter + AuditReporter (compliance audit logging)
+- ✅ IntentGraph — IntentKind+Node+Edge+IntentGraph+IntentGraphQuery (9 tests)
+- ✅ VideoTimeline — ClipKind+TimelineClip+VideoTimeline+ClipOverlap+TimelineRenderer (9 tests)
+- ✅ LayoutGrid — TrackSize+GridTrack+GridCell+LayoutGrid+GridPlacement (9 tests)
+- ✅ CodeLens — CodeLensKind+CodeLens+Provider+Overlay+LensResolver (9 tests)
+- ✅ AuditLog — AuditCategory+AuditEvent+AuditFilter+AuditLog+AuditReporter (9 tests)
+
+## Open Items — Wave ABAH targets
+
+- ❌ **nom-graph schema_version** — SchemaVersionId + SchemaVersionGraph + VersionEdge + VersionDiff (graph schema evolution)
+- ❌ **nom-compose export_bundle** — ExportFormat + ExportTarget + ExportJob + ExportQueue (multi-format export)
+- ❌ **nom-canvas-core viewport_clip** — ClipRect + ClipStack + ViewportClipper + ClipResult (viewport clipping)
+- ❌ **nom-editor breadcrumb** — BreadcrumbSegment + BreadcrumbPath + BreadcrumbNav + BreadcrumbRenderer (editor nav)
+- ❌ **nom-collab sync_protocol** — SyncMessage + SyncState + SyncSession + SyncProtocol (collab sync protocol)
 
 ---
 
