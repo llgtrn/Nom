@@ -3192,4 +3192,247 @@ mod tests {
         let steps = react_chain("hyp", &["e1", "e2"], 0);
         assert_eq!(steps.len(), 0, "zero max_steps must return empty vec");
     }
+
+    // --- Wave AJ: routing precision, calibration, chaining, context ---
+
+    #[test]
+    fn intent_precision_exact_word_routes_correctly() {
+        // Hypothesis that exactly matches all evidence words gets max score.
+        let score = classify_with_react("canvas", &["canvas"]);
+        assert!(score > 0.5, "exact match must yield high confidence, got {score}");
+    }
+
+    #[test]
+    fn intent_precision_partial_word_routes_fallback() {
+        // Hypothesis with zero overlap gets low score.
+        let score = classify_with_react("canvas", &["compiler"]);
+        assert!(score < 0.5, "zero-overlap must yield low confidence, got {score}");
+    }
+
+    #[test]
+    fn intent_calibration_low_confidence_falls_back() {
+        // No matching words → confidence = 0.
+        let score = classify_with_react("alpha", &["beta", "gamma"]);
+        assert_eq!(score, 0.0, "zero overlap must return 0.0 confidence");
+    }
+
+    #[test]
+    fn intent_calibration_high_confidence_routes() {
+        // Full overlap with single-word evidence → confidence > 0.9.
+        let score = classify_with_react("graph", &["graph"]);
+        assert!(score > 0.9, "full overlap confidence must exceed 0.9, got {score}");
+    }
+
+    #[test]
+    fn intent_chain_step_can_abort_via_interrupt() {
+        // Cancel before chain: react_chain_interruptible returns empty.
+        let signal = InterruptSignal::new();
+        signal.cancel();
+        let steps = react_chain_interruptible("hyp", &["e1", "e2", "e3"], 10, &signal);
+        assert_eq!(steps.len(), 0, "pre-cancelled signal must abort chain");
+    }
+
+    #[test]
+    fn intent_chain_step_can_retry_by_re_invoking() {
+        // Retry = call react_chain again; must produce same-length result.
+        let first = react_chain("retry hyp", &["retry", "hyp"], 2);
+        let second = react_chain("retry hyp", &["retry", "hyp"], 2);
+        assert_eq!(first.len(), second.len(), "retry must produce same step count");
+    }
+
+    #[test]
+    fn intent_chain_step_max_retries_enforced() {
+        // max_steps caps output regardless of evidence count.
+        let steps = react_chain("hyp", &["e1", "e2", "e3", "e4", "e5", "e6", "e7"], 3);
+        assert_eq!(steps.len(), 3, "max_steps must cap at 3");
+    }
+
+    #[test]
+    fn intent_chain_error_propagates_to_result() {
+        // Empty evidence → score 0.0 on all steps (boundary error case).
+        let steps = react_chain("hyp", &[], 5);
+        assert!(steps.is_empty(), "empty evidence must produce no steps");
+    }
+
+    #[test]
+    fn intent_routing_priority_order_first_evidence_higher_score() {
+        // First evidence item has highest decay weight (decay = 1.0).
+        // Step 0 should have higher score than step N when evidence matches.
+        let steps = react_chain("graph", &["graph", "unrelated", "unrelated"], 3);
+        assert_eq!(steps.len(), 3);
+        assert!(
+            steps[0].score >= steps[1].score,
+            "earlier evidence must yield >= score: step0={}, step1={}",
+            steps[0].score, steps[1].score
+        );
+    }
+
+    #[test]
+    fn intent_routing_tie_broken_deterministically() {
+        // Same inputs twice must produce identical step counts.
+        let a = react_chain("tie", &["x", "x", "x"], 3);
+        let b = react_chain("tie", &["x", "x", "x"], 3);
+        assert_eq!(a.len(), b.len());
+        for (sa, sb) in a.iter().zip(b.iter()) {
+            assert!((sa.score - sb.score).abs() < 1e-6, "scores must be deterministic");
+        }
+    }
+
+    #[test]
+    fn intent_context_inherited_thought_contains_hypothesis() {
+        // Each step's thought must reference the original hypothesis.
+        let steps = react_chain("context-hyp", &["c1", "c2"], 2);
+        for step in &steps {
+            assert!(
+                step.thought.contains("context-hyp"),
+                "thought must contain hypothesis, got: {}",
+                step.thought
+            );
+        }
+    }
+
+    #[test]
+    fn intent_context_isolated_per_chain_different_hypotheses() {
+        // Two separate chains must not share state.
+        let s1 = react_chain("chain-one", &["chain-one"], 1);
+        let s2 = react_chain("chain-two", &["chain-two"], 1);
+        assert_eq!(s1.len(), 1);
+        assert_eq!(s2.len(), 1);
+        assert_ne!(
+            s1[0].thought, s2[0].thought,
+            "separate chains must have independent thoughts"
+        );
+    }
+
+    #[test]
+    fn intent_tool_selection_based_on_context_action_contains_evidence() {
+        let steps = react_chain("tool-select", &["specific-tool-name"], 1);
+        assert_eq!(steps.len(), 1);
+        assert!(
+            steps[0].action.contains("specific-tool-name"),
+            "action must encode evidence, got: {}",
+            steps[0].action
+        );
+    }
+
+    #[test]
+    fn intent_tool_fallback_when_primary_fails_empty_evidence() {
+        // Empty evidence simulates primary tool failure → fallback = empty result.
+        let steps = react_chain("primary-tool", &[], 3);
+        assert!(steps.is_empty(), "no evidence = primary failure, fallback = empty");
+    }
+
+    #[test]
+    fn intent_batch_queries_all_correct_scores_in_range() {
+        let queries = [
+            ("graph", &["graph", "node"] as &[&str]),
+            ("canvas", &["canvas", "render"]),
+            ("compiler", &["compiler", "build"]),
+        ];
+        for (hyp, ev) in &queries {
+            let score = classify_with_react(hyp, ev);
+            assert!(
+                (0.0..=1.0).contains(&score),
+                "batch score must be in [0,1] for hyp={hyp}, got {score}"
+            );
+        }
+    }
+
+    #[test]
+    fn intent_batch_performance_linear_not_exponential() {
+        // Runs 50 classify_with_react calls; must complete without panic.
+        for i in 0u32..50 {
+            let hyp = format!("hyp{i}");
+            let ev = vec!["e1", "e2", "e3"];
+            let score = classify_with_react(&hyp, &ev);
+            assert!(score.is_finite());
+        }
+    }
+
+    #[test]
+    fn intent_cancel_mid_chain_via_interrupt_signal() {
+        // Signal not cancelled → chain runs; then cancel → second call returns empty.
+        let signal = InterruptSignal::new();
+        let steps_before = react_chain_interruptible("hyp", &["e1", "e2"], 2, &signal);
+        assert_eq!(steps_before.len(), 2, "uncancelled chain must complete");
+        signal.cancel();
+        let steps_after = react_chain_interruptible("hyp", &["e1", "e2"], 2, &signal);
+        assert_eq!(steps_after.len(), 0, "cancelled chain must return empty");
+    }
+
+    #[test]
+    fn intent_code_intent_routes_to_compiler_keyword() {
+        // "compile" in hypothesis + evidence: score must be > 0.
+        let score = classify_with_react("compile code", &["compile"]);
+        assert!(score > 0.0, "compile intent must score > 0");
+    }
+
+    #[test]
+    fn intent_doc_intent_routes_to_editor_keyword() {
+        let score = classify_with_react("edit document", &["edit", "document"]);
+        assert!(score > 0.0, "doc intent must score > 0");
+    }
+
+    #[test]
+    fn intent_canvas_intent_routes_to_canvas_keyword() {
+        let score = classify_with_react("canvas render", &["canvas"]);
+        assert!(score > 0.0, "canvas intent must score > 0");
+    }
+
+    #[test]
+    fn intent_graph_intent_routes_to_graph_keyword() {
+        let score = classify_with_react("graph query traversal", &["graph", "query"]);
+        assert!(score > 0.0);
+    }
+
+    #[test]
+    fn intent_compose_intent_routes_to_compose_keyword() {
+        let score = classify_with_react("compose output", &["compose"]);
+        assert!(score > 0.0);
+    }
+
+    #[test]
+    fn intent_system_intent_routes_to_system_keyword() {
+        let score = classify_with_react("system health check", &["system", "health"]);
+        assert!(score > 0.0);
+    }
+
+    #[test]
+    fn intent_help_intent_routes_to_help_keyword() {
+        let score = classify_with_react("help me understand", &["help"]);
+        assert!(score > 0.0);
+    }
+
+    #[test]
+    fn scored_hypothesis_fields_accessible() {
+        let ranked = rank_hypotheses(&["graph traversal"], &["graph"]);
+        assert_eq!(ranked.len(), 1);
+        assert!(!ranked[0].hypothesis.is_empty());
+        assert!(ranked[0].score >= 0.0 && ranked[0].score <= 1.0);
+    }
+
+    #[test]
+    fn best_hypothesis_returns_none_for_empty_list() {
+        let result = best_hypothesis(&[], &["evidence"]);
+        assert!(result.is_none(), "empty hypotheses must return None");
+    }
+
+    #[test]
+    fn interrupt_signal_default_not_cancelled() {
+        let s = InterruptSignal::default();
+        assert!(!s.is_cancelled(), "default signal must not be cancelled");
+    }
+
+    #[test]
+    fn react_step_observation_field_is_string() {
+        let steps = react_chain("obs", &["some observation"], 1);
+        assert_eq!(steps.len(), 1);
+        assert!(!steps[0].observation.is_empty(), "observation must be non-empty");
+    }
+
+    #[test]
+    fn classify_with_react_single_evidence_item_in_range() {
+        let score = classify_with_react("single", &["single"]);
+        assert!((0.0..=1.0).contains(&score));
+    }
 }

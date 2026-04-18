@@ -662,4 +662,133 @@ mod tests {
         assert!(spec.frames[0].scene_hash.chars().all(|c| c.is_ascii_hexdigit()));
         let _ = encode_y4m_manifest(&spec, &frames);
     }
+
+    // ── Wave AJ new tests ────────────────────────────────────────────────────
+
+    #[test]
+    fn video_backend_frame_header_includes_dimensions() {
+        // Y4m header must carry the width and height from VideoInput.
+        let mut store = InMemoryStore::new();
+        let input = default_video_input("hdr-dim", "scene", vec![vec![0u8; 4]], 24, 1280, 720);
+        let block = VideoBackend::compose(input, &mut store, &LogProgressSink);
+        let payload = store.read(&block.artifact_hash).unwrap();
+        let text = String::from_utf8_lossy(&payload);
+        assert!(text.contains("W1280"), "header must contain width");
+        assert!(text.contains("H720"), "header must contain height");
+    }
+
+    #[test]
+    fn video_backend_frame_count_tracked() {
+        // Compose with 7 frames; the resulting Y4m payload must have exactly 7 FRAME markers.
+        let mut store = InMemoryStore::new();
+        let frames: Vec<Vec<u8>> = (0..7).map(|i| vec![i as u8; 4]).collect();
+        let input = default_video_input("fc7", "clip", frames, 7, 4, 4);
+        let block = VideoBackend::compose(input, &mut store, &LogProgressSink);
+        let payload = store.read(&block.artifact_hash).unwrap();
+        let text = String::from_utf8_lossy(&payload);
+        assert_eq!(text.matches("FRAME").count(), 7, "must have 7 FRAME markers");
+        let _ = block;
+    }
+
+    #[test]
+    fn video_backend_fps_positive() {
+        // fps=1 must produce a non-panic compose with duration_ms == frame_count * 1000.
+        let mut store = InMemoryStore::new();
+        let frames: Vec<Vec<u8>> = vec![vec![0u8; 4], vec![0u8; 4]];
+        let input = default_video_input("fps-pos", "slow", frames, 1, 8, 8);
+        let block = VideoBackend::compose(input, &mut store, &LogProgressSink);
+        assert_eq!(block.duration_ms, 2000, "2 frames at 1fps => 2000ms");
+    }
+
+    #[test]
+    fn video_backend_artifact_size_grows_with_frames() {
+        // More frames → larger artifact in the store.
+        let mut store = InMemoryStore::new();
+        let small_input = default_video_input("size-s", "s", vec![vec![0u8; 4]; 1], 24, 4, 4);
+        let large_input = default_video_input("size-l", "l", vec![vec![0u8; 4]; 10], 24, 4, 4);
+        let s_block = VideoBackend::compose(small_input, &mut store, &LogProgressSink);
+        let l_block = VideoBackend::compose(large_input, &mut store, &LogProgressSink);
+        let s_size = store.byte_size(&s_block.artifact_hash).unwrap();
+        let l_size = store.byte_size(&l_block.artifact_hash).unwrap();
+        assert!(l_size > s_size, "10 frames must produce larger artifact than 1 frame");
+    }
+
+    #[test]
+    fn video_backend_color_space_in_output() {
+        // Y4m header must contain color-space marker (default is "Cmono" in the encoder).
+        let mut store = InMemoryStore::new();
+        let input = default_video_input("cs-test", "c", vec![vec![0u8; 4]], 24, 4, 4);
+        let block = VideoBackend::compose(input, &mut store, &LogProgressSink);
+        let payload = store.read(&block.artifact_hash).unwrap();
+        let text = String::from_utf8_lossy(&payload);
+        assert!(text.contains("C"), "Y4m header must contain a color-space field starting with C");
+    }
+
+    #[test]
+    fn video_backend_h264_stub_output_labeled() {
+        // MP4Stub + H264Stub must produce a payload containing "h264".
+        let mut store = InMemoryStore::new();
+        let input = VideoInput {
+            entity: nom_blocks::NomtuRef { id: "h264-lbl".into(), word: "h264".into(), kind: "media".into() },
+            frames: vec![vec![0u8; 4]],
+            fps: 24,
+            width: 640,
+            height: 360,
+            container_format: ContainerFormat::Mp4Stub,
+            codec: VideoCodec::H264Stub,
+        };
+        let block = VideoBackend::compose(input, &mut store, &LogProgressSink);
+        let payload = store.read(&block.artifact_hash).unwrap();
+        let text = String::from_utf8_lossy(&payload);
+        assert!(text.contains("h264"), "MP4/H264 stub must label codec as h264");
+    }
+
+    #[test]
+    fn video_backend_vp9_stub_output_labeled() {
+        // WebMStub + Vp9Stub must produce a payload containing "vp9".
+        let mut store = InMemoryStore::new();
+        let input = VideoInput {
+            entity: nom_blocks::NomtuRef { id: "vp9-lbl".into(), word: "vp9".into(), kind: "media".into() },
+            frames: vec![vec![0u8; 4]],
+            fps: 30,
+            width: 1280,
+            height: 720,
+            container_format: ContainerFormat::WebMStub,
+            codec: VideoCodec::Vp9Stub,
+        };
+        let block = VideoBackend::compose(input, &mut store, &LogProgressSink);
+        let payload = store.read(&block.artifact_hash).unwrap();
+        let text = String::from_utf8_lossy(&payload);
+        assert!(text.contains("vp9"), "WebM/VP9 stub must label codec as vp9");
+    }
+
+    #[test]
+    fn video_backend_codec_name_in_output() {
+        // Raw codec in Y4m: codec name should not appear (format is implicit), but Y4m header exists.
+        let mut store = InMemoryStore::new();
+        let input = default_video_input("codec-raw", "raw", vec![vec![0u8; 4]], 24, 4, 4);
+        let block = VideoBackend::compose(input, &mut store, &LogProgressSink);
+        let payload = store.read(&block.artifact_hash).unwrap();
+        let text = String::from_utf8_lossy(&payload);
+        assert!(text.starts_with("YUV4MPEG2"), "raw codec Y4m output starts with YUV4MPEG2");
+    }
+
+    #[test]
+    fn video_backend_container_name_in_output() {
+        // MP4Stub must include "MP4" in the stub header.
+        let spec = VideoSpec::new(24, 640, 480, 1.0);
+        let bytes = encode_stub_container("MP4", "h264", &spec);
+        let text = String::from_utf8_lossy(&bytes);
+        assert!(text.contains("MP4"), "stub header must contain container name 'MP4'");
+    }
+
+    #[test]
+    fn video_backend_zero_duration_no_panic() {
+        // 0-second duration (0 frames) must compose without panicking.
+        let mut store = InMemoryStore::new();
+        let input = default_video_input("zero-dur", "empty", vec![], 30, 4, 4);
+        let block = VideoBackend::compose(input, &mut store, &LogProgressSink);
+        assert_eq!(block.duration_ms, 0, "zero frames => zero duration");
+        assert!(store.exists(&block.artifact_hash));
+    }
 }

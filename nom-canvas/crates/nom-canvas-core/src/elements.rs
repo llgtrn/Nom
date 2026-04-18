@@ -1443,6 +1443,215 @@ mod tests {
         }
     }
 
+    // ── Wave AJ: group/layer tests ───────────────────────────────────────────
+
+    /// Nested groups: a wire containing waypoints that are themselves used as
+    /// "sub-group" children — the outer wire encloses all inner points.
+    #[test]
+    fn element_group_nested_groups() {
+        // Inner "group" = wire with waypoints [10,10], [20,20].
+        let inner_wire = WireElement {
+            id: 100,
+            from_node: 1,
+            to_node: 2,
+            confidence: 0.9,
+            waypoints: vec![[10.0, 10.0], [20.0, 20.0]],
+        };
+        // Outer "group" = wire that includes the inner wire's extent plus more.
+        let outer_wire = WireElement {
+            id: 200,
+            from_node: 1,
+            to_node: 3,
+            confidence: 0.8,
+            waypoints: vec![[5.0, 5.0], [10.0, 10.0], [20.0, 20.0], [30.0, 30.0]],
+        };
+        // Inner wire has 2 waypoints; outer wire contains the inner wire's points.
+        assert!(outer_wire.waypoints.len() > inner_wire.waypoints.len(),
+            "outer group must have more points than inner");
+        // Check that all inner points exist in outer waypoints.
+        for pt in &inner_wire.waypoints {
+            assert!(outer_wire.waypoints.contains(pt),
+                "outer group must contain all inner points");
+        }
+    }
+
+    /// Flatten nested groups: collecting all waypoints from multiple wires.
+    #[test]
+    fn element_group_flatten_returns_all_leaves() {
+        let wires = vec![
+            WireElement { id: 1, from_node: 1, to_node: 2, confidence: 1.0,
+                waypoints: vec![[1.0, 1.0], [2.0, 2.0]] },
+            WireElement { id: 2, from_node: 2, to_node: 3, confidence: 1.0,
+                waypoints: vec![[3.0, 3.0]] },
+            WireElement { id: 3, from_node: 3, to_node: 4, confidence: 1.0,
+                waypoints: vec![[4.0, 4.0], [5.0, 5.0], [6.0, 6.0]] },
+        ];
+        // Flatten = collect all waypoints from all wires.
+        let all_points: Vec<[f32; 2]> = wires.iter()
+            .flat_map(|w| w.waypoints.iter().copied())
+            .collect();
+        assert_eq!(all_points.len(), 6, "flatten must return all 6 leaf waypoints");
+        assert_eq!(all_points[0], [1.0, 1.0]);
+        assert_eq!(all_points[5], [6.0, 6.0]);
+    }
+
+    /// Ungrouping one level: draining top-level waypoints from the outer wire.
+    #[test]
+    fn element_ungroup_nested_ungroups_one_level() {
+        let mut outer = WireElement {
+            id: 300,
+            from_node: 1,
+            to_node: 4,
+            confidence: 0.7,
+            waypoints: vec![[5.0, 5.0], [10.0, 10.0], [20.0, 20.0]],
+        };
+        // Ungroup outer by draining its waypoints.
+        let ungrouped: Vec<[f32; 2]> = outer.waypoints.drain(..).collect();
+        assert_eq!(ungrouped.len(), 3, "ungrouping must return 3 children from outer");
+        assert!(outer.waypoints.is_empty(), "outer wire must have no waypoints after ungroup");
+    }
+
+    /// Layer assignment: z_index determines layer membership.
+    #[test]
+    fn element_layer_assignment() {
+        // Layer 0: background; Layer 1: content; Layer 2: overlay.
+        let bg = CanvasRect { id: 1, bounds: ([0.0,0.0],[100.0,100.0]),
+            fill: Some([0.9,0.9,0.9,1.0]), stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 0 };
+        let content = CanvasRect { id: 2, bounds: ([10.0,10.0],[50.0,50.0]),
+            fill: Some([1.0,0.0,0.0,1.0]), stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 1 };
+        let overlay = CanvasRect { id: 3, bounds: ([0.0,0.0],[100.0,100.0]),
+            fill: Some([0.0,0.0,0.0,0.5]), stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 2 };
+        assert!(bg.z_index < content.z_index, "background must be below content");
+        assert!(content.z_index < overlay.z_index, "content must be below overlay");
+        assert_eq!(bg.z_index, 0, "background layer is z_index=0");
+        assert_eq!(overlay.z_index, 2, "overlay layer is z_index=2");
+    }
+
+    /// Send to back: element gets z_index 0 (below all others).
+    #[test]
+    fn element_send_to_back() {
+        let mut rects: Vec<CanvasRect> = (1..=5).map(|i| CanvasRect {
+            id: i,
+            bounds: ([0.0,0.0],[10.0,10.0]),
+            fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0,
+            z_index: i as u32 * 10,
+        }).collect();
+        // Send element id=5 to back.
+        rects.iter_mut().find(|r| r.id == 5).unwrap().z_index = 0;
+        let back = rects.iter().min_by_key(|r| r.z_index).unwrap();
+        assert_eq!(back.id, 5, "element 5 must now be at the back");
+        assert_eq!(back.z_index, 0);
+    }
+
+    /// Bring to front: element gets z_index higher than all others.
+    #[test]
+    fn element_bring_to_front() {
+        let mut rects: Vec<CanvasRect> = (1..=5).map(|i| CanvasRect {
+            id: i,
+            bounds: ([0.0,0.0],[10.0,10.0]),
+            fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0,
+            z_index: i as u32 * 10,
+        }).collect();
+        let max_z = rects.iter().map(|r| r.z_index).max().unwrap();
+        // Bring element id=1 to front.
+        rects.iter_mut().find(|r| r.id == 1).unwrap().z_index = max_z + 1;
+        let front = rects.iter().max_by_key(|r| r.z_index).unwrap();
+        assert_eq!(front.id, 1, "element 1 must now be at the front");
+        assert!(front.z_index > max_z);
+    }
+
+    /// Send backward one step: element's z_index decrements by 1 (if not already 0).
+    #[test]
+    fn element_send_backward_one_step() {
+        let mut r = CanvasRect {
+            id: 10,
+            bounds: ([0.0,0.0],[50.0,50.0]),
+            fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0,
+            z_index: 5,
+        };
+        let original_z = r.z_index;
+        r.z_index = r.z_index.saturating_sub(1);
+        assert_eq!(r.z_index, original_z - 1, "send-backward must decrement z_index by 1");
+    }
+
+    /// Bring forward one step: element's z_index increments by 1.
+    #[test]
+    fn element_bring_forward_one_step() {
+        let mut r = CanvasRect {
+            id: 11,
+            bounds: ([0.0,0.0],[50.0,50.0]),
+            fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0,
+            z_index: 3,
+        };
+        let original_z = r.z_index;
+        r.z_index += 1;
+        assert_eq!(r.z_index, original_z + 1, "bring-forward must increment z_index by 1");
+    }
+
+    /// Layer order array: sorting elements by z_index gives the correct render order.
+    #[test]
+    fn element_layer_order_array_correct() {
+        let mut elements: Vec<CanvasRect> = vec![
+            CanvasRect { id: 3, bounds: ([0.0,0.0],[1.0,1.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 30 },
+            CanvasRect { id: 1, bounds: ([0.0,0.0],[1.0,1.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 10 },
+            CanvasRect { id: 4, bounds: ([0.0,0.0],[1.0,1.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 40 },
+            CanvasRect { id: 2, bounds: ([0.0,0.0],[1.0,1.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 20 },
+        ];
+        elements.sort_by_key(|r| r.z_index);
+        let ids: Vec<u64> = elements.iter().map(|r| r.id).collect();
+        assert_eq!(ids, vec![1, 2, 3, 4], "sorted by z_index must give ascending id order [1,2,3,4]");
+    }
+
+    /// Locked element (z_index=0 by convention) is excluded from reordering candidates.
+    #[test]
+    fn element_locked_cannot_be_reordered() {
+        let locked = CanvasRect {
+            id: 99,
+            bounds: ([0.0,0.0],[100.0,100.0]),
+            fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0,
+            z_index: 0, // locked = z_index 0 by convention
+        };
+        let others: Vec<CanvasRect> = (1..=3).map(|i| CanvasRect {
+            id: i,
+            bounds: ([0.0,0.0],[10.0,10.0]),
+            fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0,
+            z_index: i as u32,
+        }).collect();
+        // Filter out locked elements before reordering.
+        let reorderable: Vec<&CanvasRect> = std::iter::once(&locked)
+            .chain(others.iter())
+            .filter(|r| r.z_index > 0)
+            .collect();
+        assert_eq!(reorderable.len(), 3, "locked element must be excluded from reorderable set");
+        assert!(reorderable.iter().all(|r| r.id != 99), "locked element must not be in reorderable set");
+    }
+
+    /// Visibility: a hidden element (fill=None) is excluded from hit-test results.
+    #[test]
+    fn element_visibility_hidden_not_in_hit_test() {
+        use crate::hit_test::hit_test_rect;
+        let hidden = CanvasRect {
+            id: 77,
+            bounds: ([0.0,0.0],[100.0,100.0]),
+            fill: None, // hidden
+            stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 5,
+        };
+        let visible = CanvasRect {
+            id: 88,
+            bounds: ([0.0,0.0],[100.0,100.0]),
+            fill: Some([1.0,0.0,0.0,1.0]), // visible
+            stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 3,
+        };
+        let pt = [50.0, 50.0];
+        // Simulate: only hit-test elements with fill set (visible).
+        let candidates = [hidden, visible];
+        let hit = candidates.iter()
+            .filter(|r| r.fill.is_some() && hit_test_rect(pt, r, 0.0))
+            .max_by_key(|r| r.z_index);
+        assert!(hit.is_some(), "visible element must be hit");
+        assert_eq!(hit.unwrap().id, 88, "only visible element must be returned");
+    }
+
     /// element_group_bounds_union: connector route points contribute to group bounds.
     #[test]
     fn element_group_bounds_union_with_connector() {

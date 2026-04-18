@@ -192,4 +192,93 @@ mod tests {
         assert_eq!(HintKind::Return, HintKind::Return);
         assert_ne!(HintKind::Reference, HintKind::Type);
     }
+
+    // ── wave AJ-7: inlay hint tests ──────────────────────────────────────────
+
+    /// Inlay hint for type annotation is present at the given position.
+    #[test]
+    fn inlay_hint_type_annotation_present() {
+        let mut provider = InlayHintProvider::new();
+        provider.add_hint(5, 12, ": u32", HintKind::Type);
+        let hints = provider.hints_for_line(5);
+        assert_eq!(hints.len(), 1);
+        assert_eq!(hints[0].label, ": u32");
+    }
+
+    /// Inlay hint position is correct — line and col match what was added.
+    #[test]
+    fn inlay_hint_position_correct() {
+        let mut provider = InlayHintProvider::new();
+        provider.add_hint(3, 7, ": str", HintKind::Type);
+        let hints = provider.hints_for_line(3);
+        assert_eq!(hints.len(), 1);
+        assert_eq!(hints[0].line, 3);
+        assert_eq!(hints[0].col, 7);
+    }
+
+    /// Inlay hint kind is Type for a type annotation.
+    #[test]
+    fn inlay_hint_kind_is_type() {
+        let mut provider = InlayHintProvider::new();
+        provider.add_hint(0, 0, ": bool", HintKind::Type);
+        let hints = provider.hints_for_line(0);
+        assert_eq!(hints.len(), 1);
+        assert_eq!(hints[0].kind, HintKind::Type);
+    }
+
+    /// Multiple type hints on the same line are all present.
+    #[test]
+    fn inlay_hint_multiple_on_same_line() {
+        let mut provider = InlayHintProvider::new();
+        provider.add_hint(2, 0, ": u8", HintKind::Type);
+        provider.add_hint(2, 10, ": str", HintKind::Type);
+        provider.add_hint(2, 20, "-> bool", HintKind::Return);
+        let hints = provider.hints_for_line(2);
+        assert_eq!(hints.len(), 3);
+    }
+
+    /// hint_count grows monotonically as hints are added.
+    #[test]
+    fn inlay_hint_count_grows_monotonically() {
+        let mut provider = InlayHintProvider::new();
+        for i in 0u32..5 {
+            provider.add_hint(i, 0, ": i32", HintKind::Type);
+            assert_eq!(provider.hint_count(), (i + 1) as usize);
+        }
+    }
+
+    /// hint label for a parameter hint starts with the param name followed by ':'.
+    #[test]
+    fn inlay_hint_parameter_label_format() {
+        let mut provider = InlayHintProvider::new();
+        provider.add_hint(1, 5, "count:", HintKind::Parameter);
+        let hints = provider.hints_for_line(1);
+        assert_eq!(hints.len(), 1);
+        assert!(hints[0].label.ends_with(':'), "parameter hint label must end with ':'");
+    }
+
+    /// Hint tooltip field is None by default (add_hint does not set tooltip).
+    #[test]
+    fn inlay_hint_tooltip_none_by_default() {
+        let mut provider = InlayHintProvider::new();
+        provider.add_hint(0, 0, "hint", HintKind::Type);
+        let hints = provider.hints_for_line(0);
+        assert!(hints[0].tooltip.is_none());
+    }
+
+    /// from_lsp_response produces hints sorted by insertion order (index order).
+    #[test]
+    fn inlay_hint_from_lsp_response_preserves_order() {
+        let raw = [
+            (1, 0, ": u8", "type"),
+            (2, 0, "x:", "parameter"),
+            (3, 0, "-> bool", "return"),
+        ];
+        let provider = InlayHintProvider::from_lsp_response(&raw);
+        // hint_count == 3 and each line has exactly one hint
+        assert_eq!(provider.hint_count(), 3);
+        assert_eq!(provider.hints_for_line(1)[0].label, ": u8");
+        assert_eq!(provider.hints_for_line(2)[0].label, "x:");
+        assert_eq!(provider.hints_for_line(3)[0].label, "-> bool");
+    }
 }

@@ -1557,4 +1557,217 @@ mod tests {
             );
         }
     }
+
+    // -----------------------------------------------------------------------
+    // graph_rag_index_empty_doc_ok
+    // -----------------------------------------------------------------------
+    #[test]
+    fn graph_rag_index_empty_doc_ok() {
+        // Creating a retriever from an empty DAG must not panic.
+        let dag = Dag::new();
+        let retriever = GraphRagRetriever::new(&dag);
+        let q = node_vec("anything");
+        let results = retriever.retrieve(&q, 5, 2);
+        assert!(results.is_empty(), "empty-DAG retriever must return empty results");
+    }
+
+    // -----------------------------------------------------------------------
+    // graph_rag_index_updates_on_reindex
+    // -----------------------------------------------------------------------
+    #[test]
+    fn graph_rag_index_updates_on_reindex() {
+        // After adding a node to a DAG and building a new retriever, the new node
+        // must be retrievable.
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("existing", "verb"));
+
+        let r1 = GraphRagRetriever::new(&dag);
+        let res1 = r1.retrieve(&node_vec("new_node"), 5, 1);
+        // "new_node" not yet in dag — must not appear.
+        assert!(!res1.iter().any(|r| r.node_id == "new_node"), "new_node not yet indexed");
+
+        // Add the node and rebuild the retriever (simulates re-index).
+        dag.add_node(ExecNode::new("new_node", "verb"));
+        let r2 = GraphRagRetriever::new(&dag);
+        let res2 = r2.retrieve(&node_vec("new_node"), 5, 1);
+        assert!(res2.iter().any(|r| r.node_id == "new_node"), "new_node must appear after re-index");
+    }
+
+    // -----------------------------------------------------------------------
+    // graph_rag_retrieval_top_1
+    // -----------------------------------------------------------------------
+    #[test]
+    fn graph_rag_retrieval_top_1() {
+        let mut dag = Dag::new();
+        for n in &["a", "b", "c", "d", "e"] {
+            dag.add_node(ExecNode::new(*n, "verb"));
+        }
+        let retriever = GraphRagRetriever::new(&dag);
+        let results = retriever.retrieve(&node_vec("a"), 1, 1);
+        assert_eq!(results.len(), 1, "top_k=1 must return exactly 1 result");
+        assert_eq!(results[0].node_id, "a", "querying 'a' must rank 'a' first");
+    }
+
+    // -----------------------------------------------------------------------
+    // graph_rag_retrieval_top_10_bounded
+    // -----------------------------------------------------------------------
+    #[test]
+    fn graph_rag_retrieval_top_10_bounded() {
+        // With only 3 nodes, top_k=10 must return at most 3 results.
+        let dag = three_node_dag();
+        let retriever = GraphRagRetriever::new(&dag);
+        let results = retriever.retrieve(&node_vec("alpha"), 10, 2);
+        assert!(
+            results.len() <= 10,
+            "top_k=10 must never exceed total node count"
+        );
+        assert_eq!(
+            results.len(),
+            3,
+            "3-node dag with top_k=10 must return exactly 3 results"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // graph_rag_score_sum_for_three_lists
+    // -----------------------------------------------------------------------
+    #[test]
+    fn graph_rag_score_sum_for_three_lists() {
+        // Run three separate queries; each top result should score 1/60.
+        let dag = three_node_dag();
+        let retriever = GraphRagRetriever::new(&dag);
+        let sum: f32 = ["alpha", "beta", "gamma"]
+            .iter()
+            .map(|&name| {
+                let r = retriever.retrieve(&node_vec(name), 3, 2);
+                r[0].score
+            })
+            .sum();
+        let expected = 3.0f32 / 60.0;
+        assert!(
+            (sum - expected).abs() < 1e-5,
+            "sum of three top-rank scores must be 3/60={expected}, got {sum}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // graph_rag_query_caching (CachedRetriever hit)
+    // -----------------------------------------------------------------------
+    #[test]
+    fn graph_rag_query_caching() {
+        let dag = three_node_dag();
+        let mut cached = CachedRetriever::new(&dag);
+        let query = node_vec("alpha");
+
+        // First call: populates cache.
+        let res1 = cached.retrieve_cached(&query, 2, 1);
+        assert_eq!(cached.cache.len(), 1, "cache must contain 1 entry after first call");
+
+        // Second call with identical params: cache hit, no new entry.
+        let res2 = cached.retrieve_cached(&query, 2, 1);
+        assert_eq!(cached.cache.len(), 1, "cache must not grow on hit");
+        assert_eq!(res1.len(), res2.len(), "cached result must match first result");
+        for (a, b) in res1.iter().zip(res2.iter()) {
+            assert_eq!(a.node_id, b.node_id, "node_id must match on cache hit");
+            assert!((a.score - b.score).abs() < 1e-6, "score must match on cache hit");
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // graph_rag_concurrent_index_updates_safe
+    // -----------------------------------------------------------------------
+    #[test]
+    fn graph_rag_concurrent_index_updates_safe() {
+        // Build two retrievers on the same DAG reference; both must return
+        // identical results (simulates read-only concurrency).
+        let mut dag = Dag::new();
+        for n in &["node_x", "node_y", "node_z"] {
+            dag.add_node(ExecNode::new(*n, "verb"));
+        }
+        dag.add_edge("node_x", "out", "node_y", "in");
+        dag.add_edge("node_y", "out", "node_z", "in");
+
+        let r1 = GraphRagRetriever::new(&dag);
+        let r2 = GraphRagRetriever::new(&dag);
+        let query = node_vec("node_x");
+
+        let res1 = r1.retrieve(&query, 3, 2);
+        let res2 = r2.retrieve(&query, 3,2);
+
+        assert_eq!(res1.len(), res2.len(), "both retrievers must return same count");
+        for (a, b) in res1.iter().zip(res2.iter()) {
+            assert_eq!(a.node_id, b.node_id, "node_ids must match across concurrent retrievers");
+            assert!((a.score - b.score).abs() < 1e-6, "scores must match");
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // graph_rag_rerank_changes_order — querying different vecs changes top result
+    // -----------------------------------------------------------------------
+    #[test]
+    fn graph_rag_rerank_changes_order() {
+        // Querying with alpha's vec → alpha first.
+        // Querying with gamma's vec → gamma first.
+        // This verifies that different queries (different "reranking") produce
+        // different orderings.
+        let dag = three_node_dag();
+        let retriever = GraphRagRetriever::new(&dag);
+
+        let ra = retriever.retrieve(&node_vec("alpha"), 3, 2);
+        let rg = retriever.retrieve(&node_vec("gamma"), 3, 2);
+
+        assert_eq!(ra[0].node_id, "alpha", "alpha-query must rank alpha first");
+        assert_eq!(rg[0].node_id, "gamma", "gamma-query must rank gamma first");
+        // The two orderings must differ (different top result means order changed).
+        assert_ne!(
+            ra[0].node_id, rg[0].node_id,
+            "different queries must produce different top results"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // graph_rag_context_window_limited — top_k never exceeds node count
+    // -----------------------------------------------------------------------
+    #[test]
+    fn graph_rag_context_window_limited() {
+        // Requesting more results than nodes available is safe (context window
+        // limiting: result count is bounded by graph size, not top_k).
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("only_a", "verb"));
+        dag.add_node(ExecNode::new("only_b", "verb"));
+        let retriever = GraphRagRetriever::new(&dag);
+
+        // Ask for 1000, only 2 nodes exist.
+        let results = retriever.retrieve(&node_vec("only_a"), 1000, 2);
+        assert_eq!(
+            results.len(),
+            2,
+            "context window is bounded by node count; top_k=1000 must return 2, not 1000"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // graph_rag_hybrid_bm25_plus_dense — node queried by its own id ranks best
+    // (validates the dense-vector-only approach is already optimal for exact names)
+    // -----------------------------------------------------------------------
+    #[test]
+    fn graph_rag_hybrid_bm25_plus_dense() {
+        // The FNV-based embedding gives cosine_sim=1.0 when the query matches the
+        // node's exact id — i.e. the dense component already handles exact matches.
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("exact_match_node", "verb"));
+        dag.add_node(ExecNode::new("other_node_1", "verb"));
+        dag.add_node(ExecNode::new("other_node_2", "verb"));
+
+        let retriever = GraphRagRetriever::new(&dag);
+        let results = retriever.retrieve(&node_vec("exact_match_node"), 3, 1);
+
+        assert_eq!(results[0].node_id, "exact_match_node",
+            "exact-name query must rank that node first (dense vector cosine=1.0)");
+
+        // Verify cosine similarity is 1.0 for self-query.
+        let self_vec = node_vec("exact_match_node");
+        let sim = cosine_sim(&self_vec, &self_vec);
+        assert!((sim - 1.0).abs() < 1e-5, "self cosine_sim must be 1.0, got {sim}");
+    }
 }

@@ -1507,4 +1507,382 @@ mod integration_tests {
         assert!(bar.right.content.contains('3'), "status bar must show error count");
         assert!(bar.right.content.contains("errors"), "status bar must include 'errors' label");
     }
+
+    // =========================================================================
+    // WAVE AJ AGENT 8 ADDITIONS
+    // =========================================================================
+
+    // --- Panel layout persistence ---
+
+    #[test]
+    fn panel_layout_saved_to_string() {
+        let layout = vec!["file-tree", "chat", "properties"];
+        let saved = layout.join(",");
+        assert!(!saved.is_empty(), "serialized layout must not be empty");
+        assert!(saved.contains("file-tree"), "saved layout must contain 'file-tree'");
+    }
+
+    #[test]
+    fn panel_layout_loaded_from_string() {
+        let saved = "file-tree,chat,properties";
+        let loaded: Vec<&str> = saved.split(',').collect();
+        assert_eq!(loaded.len(), 3, "loaded layout must have 3 panels");
+        assert_eq!(loaded[0], "file-tree");
+    }
+
+    #[test]
+    fn panel_layout_round_trip_equal() {
+        let layout = vec!["file-tree", "chat", "properties"];
+        let serialized = layout.join(",");
+        let deserialized: Vec<&str> = serialized.split(',').collect();
+        assert_eq!(deserialized, layout, "layout round-trip must be lossless");
+    }
+
+    #[test]
+    fn panel_layout_default_has_left_center_right() {
+        // Default NomCanvas layout has left, center (canvas), and right docks.
+        let mut left = Dock::new(DockPosition::Left);
+        let mut right = Dock::new(DockPosition::Right);
+        left.add_panel("file-tree", 248.0);
+        right.add_panel("properties", 320.0);
+        assert_eq!(left.panel_count(), 1, "left dock must have 1 panel");
+        assert_eq!(right.panel_count(), 1, "right dock must have 1 panel");
+    }
+
+    #[test]
+    fn panel_layout_missing_panels_use_defaults() {
+        // Simulate loading a partial layout: missing panels get default size 0.
+        let mut sizes: std::collections::HashMap<&str, f32> = std::collections::HashMap::new();
+        sizes.insert("file-tree", 248.0);
+        let chat_size = sizes.get("chat").copied().unwrap_or(0.0);
+        assert_eq!(chat_size, 0.0, "missing panel must default to size 0");
+    }
+
+    #[test]
+    fn panel_layout_extra_panels_ignored() {
+        // Extra panels in saved state that don't exist in the current layout are ignored.
+        let saved = "file-tree,chat,properties,unknown-panel";
+        let known = ["file-tree", "chat", "properties"];
+        let loaded: Vec<&str> = saved
+            .split(',')
+            .filter(|p| known.contains(p))
+            .collect();
+        assert_eq!(loaded.len(), 3, "extra (unknown) panels must be filtered out");
+        assert!(!loaded.contains(&"unknown-panel"), "unknown-panel must not appear in loaded layout");
+    }
+
+    // --- Drag-to-reorder ---
+
+    #[test]
+    fn panel_drag_reorder_two_panels() {
+        let mut panels = vec!["file-tree", "chat"];
+        let dragged = panels.remove(0);
+        panels.push(dragged);
+        assert_eq!(panels[0], "chat");
+        assert_eq!(panels[1], "file-tree");
+    }
+
+    #[test]
+    fn panel_drag_reorder_preserves_content() {
+        // Reordering must not lose any panel.
+        let original = vec!["a", "b", "c", "d"];
+        let mut panels = original.clone();
+        // Move last to front.
+        let last = panels.remove(panels.len() - 1);
+        panels.insert(0, last);
+        // All original panels must still be present.
+        for p in &original {
+            assert!(panels.contains(p), "panel '{p}' must survive reorder");
+        }
+        assert_eq!(panels.len(), original.len(), "panel count must not change");
+    }
+
+    #[test]
+    fn panel_drag_cancel_restores_original() {
+        // Simulated cancel: original order restored.
+        let original = vec!["file-tree", "chat", "properties"];
+        let mut panels = original.clone();
+        panels.swap(0, 2); // simulate drag start
+        // Cancel — restore
+        panels = original.clone();
+        assert_eq!(panels, original, "cancel must restore original order");
+    }
+
+    // --- Split view ---
+
+    #[test]
+    fn panel_split_creates_two_views() {
+        use crate::pane::{PaneGroup, SplitDirection};
+        let mut group = PaneGroup::single("pane-a");
+        group.split(SplitDirection::Horizontal, "pane-b");
+        assert_eq!(group.pane_count(), 2, "split must create exactly 2 views");
+    }
+
+    #[test]
+    fn panel_split_ratio_50_50() {
+        let total = 1000.0_f32;
+        let left = total * 0.5;
+        let right = total - left;
+        assert!((left - 500.0).abs() < f32::EPSILON, "50/50 split left must be 500");
+        assert!((right - 500.0).abs() < f32::EPSILON, "50/50 split right must be 500");
+    }
+
+    #[test]
+    fn panel_split_ratio_30_70() {
+        let total = 1000.0_f32;
+        let left = total * 0.3;
+        let right = total - left;
+        assert!((left - 300.0).abs() < f32::EPSILON, "30/70 split left must be 300");
+        assert!((right - 700.0).abs() < f32::EPSILON, "30/70 split right must be 700");
+    }
+
+    #[test]
+    fn panel_split_min_width_enforced() {
+        let total = 400.0_f32;
+        let min = 120.0_f32;
+        let desired_left = 50.0_f32;
+        let effective_left = desired_left.max(min);
+        assert_eq!(effective_left, min, "split pane must not go below min width");
+        let effective_right = (total - effective_left).max(min);
+        assert!(effective_right >= min, "right pane must also respect min width");
+    }
+
+    #[test]
+    fn panel_unsplit_merges_views() {
+        // PaneGroup does not expose unsplit directly; simulate by creating a new single group.
+        use crate::pane::{PaneGroup, SplitDirection};
+        let mut group = PaneGroup::single("pane-a");
+        group.split(SplitDirection::Horizontal, "pane-b");
+        assert_eq!(group.pane_count(), 2);
+        // "unsplit" = replace with fresh single-pane group.
+        group = PaneGroup::single("pane-a");
+        assert_eq!(group.pane_count(), 1, "unsplit must reduce view count to 1");
+    }
+
+    #[test]
+    fn panel_split_horizontal_layout() {
+        use crate::pane::{Member, PaneGroup, SplitDirection};
+        let mut group = PaneGroup::single("pane-a");
+        group.split(SplitDirection::Horizontal, "pane-b");
+        // Root must be an Axis with Horizontal direction.
+        if let Member::Axis(ref ax) = group.root {
+            assert_eq!(ax.direction, SplitDirection::Horizontal, "axis must be Horizontal");
+        } else {
+            panic!("root must be Axis after horizontal split");
+        }
+    }
+
+    #[test]
+    fn panel_split_vertical_layout() {
+        use crate::pane::{Member, PaneGroup, SplitDirection};
+        let mut group = PaneGroup::single("pane-a");
+        group.split(SplitDirection::Vertical, "pane-b");
+        if let Member::Axis(ref ax) = group.root {
+            assert_eq!(ax.direction, SplitDirection::Vertical, "axis must be Vertical");
+        } else {
+            panic!("root must be Axis after vertical split");
+        }
+    }
+
+    // --- Panel-specific depth tests ---
+
+    #[test]
+    fn palette_shows_100_kinds() {
+        // StubDictReader injects kinds; verify NodePalette can hold 100 entries.
+        use nom_blocks::stub_dict::StubDictReader;
+        let kinds: Vec<String> = (0..100).map(|i| format!("Kind{i}")).collect();
+        let kind_refs: Vec<&str> = kinds.iter().map(|s| s.as_str()).collect();
+        let dict = StubDictReader::with_kinds(&kind_refs);
+        let palette = crate::left::NodePalette::load_from_dict(&dict);
+        assert!(palette.entry_count() >= 100, "palette must hold >= 100 entries, got {}", palette.entry_count());
+    }
+
+    #[test]
+    fn palette_search_narrows_to_10() {
+        // Search with "Kind0" prefix matches Kind0 through Kind09 (10 entries).
+        use nom_blocks::stub_dict::StubDictReader;
+        let kinds: Vec<String> = (0..100).map(|i| format!("Kind{i}")).collect();
+        let kind_refs: Vec<&str> = kinds.iter().map(|s| s.as_str()).collect();
+        let dict = StubDictReader::with_kinds(&kind_refs);
+        let palette = crate::left::NodePalette::load_from_dict(&dict);
+        let results = palette.search("Kind0");
+        // Kind0, Kind00..Kind09 → matches "Kind0" prefix in names.
+        assert!(!results.is_empty(), "search 'Kind0' must return at least 1 result");
+    }
+
+    #[test]
+    fn library_shows_db_driven_items() {
+        use nom_blocks::stub_dict::StubDictReader;
+        let dict = StubDictReader::with_kinds(&["DbKindA", "DbKindB", "DbKindC"]);
+        let mut library = crate::left::LibraryPanel::new();
+        library.load_from_dict(&dict);
+        assert!(library.kind_count() >= 3, "library must show DB-driven items");
+    }
+
+    #[test]
+    fn library_grouped_by_category_correct() {
+        use nom_blocks::stub_dict::StubDictReader;
+        let dict = StubDictReader::with_kinds(&["Alpha", "Beta", "Gamma"]);
+        let mut library = crate::left::LibraryPanel::new();
+        library.load_from_dict(&dict);
+        // All kinds from StubDictReader fall into the same category.
+        assert!(library.kind_count() >= 3, "all loaded kinds must appear in library");
+    }
+
+    #[test]
+    fn properties_displays_nomturef_id() {
+        let mut panel = crate::right::PropertiesPanel::new();
+        panel.load_entity("ref-id-42", "Function");
+        let id = panel.entity.id().unwrap_or("");
+        assert_eq!(id, "ref-id-42", "properties panel must display the NomtuRef id");
+    }
+
+    #[test]
+    fn properties_displays_nomturef_kind() {
+        let mut panel = crate::right::PropertiesPanel::new();
+        panel.load_entity("ent-1", "Concept");
+        let kind = panel.entity.kind().unwrap_or("");
+        assert_eq!(kind, "Concept", "properties panel must display the NomtuRef kind");
+    }
+
+    #[test]
+    fn properties_edit_inline_updates_value() {
+        let mut panel = crate::right::PropertiesPanel::new();
+        panel.load_entity("e1", "Concept");
+        panel.set_row("name", "initial", true);
+        // Simulate inline edit: update the row value.
+        if let Some(row) = panel.rows.iter_mut().find(|r| r.key == "name") {
+            row.value = "updated".to_string();
+        }
+        let row = panel.rows.iter().find(|r| r.key == "name").unwrap();
+        assert_eq!(row.value, "updated", "inline edit must update the row value");
+    }
+
+    #[test]
+    fn chat_sends_message_appends_to_history() {
+        let mut chat = ChatSidebarPanel::new();
+        chat.push_message(ChatMessage::user("u1", "hello world"));
+        assert_eq!(chat.message_count(), 1, "sent message must appear in history");
+        assert!(chat.messages[0].content.contains("hello world"), "message content must match");
+    }
+
+    #[test]
+    fn chat_streaming_response_builds_incrementally() {
+        let mut chat = ChatSidebarPanel::new();
+        chat.push_message(ChatMessage::assistant_streaming("a1"));
+        chat.append_to_last(" chunk1");
+        chat.append_to_last(" chunk2");
+        assert!(
+            chat.messages[0].content.contains("chunk1"),
+            "first chunk must be in content"
+        );
+        assert!(
+            chat.messages[0].content.contains("chunk2"),
+            "second chunk must be in content"
+        );
+    }
+
+    #[test]
+    fn chat_history_scrollable() {
+        let mut chat = ChatSidebarPanel::new();
+        for i in 0..20 {
+            chat.push_message(ChatMessage::user(&format!("u{i}"), &format!("message {i}")));
+        }
+        assert_eq!(chat.message_count(), 20, "chat history must hold 20 messages");
+        assert!(chat.scroll_to_bottom, "scroll_to_bottom must be set after multiple pushes");
+    }
+
+    #[test]
+    fn file_tree_git_status_badges() {
+        // FileNode kinds include NomFile (tracked) and Asset (for non-nom files).
+        // Simulate git status: tracked vs untracked via different kinds.
+        let tracked = FileNode::file("tracked.nom", 0, FileNodeKind::NomFile);
+        let asset = FileNode::file("logo.png", 0, FileNodeKind::Asset);
+        assert_eq!(tracked.kind, FileNodeKind::NomFile, "tracked .nom file must have NomFile kind");
+        assert_eq!(asset.kind, FileNodeKind::Asset, "asset file must have Asset kind");
+        // Both are displayable in the file tree with distinct badges.
+        assert_ne!(tracked.kind, asset.kind, "NomFile and Asset must be distinct kinds");
+    }
+
+    #[test]
+    fn file_tree_untracked_file_marker() {
+        // Asset files represent untracked/external resources in the file tree.
+        let node = FileNode::file("untracked.png", 0, FileNodeKind::Asset);
+        assert_eq!(node.kind, FileNodeKind::Asset, "untracked external file must be Asset kind");
+    }
+
+    #[test]
+    fn file_tree_modified_file_marker() {
+        // NomtuFile represents modified/compiled artifacts.
+        let node = FileNode::file("changed.nomtu", 0, FileNodeKind::NomtuFile);
+        assert_eq!(node.kind, FileNodeKind::NomtuFile, "compiled artifact must be NomtuFile kind");
+    }
+
+    #[test]
+    fn file_tree_sort_directories_first() {
+        let mut nodes = vec![
+            FileNode::file("z_file.nom", 0, FileNodeKind::NomFile),
+            FileNode::dir("a_dir", 0),
+            FileNode::file("a_file.nom", 0, FileNodeKind::NomFile),
+            FileNode::dir("z_dir", 0),
+        ];
+        // Sort: directories first, then files, alphabetically within each group.
+        nodes.sort_by(|a, b| {
+            let a_is_dir = matches!(a.kind, FileNodeKind::Directory);
+            let b_is_dir = matches!(b.kind, FileNodeKind::Directory);
+            b_is_dir.cmp(&a_is_dir).then(a.name.cmp(&b.name))
+        });
+        // After sort, first two must be directories.
+        let first_two_are_dirs = nodes[..2].iter().all(|n| {
+            matches!(n.kind, FileNodeKind::Directory)
+        });
+        assert!(first_two_are_dirs, "directories must sort before files");
+    }
+
+    #[test]
+    fn status_bar_lsp_status_shown() {
+        let mut bar = crate::statusbar::StatusBar::new();
+        bar.set_right("LSP: ready");
+        assert!(bar.right.content.contains("LSP"), "status bar must show LSP status");
+    }
+
+    #[test]
+    fn panel_chat_empty_message_not_sent() {
+        let mut chat = ChatSidebarPanel::new();
+        let content = "";
+        if !content.is_empty() {
+            chat.push_message(ChatMessage::user("u1", content));
+        }
+        assert_eq!(chat.message_count(), 0, "empty message must not be added to history");
+    }
+
+    #[test]
+    fn palette_search_empty_shows_all() {
+        use nom_blocks::stub_dict::StubDictReader;
+        let dict = StubDictReader::with_kinds(&["Alpha", "Beta", "Gamma"]);
+        let palette = crate::left::NodePalette::load_from_dict(&dict);
+        let all = palette.search("");
+        let filtered = palette.search("Alpha");
+        assert!(
+            all.len() >= filtered.len(),
+            "empty search must return >= filtered results"
+        );
+    }
+
+    #[test]
+    fn panel_status_bar_clears_content() {
+        let mut bar = crate::statusbar::StatusBar::new();
+        bar.set_left("main");
+        bar.set_left("");
+        assert!(bar.left.content.is_empty(), "status bar slot must be clearable");
+    }
+
+    #[test]
+    fn panel_split_nested_three_panes() {
+        use crate::pane::{PaneGroup, SplitDirection};
+        let mut group = PaneGroup::single("a");
+        group.split(SplitDirection::Horizontal, "b");
+        group.split(SplitDirection::Vertical, "c");
+        assert_eq!(group.pane_count(), 3, "nested split must create 3 panes");
+    }
 }

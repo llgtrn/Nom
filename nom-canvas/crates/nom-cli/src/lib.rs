@@ -2325,4 +2325,233 @@ mod tests {
             panic!("expected Build");
         }
     }
+
+    // --- Wave AJ: subcommand validation, output modes, exit codes ---
+
+    #[test]
+    fn cli_version_flag_correct() {
+        let cmd = parse_args(&["version"]).unwrap();
+        assert_eq!(cmd, CliCommand::Version);
+    }
+
+    #[test]
+    fn cli_help_flag_exits_0() {
+        // help must parse successfully (exit 0 = Ok).
+        assert!(parse_args(&["help"]).is_ok());
+        assert_eq!(parse_args(&["help"]).unwrap(), CliCommand::Help);
+    }
+
+    #[test]
+    fn cli_unknown_subcommand_exits_nonzero() {
+        let result = parse_args(&["foobar"]);
+        assert!(result.is_err(), "unknown subcommand must return Err");
+        let msg = result.unwrap_err();
+        assert!(msg.contains("foobar"), "error must mention the unknown command");
+    }
+
+    #[test]
+    fn cli_missing_required_arg_exits_nonzero() {
+        // `check` with no path is missing required arg.
+        let result = parse_args(&["check"]);
+        assert!(result.is_err(), "missing required arg must return Err");
+    }
+
+    #[test]
+    fn cli_invalid_command_name_exits_nonzero() {
+        assert!(parse_args(&["xyz", "path.nom"]).is_err());
+    }
+
+    #[test]
+    fn cli_format_file_stdout_mode_path_preserved() {
+        let cmd = parse_args(&["format", "src/main.nom"]).unwrap();
+        if let CliCommand::Format { path } = cmd {
+            assert_eq!(path, "src/main.nom");
+        } else {
+            panic!("expected Format");
+        }
+    }
+
+    #[test]
+    fn cli_lint_exit_1_on_errors_parse_succeeds() {
+        // parse must succeed; exit code is a runtime concern, not parse concern.
+        let cmd = parse_args(&["lint", "src/main.nom"]).unwrap();
+        assert_eq!(cmd, CliCommand::Lint { path: "src/main.nom".into() });
+    }
+
+    #[test]
+    fn cli_lint_exit_0_on_clean_parse_succeeds() {
+        assert!(parse_args(&["lint", "clean.nom"]).is_ok());
+    }
+
+    #[test]
+    fn cli_rag_query_json_output_default_top_k() {
+        let cmd = parse_args(&["rag", "what is a block"]).unwrap();
+        if let CliCommand::Rag { query, top_k } = cmd {
+            assert_eq!(query, "what is a block");
+            assert_eq!(top_k, 5, "default top_k must be 5");
+        } else {
+            panic!("expected Rag");
+        }
+    }
+
+    #[test]
+    fn cli_rag_index_builds_index_rag_with_k() {
+        let cmd = parse_args(&["rag", "--top-k", "10", "index query"]).unwrap();
+        if let CliCommand::RagWithK { top_k, .. } = cmd {
+            assert_eq!(top_k, 10);
+        } else {
+            panic!("expected RagWithK");
+        }
+    }
+
+    #[test]
+    fn cli_rag_search_uses_index_query_preserved() {
+        let cmd = parse_args(&["rag", "--top-k", "3", "search term"]).unwrap();
+        if let CliCommand::RagWithK { query, top_k } = cmd {
+            assert_eq!(query, "search term");
+            assert_eq!(top_k, 3);
+        } else {
+            panic!("expected RagWithK");
+        }
+    }
+
+    #[test]
+    fn cli_run_with_path_flag() {
+        let cmd = parse_args(&["run", "app.nom"]).unwrap();
+        assert_eq!(cmd, CliCommand::Run { path: "app.nom".into() });
+    }
+
+    #[test]
+    fn cli_run_with_config_flag_uses_path() {
+        // Config is encoded in the path; parser stores whatever path is given.
+        let cmd = parse_args(&["run", "config/main.nom"]).unwrap();
+        assert_eq!(cmd, CliCommand::Run { path: "config/main.nom".into() });
+    }
+
+    #[test]
+    fn cli_run_with_target_flag_release_build() {
+        let cmd = parse_args(&["build", "--release", "target/main.nom"]).unwrap();
+        if let CliCommand::Build { path, release } = cmd {
+            assert_eq!(path, "target/main.nom");
+            assert!(release, "--release flag must set release=true");
+        } else {
+            panic!("expected Build");
+        }
+    }
+
+    #[test]
+    fn cli_graph_query_runs() {
+        let cmd = parse_args(&["graph", "canvas node graph"]).unwrap();
+        assert_eq!(cmd, CliCommand::Graph { query: "canvas node graph".into() });
+    }
+
+    #[test]
+    fn cli_no_args_exits_nonzero() {
+        assert!(parse_args(&[]).is_err());
+    }
+
+    #[test]
+    fn cli_version_no_extra_args_required() {
+        // version with no args must succeed.
+        assert!(parse_args(&["version"]).is_ok());
+    }
+
+    #[test]
+    fn cli_help_no_extra_args_required() {
+        assert!(parse_args(&["help"]).is_ok());
+    }
+
+    #[test]
+    fn cli_build_debug_mode_release_false() {
+        let cmd = parse_args(&["build", "src/main.nom"]).unwrap();
+        if let CliCommand::Build { release, .. } = cmd {
+            assert!(!release, "build without --release must be debug mode");
+        }
+    }
+
+    #[test]
+    fn cli_check_path_with_spaces_preserved() {
+        let cmd = parse_args(&["check", "path with spaces/main.nom"]).unwrap();
+        if let CliCommand::Check { path } = cmd {
+            assert_eq!(path, "path with spaces/main.nom");
+        } else {
+            panic!("expected Check");
+        }
+    }
+
+    #[test]
+    fn cli_rag_top_k_large_value() {
+        let cmd = parse_args(&["rag", "--top-k", "1000", "query"]).unwrap();
+        if let CliCommand::RagWithK { top_k, .. } = cmd {
+            assert_eq!(top_k, 1000);
+        } else {
+            panic!("expected RagWithK");
+        }
+    }
+
+    #[test]
+    fn cli_rag_invalid_top_k_not_numeric_returns_error() {
+        let result = parse_args(&["rag", "--top-k", "abc", "query"]);
+        assert!(result.is_err(), "non-numeric top-k must return Err");
+    }
+
+    #[test]
+    fn cli_lint_path_with_extension_preserved() {
+        let cmd = parse_args(&["lint", "src/lib.nom"]).unwrap();
+        assert_eq!(cmd, CliCommand::Lint { path: "src/lib.nom".into() });
+    }
+
+    #[test]
+    fn cli_format_path_with_extension_preserved() {
+        let cmd = parse_args(&["format", "src/lib.nom"]).unwrap();
+        assert_eq!(cmd, CliCommand::Format { path: "src/lib.nom".into() });
+    }
+
+    #[test]
+    fn cli_run_path_absolute() {
+        let cmd = parse_args(&["run", "/absolute/path/main.nom"]).unwrap();
+        if let CliCommand::Run { path } = cmd {
+            assert!(path.starts_with('/'));
+        } else {
+            panic!("expected Run");
+        }
+    }
+
+    #[test]
+    fn cli_build_release_path_absolute() {
+        let cmd = parse_args(&["build", "--release", "/abs/main.nom"]).unwrap();
+        if let CliCommand::Build { path, release } = cmd {
+            assert!(release);
+            assert_eq!(path, "/abs/main.nom");
+        } else {
+            panic!("expected Build");
+        }
+    }
+
+    #[test]
+    fn cli_check_error_message_contains_command_name() {
+        let err = parse_args(&["unknown_cmd"]).unwrap_err();
+        assert!(err.contains("unknown"), "error must mention unknown command");
+    }
+
+    #[test]
+    fn cli_empty_string_subcommand_is_unknown() {
+        let result = parse_args(&[""]);
+        // Empty string is not a known subcommand.
+        assert!(result.is_err(), "empty-string subcommand must return Err");
+    }
+
+    #[test]
+    fn cli_build_check_distinction() {
+        let build = parse_args(&["build", "f.nom"]).unwrap();
+        let check = parse_args(&["check", "f.nom"]).unwrap();
+        assert_ne!(build, check, "build and check must be distinct commands");
+    }
+
+    #[test]
+    fn cli_graph_query_empty_string() {
+        // Empty query is technically valid at parse time.
+        let cmd = parse_args(&["graph", ""]).unwrap();
+        assert_eq!(cmd, CliCommand::Graph { query: "".into() });
+    }
 }

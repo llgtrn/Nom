@@ -2104,4 +2104,300 @@ mod tests {
             assert!(pp < child_pos, "p{i} must precede child");
         }
     }
+
+    // ------------------------------------------------------------------
+    // dag_topo_sort_deterministic_same_input
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_topo_sort_deterministic_same_input() {
+        // Two calls on the same DAG must return identical orderings.
+        let mut dag = Dag::new();
+        for n in &["alpha", "beta", "gamma", "delta"] {
+            dag.add_node(ExecNode::new(*n, "verb"));
+        }
+        dag.add_edge("alpha", "out", "beta", "in");
+        dag.add_edge("alpha", "out", "gamma", "in");
+        dag.add_edge("beta", "out", "delta", "in");
+        dag.add_edge("gamma", "out", "delta", "in");
+
+        let r1 = dag.topological_sort().unwrap();
+        let r2 = dag.topological_sort().unwrap();
+        assert_eq!(r1, r2, "topological_sort must be deterministic for the same DAG");
+    }
+
+    // ------------------------------------------------------------------
+    // dag_topo_sort_stable_across_insertion_order
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_topo_sort_stable_across_insertion_order() {
+        // Two DAGs with the same topology but nodes inserted in different order
+        // must produce the same topological ordering (because Kahn sorts roots).
+        let build = |order: &[&str]| {
+            let mut dag = Dag::new();
+            for &n in order {
+                dag.add_node(ExecNode::new(n, "verb"));
+            }
+            dag.add_edge("x", "out", "y", "in");
+            dag.add_edge("y", "out", "z", "in");
+            dag
+        };
+        let dag1 = build(&["x", "y", "z"]);
+        let dag2 = build(&["z", "y", "x"]);
+        let s1 = dag1.topological_sort().unwrap();
+        let s2 = dag2.topological_sort().unwrap();
+        // Both must have the same relative order: x before y before z.
+        let pos = |v: &Vec<String>, id: &str| v.iter().position(|x| x == id).unwrap();
+        assert!(pos(&s1, "x") < pos(&s1, "y") && pos(&s1, "y") < pos(&s1, "z"));
+        assert!(pos(&s2, "x") < pos(&s2, "y") && pos(&s2, "y") < pos(&s2, "z"));
+    }
+
+    // ------------------------------------------------------------------
+    // dag_topo_sort_two_roots_both_before_common_dep
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_topo_sort_two_roots_both_before_common_dep() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("root_a", "verb"));
+        dag.add_node(ExecNode::new("root_b", "verb"));
+        dag.add_node(ExecNode::new("shared", "verb"));
+        dag.add_edge("root_a", "out", "shared", "in");
+        dag.add_edge("root_b", "out", "shared", "in");
+
+        let sorted = dag.topological_sort().unwrap();
+        let pos = |id: &str| sorted.iter().position(|x| x == id).unwrap();
+        assert!(pos("root_a") < pos("shared"), "root_a must precede shared");
+        assert!(pos("root_b") < pos("shared"), "root_b must precede shared");
+    }
+
+    // ------------------------------------------------------------------
+    // dag_topo_sort_wide_graph_all_independent_nodes_in_first_layer
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_topo_sort_wide_graph_all_independent_nodes_in_first_layer() {
+        // 5 independent nodes with no edges — all appear in layer 0.
+        let mut dag = Dag::new();
+        for n in &["i1", "i2", "i3", "i4", "i5"] {
+            dag.add_node(ExecNode::new(*n, "verb"));
+        }
+        let layers = compute_layers(&dag);
+        assert_eq!(layers.len(), 1, "5 isolated nodes must form exactly 1 layer");
+        assert_eq!(layers[0].len(), 5, "all 5 independent nodes must be in layer 0");
+    }
+
+    // ------------------------------------------------------------------
+    // dag_layers_empty_graph_zero_layers (already tested; test the helper)
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_layers_empty_graph_zero_layers_v2() {
+        let dag = Dag::new();
+        let layers = compute_layers(&dag);
+        assert!(layers.is_empty(), "empty DAG must yield zero layers from compute_layers");
+    }
+
+    // ------------------------------------------------------------------
+    // dag_layers_single_node_one_layer
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_layers_single_node_one_layer() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("solo", "verb"));
+        let layers = compute_layers(&dag);
+        assert_eq!(layers.len(), 1, "single-node DAG must have exactly 1 layer");
+        assert_eq!(layers[0], vec!["solo"], "that layer must contain 'solo'");
+    }
+
+    // ------------------------------------------------------------------
+    // dag_layers_chain_n_layers_equals_n
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_layers_chain_n_layers_equals_n() {
+        // A linear chain of N nodes must produce N layers (one per step).
+        const N: usize = 6;
+        let mut dag = Dag::new();
+        let names: Vec<String> = (0..N).map(|i| format!("c{i}")).collect();
+        for n in &names {
+            dag.add_node(ExecNode::new(n.clone(), "verb"));
+        }
+        for i in 0..N - 1 {
+            dag.add_edge(names[i].clone(), "out", names[i + 1].clone(), "in");
+        }
+        let layers = compute_layers(&dag);
+        assert_eq!(
+            layers.len(),
+            N,
+            "chain of {N} nodes must produce {N} layers, got {}",
+            layers.len()
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // dag_layers_diamond_three_layers
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_layers_diamond_three_layers() {
+        let mut dag = Dag::new();
+        for n in &["A", "B", "C", "D"] {
+            dag.add_node(ExecNode::new(*n, "verb"));
+        }
+        dag.add_edge("A", "out", "B", "in");
+        dag.add_edge("A", "out", "C", "in");
+        dag.add_edge("B", "out", "D", "in");
+        dag.add_edge("C", "out", "D", "in");
+        let layers = compute_layers(&dag);
+        assert_eq!(layers.len(), 3, "diamond must have exactly 3 layers");
+        assert!(layers[0].contains(&"A".to_string()), "layer 0 contains A");
+        assert_eq!(layers[1].len(), 2, "layer 1 has B and C (parallel)");
+        assert!(layers[2].contains(&"D".to_string()), "layer 2 contains D");
+    }
+
+    // ------------------------------------------------------------------
+    // dag_parallel_work_identified_in_same_layer
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_parallel_work_identified_in_same_layer() {
+        // A→B, A→C, A→D — B, C, D are all in layer 1 (independent parallel work).
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("A", "verb"));
+        for n in &["B", "C", "D"] {
+            dag.add_node(ExecNode::new(*n, "verb"));
+            dag.add_edge("A", "out", *n, "in");
+        }
+        let layers = compute_layers(&dag);
+        assert_eq!(layers.len(), 2, "fan-out DAG must have 2 layers");
+        assert_eq!(layers[1].len(), 3, "B, C, D must all be in layer 1");
+        for n in &["B", "C", "D"] {
+            assert!(layers[1].contains(&n.to_string()), "{n} must be in layer 1");
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // dag_reverse_topo_order_correct
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_reverse_topo_order_correct() {
+        // Chain a → b → c: reverse topo order is [c, b, a].
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("a", "verb"));
+        dag.add_node(ExecNode::new("b", "verb"));
+        dag.add_node(ExecNode::new("c", "verb"));
+        dag.add_edge("a", "out", "b", "in");
+        dag.add_edge("b", "out", "c", "in");
+        let sorted = dag.topological_sort().unwrap();
+        let rev: Vec<&String> = sorted.iter().rev().collect();
+        // c must be first in reverse, a last.
+        assert_eq!(rev[0].as_str(), "c", "c must be first in reverse topo order");
+        assert_eq!(rev[2].as_str(), "a", "a must be last in reverse topo order");
+    }
+
+    // ------------------------------------------------------------------
+    // dag_cycle_reports_offending_nodes
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_cycle_reports_offending_nodes() {
+        // Three-node cycle P→Q→R→P: all three must appear in the error set.
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("P", "verb"));
+        dag.add_node(ExecNode::new("Q", "verb"));
+        dag.add_node(ExecNode::new("R", "verb"));
+        dag.add_edge("P", "out", "Q", "in");
+        dag.add_edge("Q", "out", "R", "in");
+        dag.add_edge("R", "out", "P", "in");
+        let err = dag.topological_sort().unwrap_err();
+        for n in &["P", "Q", "R"] {
+            assert!(
+                err.contains(&n.to_string()),
+                "{n} must appear in the cycle error set"
+            );
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // dag_serialize_round_trip (structural, no serde dep)
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_serialize_round_trip() {
+        // Capture nodes + edges, reconstruct, verify topo sort matches.
+        let mut original = Dag::new();
+        for n in &["s1", "s2", "s3"] {
+            original.add_node(ExecNode::new(*n, "verb"));
+        }
+        original.add_edge_weighted("s1", "out", "s2", "in", 0.7);
+        original.add_edge_weighted("s2", "out", "s3", "in", 0.6);
+
+        let node_ids: Vec<String> = {
+            let mut v: Vec<_> = original.nodes.keys().cloned().collect();
+            v.sort();
+            v
+        };
+        let edges: Vec<(String, String, String, String, f32)> = original
+            .edges
+            .iter()
+            .map(|e| (e.src_node.clone(), e.src_port.clone(), e.dst_node.clone(), e.dst_port.clone(), e.confidence))
+            .collect();
+
+        let mut reconstructed = Dag::new();
+        for id in &node_ids {
+            reconstructed.add_node(ExecNode::new(id.clone(), "verb"));
+        }
+        for (src, sp, dst, dp, conf) in &edges {
+            reconstructed.add_edge_weighted(src.clone(), sp.clone(), dst.clone(), dp.clone(), *conf);
+        }
+
+        assert_eq!(reconstructed.node_count(), original.node_count());
+        assert_eq!(reconstructed.edge_count(), original.edge_count());
+
+        let orig_sort = original.topological_sort().unwrap();
+        let rec_sort = reconstructed.topological_sort().unwrap();
+        assert_eq!(orig_sort, rec_sort, "round-trip DAG must produce identical topo sort");
+    }
+
+    // ------------------------------------------------------------------
+    // dag_critical_path_length (longest path by hop count)
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_critical_path_length() {
+        // Two paths from A to E:
+        //   Path 1: A → B → E (length 2)
+        //   Path 2: A → C → D → E (length 3 — critical path)
+        let mut dag = Dag::new();
+        for n in &["A", "B", "C", "D", "E"] {
+            dag.add_node(ExecNode::new(*n, "verb"));
+        }
+        dag.add_edge("A", "out", "B", "in");
+        dag.add_edge("B", "out", "E", "in");
+        dag.add_edge("A", "out", "C", "in");
+        dag.add_edge("C", "out", "D", "in");
+        dag.add_edge("D", "out", "E", "in");
+
+        let layers = compute_layers(&dag);
+        // E must be in layer 3 (longest path A→C→D→E is 3 hops).
+        let e_layer = layers.iter().enumerate()
+            .find(|(_, l)| l.contains(&"E".to_string()))
+            .map(|(i, _)| i)
+            .unwrap();
+        assert_eq!(e_layer, 3, "critical path A→C→D→E has length 3; E must be in layer 3");
+    }
+
+    // ------------------------------------------------------------------
+    // dag_weighted_edges_if_supported (confidence values survive sort)
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_weighted_edges_if_supported() {
+        // Weighted edges must not affect topological sort correctness.
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("src", "verb"));
+        dag.add_node(ExecNode::new("mid", "verb"));
+        dag.add_node(ExecNode::new("dst", "verb"));
+        dag.add_edge_weighted("src", "out", "mid", "in", 0.4);
+        dag.add_edge_weighted("mid", "out", "dst", "in", 0.9);
+
+        let sorted = dag.topological_sort().unwrap();
+        let pos = |id: &str| sorted.iter().position(|x| x == id).unwrap();
+        assert!(pos("src") < pos("mid"), "src must precede mid regardless of weight");
+        assert!(pos("mid") < pos("dst"), "mid must precede dst regardless of weight");
+
+        // Confidence values are stored as-is.
+        assert!((dag.edges[0].confidence - 0.4).abs() < 1e-6);
+        assert!((dag.edges[1].confidence - 0.9).abs() < 1e-6);
+    }
 }

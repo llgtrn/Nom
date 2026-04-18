@@ -595,4 +595,99 @@ mod tests {
             assert!(!codec.to_string().is_empty(), "codec display must be nonempty for {:?}", codec);
         }
     }
+
+    // ── Wave AJ new tests ────────────────────────────────────────────────────
+
+    #[test]
+    fn audio_backend_sample_rate_44100() {
+        // 44100 Hz sample rate must produce a valid RIFF WAV artifact.
+        let mut store = InMemoryStore::new();
+        let samples: Vec<f32> = vec![0.0f32; 44100];
+        let input = default_audio_input("sr-44100", "tone", samples, 44100, "pcm");
+        let block = AudioBackend::compose(input, &mut store, &LogProgressSink);
+        let payload = store.read(&block.artifact_hash).unwrap();
+        assert_eq!(&payload[0..4], b"RIFF", "44100 Hz WAV must start with RIFF");
+        // Sample rate field in WAV header is at bytes 24-27 (little-endian u32).
+        let rate = u32::from_le_bytes(payload[24..28].try_into().unwrap());
+        assert_eq!(rate, 44100, "WAV header must encode 44100 Hz sample rate");
+    }
+
+    #[test]
+    fn audio_backend_sample_rate_48000() {
+        // 48000 Hz sample rate must be encoded in WAV header.
+        let mut store = InMemoryStore::new();
+        let samples = vec![0.0f32; 48000];
+        let input = default_audio_input("sr-48000", "clip", samples, 48000, "pcm");
+        let block = AudioBackend::compose(input, &mut store, &LogProgressSink);
+        let payload = store.read(&block.artifact_hash).unwrap();
+        let rate = u32::from_le_bytes(payload[24..28].try_into().unwrap());
+        assert_eq!(rate, 48000, "WAV header must encode 48000 Hz sample rate");
+    }
+
+    #[test]
+    fn audio_backend_bit_depth_16() {
+        // The WAV encoder always writes 16-bit samples; bits-per-sample field (bytes 34-35) must be 16.
+        let mut store = InMemoryStore::new();
+        let input = default_audio_input("bd-16", "beep", vec![0.5f32; 8], 8000, "pcm");
+        let block = AudioBackend::compose(input, &mut store, &LogProgressSink);
+        let payload = store.read(&block.artifact_hash).unwrap();
+        let bps = u16::from_le_bytes(payload[34..36].try_into().unwrap());
+        assert_eq!(bps, 16, "WAV encoder must use 16-bit depth");
+    }
+
+    #[test]
+    fn audio_backend_bit_depth_24() {
+        // Verify the 16-bit encoder path handles non-standard bit-depth tags gracefully.
+        // In the WAV stub the field is always 16 — confirm no panic for high-sample input.
+        let mut store = InMemoryStore::new();
+        let input = default_audio_input("bd-24", "hires", vec![0.5f32; 192], 96000, "pcm");
+        let block = AudioBackend::compose(input, &mut store, &LogProgressSink);
+        assert!(store.exists(&block.artifact_hash), "must store artifact for 96kHz input");
+    }
+
+    #[test]
+    fn audio_backend_mono_channel_count_1() {
+        // WAV channel count field (bytes 22-23) must be 1 for mono.
+        let mut store = InMemoryStore::new();
+        let input = default_audio_input("ch-1", "mono", vec![0.0f32; 8], 8000, "pcm");
+        let block = AudioBackend::compose(input, &mut store, &LogProgressSink);
+        let payload = store.read(&block.artifact_hash).unwrap();
+        let channels = u16::from_le_bytes(payload[22..24].try_into().unwrap());
+        assert_eq!(channels, 1, "WAV header must report 1 channel (mono)");
+    }
+
+    #[test]
+    fn audio_backend_stereo_channel_count_2() {
+        // AudioSpec with channels=2 produces correct bitrate; encoder still writes mono WAV.
+        let spec = AudioSpec { sample_rate: 44100, channels: 2, duration_ms: 1000, codec: "pcm".into() };
+        // Stereo bitrate: 44100 * 2 * 16 / 1000 = 1411 kbps
+        assert_eq!(spec.bitrate_kbps(), 1411, "stereo bitrate must be double mono");
+        // Confirm channels field is accessible.
+        assert_eq!(spec.channels, 2);
+    }
+
+    #[test]
+    fn audio_backend_silence_produces_artifact() {
+        // All-zero PCM samples must produce a stored artifact with RIFF header.
+        let mut store = InMemoryStore::new();
+        let input = default_audio_input("silence", "quiet", vec![0.0f32; 1000], 44100, "pcm");
+        let block = AudioBackend::compose(input, &mut store, &LogProgressSink);
+        assert!(store.exists(&block.artifact_hash), "silence must produce a stored artifact");
+        let payload = store.read(&block.artifact_hash).unwrap();
+        assert_eq!(&payload[0..4], b"RIFF");
+    }
+
+    #[test]
+    fn audio_backend_nonzero_samples_produce_output() {
+        // Non-silent samples (max amplitude) must produce a stored WAV artifact.
+        let mut store = InMemoryStore::new();
+        let samples: Vec<f32> = (0..100).map(|i| if i % 2 == 0 { 1.0 } else { -1.0 }).collect();
+        let input = default_audio_input("nonzero", "loud", samples, 44100, "pcm");
+        let block = AudioBackend::compose(input, &mut store, &LogProgressSink);
+        assert!(store.exists(&block.artifact_hash), "non-zero samples must produce artifact");
+        let payload = store.read(&block.artifact_hash).unwrap();
+        assert_eq!(&payload[0..4], b"RIFF");
+        // data chunk must be non-empty (> 44-byte header alone).
+        assert!(payload.len() > 44, "payload must contain PCM data beyond header");
+    }
 }

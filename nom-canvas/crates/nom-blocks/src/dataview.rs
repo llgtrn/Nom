@@ -24,10 +24,10 @@ impl DataViewFilter {
             DataViewFilter::Contains(substr) => value.contains(substr.as_str()),
             DataViewFilter::Equals(expected) => value == expected.as_str(),
             DataViewFilter::GreaterThan(threshold) => {
-                value.parse::<f64>().map_or(false, |n| n > *threshold)
+                value.parse::<f64>().is_ok_and(|n| n > *threshold)
             }
             DataViewFilter::LessThan(threshold) => {
-                value.parse::<f64>().map_or(false, |n| n < *threshold)
+                value.parse::<f64>().is_ok_and(|n| n < *threshold)
             }
         }
     }

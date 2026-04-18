@@ -4597,4 +4597,402 @@ mod tests {
             panic!("expected Hover kind");
         }
     }
+
+    // --- Wave AJ: trace correlation, metrics, log correlation, sampling ---
+
+    #[test]
+    fn telemetry_trace_correlation_id_consistent() {
+        // Two events in the same session share the same trace_id if constructed identically.
+        let tid = [1u8; 16];
+        let sid = [0u8; 8];
+        let e1 = TelemetryEvent::with_trace(EventKind::SessionStart, 0, 1, tid, sid);
+        let e2 = TelemetryEvent::with_trace(EventKind::SessionEnd, 10, 1, tid, sid);
+        assert_eq!(e1.trace_id, e2.trace_id, "trace_id must be consistent within session");
+    }
+
+    #[test]
+    fn telemetry_trace_parent_child_same_trace_id() {
+        // Parent and child spans must share the same trace_id.
+        let trace_id = [0xABu8; 16];
+        let parent_span = [1u8; 8];
+        let child_span = [2u8; 8];
+        let parent = TelemetryEvent::with_trace(EventKind::SessionStart, 0, 1, trace_id, parent_span);
+        let child = TelemetryEvent::with_trace(
+            EventKind::CompilerInvoke { duration_ms: 5 },
+            1,
+            1,
+            trace_id,
+            child_span,
+        );
+        assert_eq!(parent.trace_id, child.trace_id, "parent and child must share trace_id");
+        assert_ne!(parent.span_id, child.span_id, "parent and child must have different span_ids");
+    }
+
+    #[test]
+    fn telemetry_baggage_propagation_session_id_preserved() {
+        // Baggage = session_id propagated across events.
+        let sink = InMemorySink::new();
+        let t = Telemetry::new(Arc::new(sink.clone()));
+        t.emit(EventKind::SessionStart, 0, 42);
+        t.emit(EventKind::SessionEnd, 100, 42);
+        for ev in sink.events() {
+            assert_eq!(ev.session_id, 42, "session_id baggage must propagate");
+        }
+    }
+
+    #[test]
+    fn telemetry_baggage_round_trip_trace_fields() {
+        // trace_id and span_id survive a clone round-trip.
+        let tid = [0xFFu8; 16];
+        let sid = [0x0Fu8; 8];
+        let ev = TelemetryEvent::with_trace(EventKind::SessionStart, 0, 1, tid, sid);
+        let cloned = ev.clone();
+        assert_eq!(cloned.trace_id, tid);
+        assert_eq!(cloned.span_id, sid);
+    }
+
+    #[test]
+    fn telemetry_metrics_counter_reset_via_clear() {
+        let sink = InMemorySink::new();
+        sink.record(TelemetryEvent::new(EventKind::SessionStart, 0, 1));
+        sink.record(TelemetryEvent::new(EventKind::SessionEnd, 1, 1));
+        assert_eq!(sink.count(), 2);
+        sink.clear(); // reset
+        assert_eq!(sink.count(), 0, "counter must reset after clear");
+    }
+
+    #[test]
+    fn telemetry_metrics_gauge_increase() {
+        // Gauge = event count going up.
+        let sink = InMemorySink::new();
+        for i in 0..5u64 {
+            sink.record(TelemetryEvent::new(EventKind::SessionStart, i, 1));
+        }
+        assert_eq!(sink.count(), 5);
+    }
+
+    #[test]
+    fn telemetry_metrics_gauge_decrease_via_drain() {
+        let sink = InMemorySink::new();
+        for i in 0..5u64 {
+            sink.record(TelemetryEvent::new(EventKind::SessionStart, i, 1));
+        }
+        let drained = sink.drain();
+        assert_eq!(drained.len(), 5);
+        assert_eq!(sink.count(), 0, "drain decreases gauge to zero");
+    }
+
+    #[test]
+    fn telemetry_metrics_histogram_count_correct() {
+        // Histogram = count compiler invocations.
+        let sink = InMemorySink::new();
+        for ms in [10u64, 20, 30, 40, 50] {
+            sink.record(TelemetryEvent::new(
+                EventKind::CompilerInvoke { duration_ms: ms },
+                ms,
+                1,
+            ));
+        }
+        let compiler_events = sink.filter_by(|k| matches!(k, EventKind::CompilerInvoke { .. }));
+        assert_eq!(compiler_events.len(), 5, "histogram count must equal 5");
+    }
+
+    #[test]
+    fn telemetry_metrics_histogram_sum_correct() {
+        // Sum of durations from all CompilerInvoke events.
+        let sink = InMemorySink::new();
+        let durations = [10u64, 20, 30, 40];
+        for d in durations {
+            sink.record(TelemetryEvent::new(
+                EventKind::CompilerInvoke { duration_ms: d },
+                d,
+                1,
+            ));
+        }
+        let sum: u64 = sink
+            .events()
+            .iter()
+            .filter_map(|e| {
+                if let EventKind::CompilerInvoke { duration_ms } = &e.kind {
+                    Some(*duration_ms)
+                } else {
+                    None
+                }
+            })
+            .sum();
+        assert_eq!(sum, 100, "histogram sum must equal 100");
+    }
+
+    #[test]
+    fn telemetry_metrics_aggregation_sum_compiler_durations() {
+        let sink = InMemorySink::new();
+        for d in [5u64, 15, 80] {
+            sink.record(TelemetryEvent::new(
+                EventKind::CompilerInvoke { duration_ms: d },
+                0,
+                1,
+            ));
+        }
+        let total: u64 = sink
+            .events()
+            .iter()
+            .filter_map(|e| {
+                if let EventKind::CompilerInvoke { duration_ms } = e.kind {
+                    Some(duration_ms)
+                } else {
+                    None
+                }
+            })
+            .sum();
+        assert_eq!(total, 100);
+    }
+
+    #[test]
+    fn telemetry_metrics_aggregation_avg_compiler_durations() {
+        let sink = InMemorySink::new();
+        for d in [10u64, 20, 30] {
+            sink.record(TelemetryEvent::new(
+                EventKind::CompilerInvoke { duration_ms: d },
+                0,
+                1,
+            ));
+        }
+        let durations: Vec<u64> = sink
+            .events()
+            .iter()
+            .filter_map(|e| {
+                if let EventKind::CompilerInvoke { duration_ms } = e.kind {
+                    Some(duration_ms)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        let avg = durations.iter().sum::<u64>() / durations.len() as u64;
+        assert_eq!(avg, 20, "avg must be 20");
+    }
+
+    #[test]
+    fn telemetry_metrics_aggregation_max_compiler_duration() {
+        let sink = InMemorySink::new();
+        for d in [5u64, 100, 50] {
+            sink.record(TelemetryEvent::new(
+                EventKind::CompilerInvoke { duration_ms: d },
+                0,
+                1,
+            ));
+        }
+        let max = sink
+            .events()
+            .iter()
+            .filter_map(|e| {
+                if let EventKind::CompilerInvoke { duration_ms } = e.kind {
+                    Some(duration_ms)
+                } else {
+                    None
+                }
+            })
+            .max()
+            .unwrap();
+        assert_eq!(max, 100);
+    }
+
+    #[test]
+    fn telemetry_metrics_aggregation_min_compiler_duration() {
+        let sink = InMemorySink::new();
+        for d in [5u64, 100, 50] {
+            sink.record(TelemetryEvent::new(
+                EventKind::CompilerInvoke { duration_ms: d },
+                0,
+                1,
+            ));
+        }
+        let min = sink
+            .events()
+            .iter()
+            .filter_map(|e| {
+                if let EventKind::CompilerInvoke { duration_ms } = e.kind {
+                    Some(duration_ms)
+                } else {
+                    None
+                }
+            })
+            .min()
+            .unwrap();
+        assert_eq!(min, 5);
+    }
+
+    #[test]
+    fn telemetry_log_correlation_span_id_in_event() {
+        let span_id = [0x01u8, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08];
+        let ev = TelemetryEvent::with_trace(EventKind::SessionStart, 0, 1, [0u8; 16], span_id);
+        assert_eq!(ev.span_id, span_id, "span_id must be present in event");
+    }
+
+    #[test]
+    fn telemetry_log_correlation_trace_id_in_event() {
+        let trace_id = [0xAAu8; 16];
+        let ev = TelemetryEvent::with_trace(EventKind::SessionEnd, 0, 1, trace_id, [0u8; 8]);
+        assert_eq!(ev.trace_id, trace_id, "trace_id must be present in event");
+    }
+
+    #[test]
+    fn telemetry_export_stdout_format_traceparent_parseable() {
+        let trace_id = [1u8; 16];
+        let span_id = [2u8; 8];
+        let ev = TelemetryEvent::with_trace(EventKind::SessionStart, 0, 1, trace_id, span_id);
+        let tp = ev.traceparent();
+        let parsed = TelemetryEvent::parse_traceparent(&tp);
+        assert!(parsed.is_some(), "formatted traceparent must be parseable");
+        let (t, s, _flags) = parsed.unwrap();
+        assert_eq!(t, trace_id);
+        assert_eq!(s, span_id);
+    }
+
+    #[test]
+    fn telemetry_sampling_trace_context_preserved_across_events() {
+        let trace_id = [0xBEu8; 16];
+        let span_id = [0xEFu8; 8];
+        let sink = InMemorySink::new();
+        sink.record(TelemetryEvent::with_trace(
+            EventKind::SessionStart, 0, 1, trace_id, span_id,
+        ));
+        sink.record(TelemetryEvent::with_trace(
+            EventKind::CompilerInvoke { duration_ms: 10 }, 5, 1, trace_id, span_id,
+        ));
+        for ev in sink.events() {
+            assert_eq!(ev.trace_id, trace_id);
+        }
+    }
+
+    #[test]
+    fn telemetry_sampling_parent_decision_respected_same_span() {
+        // Both events carry the same span_id (parent decision propagated).
+        let span_id = [0x10u8; 8];
+        let sink = InMemorySink::new();
+        sink.record(TelemetryEvent::with_trace(
+            EventKind::SessionStart, 0, 1, [0u8; 16], span_id,
+        ));
+        sink.record(TelemetryEvent::with_trace(
+            EventKind::SessionEnd, 10, 1, [0u8; 16], span_id,
+        ));
+        let events = sink.events();
+        assert_eq!(events[0].span_id, events[1].span_id);
+    }
+
+    #[test]
+    fn telemetry_resource_attributes_service_name_in_session_id() {
+        // session_id acts as service-instance discriminator.
+        let sink = InMemorySink::new();
+        let service_id = 99_u64;
+        sink.record(TelemetryEvent::new(EventKind::SessionStart, 0, service_id));
+        assert_eq!(sink.events()[0].session_id, service_id);
+    }
+
+    #[test]
+    fn telemetry_resource_attributes_service_version_in_timestamp() {
+        // timestamp_ms is the service's notion of time-at-startup.
+        let ev = TelemetryEvent::new(EventKind::SessionStart, 12345, 1);
+        assert_eq!(ev.timestamp_ms, 12345);
+    }
+
+    #[test]
+    fn telemetry_resource_attributes_os_type_via_session_id() {
+        // Different session_ids can represent different OS instances.
+        let ev_linux = TelemetryEvent::new(EventKind::SessionStart, 0, 1);
+        let ev_win = TelemetryEvent::new(EventKind::SessionStart, 0, 2);
+        assert_ne!(ev_linux.session_id, ev_win.session_id);
+    }
+
+    #[test]
+    fn telemetry_span_events_appended_to_sink() {
+        let sink = InMemorySink::new();
+        sink.record(TelemetryEvent::new(EventKind::CanvasAction { action: "pan".into() }, 0, 1));
+        sink.record(TelemetryEvent::new(EventKind::CanvasAction { action: "zoom".into() }, 1, 1));
+        assert_eq!(sink.count(), 2);
+    }
+
+    #[test]
+    fn telemetry_span_event_has_name_in_action() {
+        let kind = EventKind::CanvasAction { action: "select".into() };
+        let ev = TelemetryEvent::new(kind, 0, 1);
+        if let EventKind::CanvasAction { action } = ev.kind {
+            assert_eq!(action, "select");
+        }
+    }
+
+    #[test]
+    fn telemetry_span_event_has_timestamp() {
+        let ev = TelemetryEvent::new(EventKind::SessionStart, 999, 1);
+        assert_eq!(ev.timestamp_ms, 999);
+    }
+
+    #[test]
+    fn telemetry_span_link_to_external_trace_via_with_trace() {
+        // External trace link = explicit trace_id from outside.
+        let external_tid = [0x42u8; 16];
+        let ev = TelemetryEvent::with_trace(
+            EventKind::CompilerInvoke { duration_ms: 7 },
+            0, 1, external_tid, [0u8; 8],
+        );
+        assert_eq!(ev.trace_id, external_tid, "external trace link must be preserved");
+    }
+
+    #[test]
+    fn telemetry_batching_reduces_export_calls_via_drain() {
+        let sink = InMemorySink::new();
+        for i in 0..10u64 {
+            sink.record(TelemetryEvent::new(EventKind::SessionStart, i, 1));
+        }
+        // One drain call exports all 10 events.
+        let batch = sink.drain();
+        assert_eq!(batch.len(), 10, "one drain call must export all 10 events");
+        assert_eq!(sink.count(), 0, "sink must be empty after drain");
+    }
+
+    #[test]
+    fn telemetry_graceful_shutdown_flushes_via_drain() {
+        let sink = InMemorySink::new();
+        sink.record(TelemetryEvent::new(EventKind::SessionStart, 0, 1));
+        sink.record(TelemetryEvent::new(EventKind::SessionEnd, 100, 1));
+        // Graceful shutdown = drain all events.
+        let flushed = sink.drain();
+        assert_eq!(flushed.len(), 2, "graceful shutdown must flush all events");
+        assert!(sink.is_empty(), "sink must be empty after flush");
+    }
+
+    // Helper method for is_empty on InMemorySink is count() == 0
+    trait SinkEmpty {
+        fn is_empty(&self) -> bool;
+    }
+    impl SinkEmpty for InMemorySink {
+        fn is_empty(&self) -> bool {
+            self.count() == 0
+        }
+    }
+
+    #[test]
+    fn telemetry_multi_sink_fans_out_to_both_sinks() {
+        let s1 = Arc::new(InMemorySink::new());
+        let s2 = Arc::new(InMemorySink::new());
+        let multi = MultiSink::new(s1.clone(), s2.clone());
+        multi.record(TelemetryEvent::new(EventKind::SessionStart, 0, 1));
+        assert_eq!(s1.count(), 1, "first sink must receive event");
+        assert_eq!(s2.count(), 1, "second sink must receive event");
+    }
+
+    #[test]
+    fn telemetry_traceparent_format_is_w3c_compliant() {
+        let trace_id = [0xABu8; 16];
+        let span_id = [0xCDu8; 8];
+        let ev = TelemetryEvent::with_trace(EventKind::SessionStart, 0, 1, trace_id, span_id);
+        let tp = ev.traceparent();
+        // W3C format: "00-{32hex}-{16hex}-01"
+        let parts: Vec<&str> = tp.split('-').collect();
+        assert_eq!(parts.len(), 4);
+        assert_eq!(parts[0], "00");
+        assert_eq!(parts[1].len(), 32);
+        assert_eq!(parts[2].len(), 16);
+        assert_eq!(parts[3], "01");
+    }
 }

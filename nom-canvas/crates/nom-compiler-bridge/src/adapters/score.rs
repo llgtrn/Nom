@@ -330,4 +330,138 @@ mod tests {
         assert_ne!(s1, CompileStatus::NotChecked, "validate should be scored");
         assert_ne!(s2, CompileStatus::NotChecked, "compute should be scored");
     }
+
+    // ── wave AJ-7: additional score adapter tests ────────────────────────────
+
+    /// score_to_status with 5 known kinds still returns Valid for a match.
+    #[test]
+    fn score_to_status_with_five_kinds_valid() {
+        let state = SharedState::new("a.db", "b.db");
+        state.update_grammar_kinds(vec![
+            GrammarKind { name: "define".into(), description: "".into() },
+            GrammarKind { name: "result".into(), description: "".into() },
+            GrammarKind { name: "map".into(), description: "".into() },
+            GrammarKind { name: "filter".into(), description: "".into() },
+            GrammarKind { name: "reduce".into(), description: "".into() },
+        ]);
+        let s = score_to_status("map", "other", &state);
+        assert_eq!(s, CompileStatus::Valid);
+    }
+
+    /// status_label for Valid is exactly "Valid".
+    #[test]
+    fn status_label_valid_exact() {
+        assert_eq!(status_label(&CompileStatus::Valid), "Valid");
+    }
+
+    /// status_label for LowConfidence is "Low confidence".
+    #[test]
+    fn status_label_low_confidence_exact() {
+        assert_eq!(status_label(&CompileStatus::LowConfidence), "Low confidence");
+    }
+
+    /// status_label for Unknown is "Unknown".
+    #[test]
+    fn status_label_unknown_exact() {
+        assert_eq!(status_label(&CompileStatus::Unknown), "Unknown");
+    }
+
+    /// CompileStatus::from_score at boundary 0.8 produces Valid.
+    #[test]
+    fn score_from_score_boundary_0_8_valid() {
+        let s = CompileStatus::from_score(0.8);
+        assert_eq!(s, CompileStatus::Valid);
+    }
+
+    /// CompileStatus::from_score at 0.5 produces a non-NotChecked status.
+    #[test]
+    fn score_from_score_boundary_0_5_not_checked() {
+        let s = CompileStatus::from_score(0.5);
+        assert_ne!(s, CompileStatus::NotChecked);
+    }
+
+    /// status_color components are all in [0.0, 1.0] range.
+    #[test]
+    fn status_color_components_in_range() {
+        for status in [
+            CompileStatus::Valid,
+            CompileStatus::LowConfidence,
+            CompileStatus::Unknown,
+            CompileStatus::NotChecked,
+        ] {
+            let c = status_color(&status);
+            for (i, v) in c.iter().enumerate() {
+                assert!(
+                    *v >= 0.0 && *v <= 1.0,
+                    "color component {i} for {status:?} must be in [0.0, 1.0]: got {v}"
+                );
+            }
+        }
+    }
+
+    /// score_to_status returns Valid for kind match (not just word match).
+    #[test]
+    fn score_to_status_kind_match_returns_valid() {
+        let state = SharedState::new("a.db", "b.db");
+        state.update_grammar_kinds(vec![GrammarKind {
+            name: "entity".into(),
+            description: "".into(),
+        }]);
+        let s = score_to_status("unknown_xyz", "entity", &state);
+        assert_eq!(s, CompileStatus::Valid);
+    }
+
+    /// status_color LowConfidence hue is in amber region (non-zero hue).
+    #[test]
+    fn status_color_low_confidence_hue_amber() {
+        let color = status_color(&CompileStatus::LowConfidence);
+        assert!(color[0] > 0.0, "amber hue must be > 0");
+    }
+
+    /// status_color Unknown is in red region (hue near 0.0).
+    #[test]
+    fn status_color_unknown_red_region() {
+        let color = status_color(&CompileStatus::Unknown);
+        assert_eq!(color[0], 0.0, "Unknown status must have red hue (0.0)");
+    }
+
+    /// from_score at 1.0 always produces Valid.
+    #[test]
+    fn score_from_score_max_is_valid() {
+        let s = CompileStatus::from_score(1.0);
+        assert_eq!(s, CompileStatus::Valid);
+    }
+
+    /// from_score at 0.0 always produces Unknown.
+    #[test]
+    fn score_from_score_min_is_unknown() {
+        let s = CompileStatus::from_score(0.0);
+        assert_eq!(s, CompileStatus::Unknown);
+    }
+
+    /// score_to_status after updating grammar kinds reflects new state.
+    #[test]
+    fn score_to_status_reflects_updated_kinds() {
+        let state = SharedState::new("a.db", "b.db");
+        let s1 = score_to_status("newkind", "other", &state);
+        assert_eq!(s1, CompileStatus::NotChecked);
+        state.update_grammar_kinds(vec![GrammarKind {
+            name: "newkind".into(),
+            description: "".into(),
+        }]);
+        let s2 = score_to_status("newkind", "other", &state);
+        assert_eq!(s2, CompileStatus::Valid);
+    }
+
+    /// score_to_status for case-sensitive mismatch returns Unknown.
+    #[test]
+    fn score_to_status_case_sensitive_no_match() {
+        let state = SharedState::new("a.db", "b.db");
+        state.update_grammar_kinds(vec![GrammarKind {
+            name: "Define".into(),
+            description: "".into(),
+        }]);
+        let s = score_to_status("define", "other", &state);
+        assert_eq!(s, CompileStatus::Unknown, "score matching must be case-sensitive");
+    }
 }

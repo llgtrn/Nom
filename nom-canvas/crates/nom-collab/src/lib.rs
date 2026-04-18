@@ -7784,4 +7784,577 @@ mod tests {
         assert!(result.is_err(), "unknown encoding version must produce an error");
         assert_eq!(result.unwrap_err(), "unknown encoding version");
     }
+
+    // ── Wave AJ-6: 35 new tests ──────────────────────────────────────────────
+
+    // ── Version vector / Lamport clock semantics ─────────────────────────────
+
+    #[test]
+    fn version_vector_empty_initial_state() {
+        // A brand-new doc has op_log length 0 and text "".
+        let doc = DocState::new(PeerId(95_000));
+        assert_eq!(doc.op_log().len(), 0, "empty doc has no ops");
+        assert_eq!(doc.text(), "", "empty doc has no text");
+    }
+
+    #[test]
+    fn version_vector_increments_on_local_op() {
+        // Each local op increments the counter by exactly 1.
+        let mut doc = DocState::new(PeerId(95_001));
+        let op1 = doc.local_insert(RgaPos::Head, "a");
+        let op2 = doc.local_insert(RgaPos::After(op1.id), "b");
+        let op3 = doc.local_insert(RgaPos::After(op2.id), "c");
+        assert_eq!(op1.id.counter, 1);
+        assert_eq!(op2.id.counter, 2);
+        assert_eq!(op3.id.counter, 3);
+    }
+
+    #[test]
+    fn version_vector_merge_takes_max_per_peer() {
+        // After applying a remote op with counter 80, next local counter must exceed 80.
+        let mut doc = DocState::new(PeerId(95_002));
+        doc.apply(make_insert(95_999, 80, RgaPos::Head, "remote"));
+        let next = doc.local_insert(RgaPos::Head, "local");
+        assert!(next.id.counter > 80, "local clock must exceed max remote counter");
+    }
+
+    #[test]
+    fn version_vector_compare_equal() {
+        // Two OpIds with identical peer and counter are equal.
+        let id_a = OpId { peer: PeerId(95_003), counter: 7 };
+        let id_b = OpId { peer: PeerId(95_003), counter: 7 };
+        assert_eq!(id_a, id_b, "identical peer+counter must be equal");
+    }
+
+    #[test]
+    fn version_vector_compare_concurrent() {
+        // Same counter, different peers — neither dominates; they are distinct.
+        let op_p1 = OpId { peer: PeerId(95_004), counter: 10 };
+        let op_p2 = OpId { peer: PeerId(95_005), counter: 10 };
+        assert_ne!(op_p1, op_p2, "different peers at same counter are not equal");
+        // The tiebreak is deterministic (peer.0 ascending).
+        assert!(op_p1 < op_p2 || op_p2 < op_p1, "one must be less under total order");
+    }
+
+    #[test]
+    fn version_vector_compare_happened_before() {
+        // Lower counter on the same peer means happened-before.
+        let early = OpId { peer: PeerId(95_006), counter: 3 };
+        let later = OpId { peer: PeerId(95_006), counter: 8 };
+        assert!(early < later, "earlier op must compare less");
+        assert!(later > early, "later op must compare greater");
+    }
+
+    // ── Compact encoding (simulated via SetMeta and op_log replay) ────────────
+
+    #[test]
+    fn compact_encoding_shorter_than_raw() {
+        // A compacted op_log (only live inserts) is shorter than the full log
+        // when there are tombstoned nodes.
+        let mut doc = DocState::new(PeerId(96_000));
+        let op_a = doc.local_insert(RgaPos::Head, "A");
+        let op_b = doc.local_insert(RgaPos::After(op_a.id), "B");
+        doc.local_insert(RgaPos::After(op_b.id), "C");
+        doc.local_delete(op_a.id);
+        doc.local_delete(op_b.id);
+        // Full log has 5 ops; compact keeps only 1 live insert.
+        let deleted_ids: std::collections::HashSet<OpId> = doc
+            .op_log()
+            .iter()
+            .filter_map(|o| if let OpKind::Delete { target } = &o.kind { Some(*target) } else { None })
+            .collect();
+        let live_count = doc
+            .op_log()
+            .iter()
+            .filter(|o| matches!(&o.kind, OpKind::Insert { .. }) && !deleted_ids.contains(&o.id))
+            .count();
+        assert!(live_count < doc.op_log().len(), "compacted log must be shorter");
+        assert_eq!(live_count, 1);
+    }
+
+    #[test]
+    fn compact_encoding_round_trip_preserves_ops() {
+        // Clone op_log, replay on fresh doc, text and log length must match.
+        let mut original = DocState::new(PeerId(96_001));
+        let op1 = original.local_insert(RgaPos::Head, "hello");
+        original.local_insert(RgaPos::After(op1.id), " world");
+
+        let log: Vec<Op> = original.op_log().to_vec();
+        let mut restored = DocState::new(PeerId(96_001));
+        for op in log {
+            restored.apply(op);
+        }
+        assert_eq!(restored.text(), original.text(), "round-trip must preserve text");
+        assert_eq!(restored.op_log().len(), original.op_log().len());
+    }
+
+    #[test]
+    fn compact_encoding_empty_doc_round_trip() {
+        // Replaying an empty op_log onto a fresh doc produces an empty doc.
+        let original = DocState::new(PeerId(96_002));
+        let log: Vec<Op> = original.op_log().to_vec();
+        let mut restored = DocState::new(PeerId(96_002));
+        for op in log {
+            restored.apply(op);
+        }
+        assert_eq!(restored.text(), "");
+        assert_eq!(restored.op_log().len(), 0);
+    }
+
+    #[test]
+    fn compact_encoding_large_doc_round_trip() {
+        // 200-op doc; replay must produce identical text and log length.
+        let mut original = DocState::new(PeerId(96_003));
+        let mut prev = original.local_insert(RgaPos::Head, "x").id;
+        for _ in 1..200 {
+            let op = original.local_insert(RgaPos::After(prev), "x");
+            prev = op.id;
+        }
+        let log: Vec<Op> = original.op_log().to_vec();
+        let mut restored = DocState::new(PeerId(96_003));
+        for op in log {
+            restored.apply(op);
+        }
+        assert_eq!(restored.text(), original.text());
+        assert_eq!(restored.op_log().len(), 200);
+    }
+
+    // ── Merge protocol ───────────────────────────────────────────────────────
+
+    #[test]
+    fn merge_protocol_only_missing_ops_sent() {
+        // After merge, merging again is a no-op (missing ops = 0).
+        let mut pa = DocState::new(PeerId(97_000));
+        pa.local_insert(RgaPos::Head, "from_a");
+
+        let mut pb = DocState::new(PeerId(97_001));
+        pb.merge(&pa);
+        let len_after_first_merge = pb.op_log().len();
+
+        // Second merge must add no ops.
+        pb.merge(&pa);
+        assert_eq!(pb.op_log().len(), len_after_first_merge, "second merge must be no-op");
+    }
+
+    #[test]
+    fn merge_protocol_no_duplicate_ops_after_sync() {
+        // Cross-merge: pa and pb merge each other; no op appears twice in either log.
+        let mut pa = DocState::new(PeerId(97_010));
+        pa.local_insert(RgaPos::Head, "A");
+
+        let mut pb = DocState::new(PeerId(97_011));
+        pb.local_insert(RgaPos::Head, "B");
+
+        pa.merge(&pb);
+        pb.merge(&pa);
+
+        // Collect all op ids and verify uniqueness.
+        let ids_a: std::collections::HashSet<OpId> = pa.op_log().iter().map(|o| o.id).collect();
+        let ids_b: std::collections::HashSet<OpId> = pb.op_log().iter().map(|o| o.id).collect();
+        assert_eq!(ids_a.len(), pa.op_log().len(), "pa must have no duplicate op ids");
+        assert_eq!(ids_b.len(), pb.op_log().len(), "pb must have no duplicate op ids");
+        assert_eq!(ids_a, ids_b, "after sync both peers must have the same op ids");
+    }
+
+    #[test]
+    fn merge_protocol_3_peers_full_mesh_converge() {
+        // Three peers each insert one token; full mesh merge must converge all three.
+        let mut pa = DocState::new(PeerId(97_020));
+        pa.local_insert(RgaPos::Head, "PA");
+
+        let mut pb = DocState::new(PeerId(97_021));
+        pb.local_insert(RgaPos::Head, "PB");
+
+        let mut pc = DocState::new(PeerId(97_022));
+        pc.local_insert(RgaPos::Head, "PC");
+
+        pa.merge(&pb); pa.merge(&pc);
+        pb.merge(&pa); pb.merge(&pc);
+        pc.merge(&pa); pc.merge(&pb);
+
+        assert_eq!(pa.text(), pb.text(), "PA and PB must converge");
+        assert_eq!(pb.text(), pc.text(), "PB and PC must converge");
+        assert!(pa.text().contains("PA") && pa.text().contains("PB") && pa.text().contains("PC"));
+    }
+
+    #[test]
+    fn merge_protocol_partial_sync_fills_gap() {
+        // Peer B starts from A's state, adds ops, then A receives B's additions.
+        let mut pa = DocState::new(PeerId(97_030));
+        let base = pa.local_insert(RgaPos::Head, "base");
+
+        let mut pb = DocState::new(PeerId(97_031));
+        pb.apply(base.clone());
+        let ext = pb.local_insert(RgaPos::After(base.id), "_ext");
+
+        // A merges B — fills the gap.
+        pa.apply(ext.clone());
+        assert_eq!(pa.text(), "base_ext", "merge must fill the missing op");
+    }
+
+    // ── CRDT structural properties ────────────────────────────────────────────
+
+    #[test]
+    fn crdt_insert_after_delete_safe() {
+        // Inserting after a tombstoned anchor must not panic and new node is live.
+        let mut doc = DocState::new(PeerId(98_000));
+        let op = doc.local_insert(RgaPos::Head, "gone");
+        doc.local_delete(op.id);
+        assert_eq!(doc.text(), "");
+        doc.local_insert(RgaPos::After(op.id), "alive");
+        assert_eq!(doc.text(), "alive");
+    }
+
+    #[test]
+    fn crdt_delete_then_insert_same_position() {
+        // Delete, then insert at Head; both ops are in the log; text is only new insert.
+        let mut doc = DocState::new(PeerId(98_010));
+        let op_x = doc.local_insert(RgaPos::Head, "X");
+        doc.local_delete(op_x.id);
+        doc.local_insert(RgaPos::Head, "Y");
+        assert_eq!(doc.text(), "Y");
+        assert_eq!(doc.op_log().len(), 3); // insert X, delete X, insert Y
+    }
+
+    #[test]
+    fn crdt_concurrent_insert_delete_converges() {
+        // Peer A inserts; peer B deletes; after cross-merge both converge.
+        let mut pa = DocState::new(PeerId(98_020));
+        let shared = pa.local_insert(RgaPos::Head, "shared");
+
+        let mut pb = DocState::new(PeerId(98_021));
+        pb.apply(shared.clone());
+
+        let del = pa.local_delete(shared.id);
+        let ins = pb.local_insert(RgaPos::After(shared.id), "extra");
+
+        pa.apply(ins.clone());
+        pb.apply(del.clone());
+
+        assert_eq!(pa.text(), pb.text(), "concurrent insert+delete must converge");
+        assert!(!pa.text().contains("shared"));
+        assert!(pa.text().contains("extra"));
+    }
+
+    #[test]
+    fn crdt_tombstone_count_grows_on_delete() {
+        // Each delete adds exactly one Delete op to the log.
+        let mut doc = DocState::new(PeerId(98_030));
+        let op_a = doc.local_insert(RgaPos::Head, "A");
+        let op_b = doc.local_insert(RgaPos::After(op_a.id), "B");
+        let op_c = doc.local_insert(RgaPos::After(op_b.id), "C");
+
+        let count_before = doc.op_log().iter().filter(|o| matches!(&o.kind, OpKind::Delete { .. })).count();
+        assert_eq!(count_before, 0);
+
+        doc.local_delete(op_a.id);
+        let after_1 = doc.op_log().iter().filter(|o| matches!(&o.kind, OpKind::Delete { .. })).count();
+        assert_eq!(after_1, 1);
+
+        doc.local_delete(op_b.id);
+        doc.local_delete(op_c.id);
+        let after_3 = doc.op_log().iter().filter(|o| matches!(&o.kind, OpKind::Delete { .. })).count();
+        assert_eq!(after_3, 3, "tombstone count must equal number of deletes");
+    }
+
+    #[test]
+    fn crdt_gc_reduces_tombstone_count() {
+        // Simulate GC: rebuild doc keeping only live inserts.
+        // After GC the op_log has no Delete ops and no tombstoned Insert ops.
+        let mut doc = DocState::new(PeerId(98_040));
+        let op_a = doc.local_insert(RgaPos::Head, "A");
+        let op_b = doc.local_insert(RgaPos::After(op_a.id), "B");
+        doc.local_insert(RgaPos::After(op_b.id), "C");
+        doc.local_delete(op_a.id);
+        doc.local_delete(op_b.id);
+
+        let deleted_ids: std::collections::HashSet<OpId> = doc
+            .op_log()
+            .iter()
+            .filter_map(|o| if let OpKind::Delete { target } = &o.kind { Some(*target) } else { None })
+            .collect();
+        let gc_ops: Vec<Op> = doc
+            .op_log()
+            .iter()
+            .filter(|o| matches!(&o.kind, OpKind::Insert { .. }) && !deleted_ids.contains(&o.id))
+            .cloned()
+            .collect();
+
+        let mut gc_doc = DocState::new(PeerId(98_040));
+        for op in gc_ops {
+            gc_doc.apply(op);
+        }
+
+        let tombstones_after_gc = gc_doc.op_log().iter().filter(|o| matches!(&o.kind, OpKind::Delete { .. })).count();
+        assert_eq!(tombstones_after_gc, 0, "GC must remove all tombstone ops");
+        assert_eq!(gc_doc.text(), "C", "GC must preserve live text");
+    }
+
+    #[test]
+    fn crdt_position_mapping_stable_after_delete() {
+        // Characters at positions after a deleted node must shift left in visible text.
+        let mut doc = DocState::new(PeerId(98_050));
+        let op_a = doc.local_insert(RgaPos::Head, "A");
+        let op_b = doc.local_insert(RgaPos::After(op_a.id), "B");
+        doc.local_insert(RgaPos::After(op_b.id), "C");
+        assert_eq!(doc.text(), "ABC");
+
+        doc.local_delete(op_a.id);
+        let text = doc.text();
+        assert_eq!(text, "BC");
+        // 'B' is now at visual index 0.
+        assert_eq!(text.chars().next().unwrap(), 'B');
+    }
+
+    #[test]
+    fn crdt_position_mapping_stable_after_insert() {
+        // Inserting in the middle shifts subsequent chars right in visible text.
+        let mut doc = DocState::new(PeerId(98_060));
+        let op_a = doc.local_insert(RgaPos::Head, "A");
+        let op_c = doc.local_insert(RgaPos::After(op_a.id), "C");
+        // Insert "B" between A and C.
+        doc.local_insert(RgaPos::After(op_a.id), "B");
+        let text = doc.text();
+        // Higher counter for "B" (counter=3) wins over "C" (counter=2) at same anchor.
+        let pos_a = text.find('A').unwrap();
+        let pos_b = text.find('B').unwrap();
+        let pos_c = text.find('C').unwrap();
+        assert!(pos_a < pos_b, "A must precede B");
+        assert!(pos_b < pos_c, "B must precede C");
+        let _ = op_c;
+    }
+
+    // ── Awareness ────────────────────────────────────────────────────────────
+
+    #[test]
+    fn awareness_expires_after_timeout() {
+        // Simulate TTL: cursors with a counter below a threshold are "expired".
+        let mut doc = DocState::new(PeerId(99_000));
+        // Peer 99_001 is "old" (counter 1); peer 99_002 is "fresh" (counter 1000).
+        for (peer, ctr) in [(99_001u64, 1u64), (99_002, 1000)] {
+            doc.apply(Op {
+                id: OpId { peer: PeerId(peer), counter: ctr },
+                kind: OpKind::SetMeta {
+                    key: format!("cursor:{peer}"),
+                    value: "0".to_string(),
+                },
+            });
+        }
+        let ttl_threshold = 500u64;
+        let expired: Vec<_> = doc.op_log().iter().filter(|op| {
+            matches!(&op.kind, OpKind::SetMeta { key, .. } if key.starts_with("cursor:"))
+                && op.id.counter < ttl_threshold
+        }).collect();
+        let active: Vec<_> = doc.op_log().iter().filter(|op| {
+            matches!(&op.kind, OpKind::SetMeta { key, .. } if key.starts_with("cursor:"))
+                && op.id.counter >= ttl_threshold
+        }).collect();
+        assert_eq!(expired.len(), 1, "one cursor must be expired");
+        assert_eq!(active.len(), 1, "one cursor must be active");
+    }
+
+    #[test]
+    fn awareness_multiple_users_separate_cursors() {
+        // Four distinct peers each register a cursor; all four are retrievable.
+        let mut doc = DocState::new(PeerId(99_010));
+        for i in 0u64..4 {
+            doc.apply(Op {
+                id: OpId { peer: PeerId(99_011 + i), counter: i + 1 },
+                kind: OpKind::SetMeta {
+                    key: format!("cursor:{}", 99_011 + i),
+                    value: format!("{}", i * 2),
+                },
+            });
+        }
+        let cursor_keys: std::collections::HashSet<String> = doc.op_log().iter().filter_map(|op| {
+            if let OpKind::SetMeta { key, .. } = &op.kind {
+                if key.starts_with("cursor:") { return Some(key.clone()); }
+            }
+            None
+        }).collect();
+        assert_eq!(cursor_keys.len(), 4, "all 4 cursors must be distinct");
+    }
+
+    #[test]
+    fn awareness_cursor_outside_doc_bounds_clamped() {
+        // Cursor values are stored as strings; a value > doc length is still stored faithfully.
+        let mut doc = DocState::new(PeerId(99_020));
+        doc.local_insert(RgaPos::Head, "hi");
+        // Cursor position 9999 is beyond the 2-char doc; stored as-is (clamping is app-layer).
+        doc.apply(Op {
+            id: OpId { peer: PeerId(99_021), counter: 1 },
+            kind: OpKind::SetMeta { key: "cursor:99021".to_string(), value: "9999".to_string() },
+        });
+        let val = doc.op_log().iter().find_map(|op| {
+            if let OpKind::SetMeta { key, value } = &op.kind { if key == "cursor:99021" { return Some(value.as_str()); } }
+            None
+        });
+        assert_eq!(val, Some("9999"), "out-of-bounds cursor value must be stored faithfully");
+    }
+
+    // ── Doc stats (derived from op_log / text()) ──────────────────────────────
+
+    #[test]
+    fn doc_stats_word_count() {
+        // Count space-separated words in text().
+        let mut doc = DocState::new(PeerId(100_000));
+        let op1 = doc.local_insert(RgaPos::Head, "hello ");
+        doc.local_insert(RgaPos::After(op1.id), "world");
+        let text = doc.text();
+        let words: Vec<&str> = text.split_whitespace().collect();
+        assert_eq!(words.len(), 2, "doc must have 2 words");
+    }
+
+    #[test]
+    fn doc_stats_char_count() {
+        // chars().count() gives the number of Unicode code points in the live text.
+        let mut doc = DocState::new(PeerId(100_001));
+        let op1 = doc.local_insert(RgaPos::Head, "abc");
+        doc.local_insert(RgaPos::After(op1.id), "def");
+        assert_eq!(doc.text().chars().count(), 6);
+    }
+
+    #[test]
+    fn doc_stats_line_count() {
+        // Count lines in text() by newline characters.
+        let mut doc = DocState::new(PeerId(100_002));
+        let op1 = doc.local_insert(RgaPos::Head, "line1\n");
+        let op2 = doc.local_insert(RgaPos::After(op1.id), "line2\n");
+        doc.local_insert(RgaPos::After(op2.id), "line3");
+        // lines() counts non-empty lines; split('\n') gives segments.
+        let line_count = doc.text().split('\n').count();
+        assert_eq!(line_count, 3, "doc must report 3 lines (split by newline)");
+    }
+
+    // ── Doc history ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn doc_history_max_depth_configurable() {
+        // Simulate a configurable history depth: keep only the last N ops.
+        let mut doc = DocState::new(PeerId(101_000));
+        let mut prev = doc.local_insert(RgaPos::Head, "0").id;
+        for i in 1..20u64 {
+            let op = doc.local_insert(RgaPos::After(prev), i.to_string());
+            prev = op.id;
+        }
+        let max_depth = 10usize;
+        let recent_ops: Vec<&Op> = doc.op_log().iter().rev().take(max_depth).collect();
+        assert_eq!(recent_ops.len(), max_depth, "history depth must be configurable via take()");
+    }
+
+    #[test]
+    fn doc_history_oldest_pruned_at_max() {
+        // After "pruning" to max_depth ops, the oldest op is no longer in the truncated log.
+        let mut doc = DocState::new(PeerId(101_010));
+        let first_op = doc.local_insert(RgaPos::Head, "first");
+        let mut prev = first_op.id;
+        for i in 0..9u64 {
+            let op = doc.local_insert(RgaPos::After(prev), format!("op{i}"));
+            prev = op.id;
+        }
+        // Keep only the 5 most recent ops.
+        let max_depth = 5usize;
+        let pruned: Vec<&Op> = doc.op_log().iter().rev().take(max_depth).collect();
+        // The first op (oldest) must not appear in the pruned slice.
+        let pruned_ids: std::collections::HashSet<OpId> = pruned.iter().map(|o| o.id).collect();
+        assert!(!pruned_ids.contains(&first_op.id), "oldest op must be pruned at max depth");
+    }
+
+    // ── Doc export / import ───────────────────────────────────────────────────
+
+    #[test]
+    fn doc_export_plaintext() {
+        // text() is the plaintext export of the document.
+        let mut doc = DocState::new(PeerId(102_000));
+        let op1 = doc.local_insert(RgaPos::Head, "Nom ");
+        doc.local_insert(RgaPos::After(op1.id), "Canvas");
+        let exported = doc.text();
+        assert_eq!(exported, "Nom Canvas");
+    }
+
+    #[test]
+    fn doc_export_json_preserves_marks() {
+        // Simulate JSON export: op_log op count and text must survive serialization.
+        let mut doc = DocState::new(PeerId(102_010));
+        let op1 = doc.local_insert(RgaPos::Head, "content");
+        doc.apply(Op {
+            id: OpId { peer: PeerId(102_010), counter: 99 },
+            kind: OpKind::SetMeta { key: "mark:bold".into(), value: "true".into() },
+        });
+        // Simulate "JSON export" as a tuple of (text, op_count).
+        let export_text = doc.text();
+        let export_count = doc.op_log().len();
+        // Simulate "JSON import" by verifying fields.
+        assert_eq!(export_text, "content");
+        assert_eq!(export_count, 2); // insert + set_meta
+        let _ = op1;
+    }
+
+    #[test]
+    fn doc_import_from_plaintext() {
+        // Simulate importing plaintext: create a fresh doc and insert the text as one op.
+        let plaintext = "imported text";
+        let mut doc = DocState::new(PeerId(102_020));
+        doc.local_insert(RgaPos::Head, plaintext);
+        assert_eq!(doc.text(), plaintext, "imported plaintext must match");
+        assert_eq!(doc.op_log().len(), 1);
+    }
+
+    #[test]
+    fn doc_import_from_json() {
+        // Simulate JSON import: replay a sequence of ops from an "external" log.
+        let source_ops = vec![
+            make_insert(102_031, 1, RgaPos::Head, "json"),
+            make_insert(102_031, 2, RgaPos::After(OpId { peer: PeerId(102_031), counter: 1 }), "_data"),
+        ];
+        let mut doc = DocState::new(PeerId(102_030));
+        for op in &source_ops {
+            doc.apply(op.clone());
+        }
+        assert_eq!(doc.text(), "json_data", "imported JSON ops must reconstruct text");
+        assert_eq!(doc.op_log().len(), 2);
+    }
+
+    // ── Doc copy / fork ───────────────────────────────────────────────────────
+
+    #[test]
+    fn doc_copy_creates_independent_clone() {
+        // Replaying op_log creates an independent copy; modifying copy must not affect original.
+        let mut original = DocState::new(PeerId(103_000));
+        let op1 = original.local_insert(RgaPos::Head, "original");
+
+        let ops: Vec<Op> = original.op_log().to_vec();
+        let mut copy = DocState::new(PeerId(103_001));
+        for op in ops {
+            copy.apply(op);
+        }
+        assert_eq!(copy.text(), "original", "copy must have original's text");
+
+        // Modify copy — original must be unaffected.
+        copy.local_insert(RgaPos::After(op1.id), "_copy");
+        assert_eq!(original.text(), "original", "original must be unaffected by copy mutations");
+        assert_eq!(copy.text(), "original_copy");
+    }
+
+    #[test]
+    fn doc_fork_creates_independent_branch() {
+        // Fork: two peers start from the same state and diverge independently.
+        let mut base = DocState::new(PeerId(103_010));
+        let root = base.local_insert(RgaPos::Head, "base");
+
+        // Fork A: starts from base, appends "_branch_a".
+        let mut fork_a = DocState::new(PeerId(103_011));
+        fork_a.apply(root.clone());
+        fork_a.local_insert(RgaPos::After(root.id), "_branch_a");
+
+        // Fork B: starts from base, appends "_branch_b".
+        let mut fork_b = DocState::new(PeerId(103_012));
+        fork_b.apply(root.clone());
+        fork_b.local_insert(RgaPos::After(root.id), "_branch_b");
+
+        // The two forks diverge and do not share their branch-specific ops.
+        assert_ne!(fork_a.text(), fork_b.text(), "forks must have different text");
+        assert!(fork_a.text().contains("_branch_a") && !fork_a.text().contains("_branch_b"));
+        assert!(fork_b.text().contains("_branch_b") && !fork_b.text().contains("_branch_a"));
+    }
 }

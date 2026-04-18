@@ -926,6 +926,221 @@ mod tests {
         assert!(hit_test_rect([cx, cy], &r, 0.0), "centre of rotated rect must hit");
     }
 
+    // ── Wave AJ: bezier/curve tests ──────────────────────────────────────────
+
+    /// Cubic bezier at t=0 returns p0.
+    #[test]
+    fn bezier_cubic_point_at_t_0_is_p0() {
+        let p0 = [10.0_f32, 20.0];
+        let c1 = [30.0, 40.0];
+        let c2 = [60.0, 80.0];
+        let p3 = [100.0, 120.0];
+        // At t=0, the curve must start at p0.
+        let d = dist_to_bezier(p0, p0, c1, c2, p3);
+        assert!(d < 0.5, "point at t=0 must equal p0, dist={}", d);
+    }
+
+    /// Cubic bezier at t=1 returns p3.
+    #[test]
+    fn bezier_cubic_point_at_t_1_is_p3() {
+        let p0 = [0.0_f32, 0.0];
+        let c1 = [25.0, 50.0];
+        let c2 = [75.0, 50.0];
+        let p3 = [100.0, 0.0];
+        let d = dist_to_bezier(p3, p0, c1, c2, p3);
+        assert!(d < 0.5, "point at t=1 must equal p3, dist={}", d);
+    }
+
+    /// Cubic bezier with symmetric control points: midpoint is closest to the curve midpoint.
+    #[test]
+    fn bezier_cubic_point_at_t_0_5_is_midpoint() {
+        // Symmetric arch: p0=[0,0], c1=[0,100], c2=[100,100], p3=[100,0]
+        // At t=0.5 the curve is at (50, 75) for a symmetric cubic.
+        let p0 = [0.0_f32, 0.0];
+        let c1 = [0.0, 100.0];
+        let c2 = [100.0, 100.0];
+        let p3 = [100.0, 0.0];
+        // The midpoint of the symmetric curve is between the two endpoints' x values.
+        let mid_x = 50.0_f32;
+        // dist_to_bezier from the curve midpoint should be small
+        let d = dist_to_bezier([mid_x, 75.0], p0, c1, c2, p3);
+        assert!(d < 5.0, "midpoint of symmetric bezier must be near (50,75), dist={}", d);
+    }
+
+    /// Cubic bezier derivative at t=0: tangent points toward c1 from p0.
+    #[test]
+    fn bezier_cubic_derivative_at_t_0() {
+        // If c1 is directly to the right of p0, the tangent at t=0 should point right.
+        // The tangent vector at t=0 is 3*(c1 - p0).
+        let p0 = [0.0_f32, 0.0];
+        let c1 = [30.0, 0.0]; // directly right
+        let tangent_x = 3.0 * (c1[0] - p0[0]); // 90
+        let tangent_y = 3.0 * (c1[1] - p0[1]); // 0
+        assert!(tangent_x > 0.0, "tangent at t=0 must point toward c1 (positive x)");
+        assert!(tangent_y.abs() < 1e-6, "tangent at t=0 must have zero y for horizontal");
+    }
+
+    /// Quadratic bezier at t=0 returns p0.
+    #[test]
+    fn bezier_quadratic_point_at_t_0_is_p0() {
+        // Quadratic as degenerate cubic (c1=c2=control).
+        let p0 = [5.0_f32, 10.0];
+        let ctrl = [50.0, 80.0];
+        let p2 = [100.0, 10.0];
+        // Treat as cubic with c1=c2=ctrl
+        let d = dist_to_bezier(p0, p0, ctrl, ctrl, p2);
+        assert!(d < 0.5, "quadratic at t=0 must equal p0, dist={}", d);
+    }
+
+    /// Quadratic bezier at t=1 returns p2.
+    #[test]
+    fn bezier_quadratic_point_at_t_1_is_p2() {
+        let p0 = [5.0_f32, 10.0];
+        let ctrl = [50.0, 80.0];
+        let p2 = [100.0, 10.0];
+        let d = dist_to_bezier(p2, p0, ctrl, ctrl, p2);
+        assert!(d < 0.5, "quadratic at t=1 must equal p2, dist={}", d);
+    }
+
+    /// Bezier subdivision: a curve split at t=0.5 starts at p0 and ends at p3.
+    #[test]
+    fn bezier_subdivision_produces_two_curves() {
+        let p0 = [0.0_f32, 0.0];
+        let c1 = [20.0, 40.0];
+        let c2 = [80.0, 40.0];
+        let p3 = [100.0, 0.0];
+        // Compute the split point at t=0.5 using De Casteljau's algorithm.
+        let m01 = [(p0[0]+c1[0])/2.0, (p0[1]+c1[1])/2.0];
+        let m12 = [(c1[0]+c2[0])/2.0, (c1[1]+c2[1])/2.0];
+        let m23 = [(c2[0]+p3[0])/2.0, (c2[1]+p3[1])/2.0];
+        let m012 = [(m01[0]+m12[0])/2.0, (m01[1]+m12[1])/2.0];
+        let m123 = [(m12[0]+m23[0])/2.0, (m12[1]+m23[1])/2.0];
+        let split = [(m012[0]+m123[0])/2.0, (m012[1]+m123[1])/2.0];
+        // Sub-curve 1: p0 → m01 → m012 → split
+        // Sub-curve 2: split → m123 → m23 → p3
+        // Verify that sub-curve 1 starts at p0 and sub-curve 2 ends at p3.
+        let d1 = dist_to_bezier(p0, p0, m01, m012, split);
+        let d2 = dist_to_bezier(p3, split, m123, m23, p3);
+        assert!(d1 < 0.5, "left sub-curve must start at p0, dist={}", d1);
+        assert!(d2 < 0.5, "right sub-curve must end at p3, dist={}", d2);
+    }
+
+    /// Bezier subdivision: concatenating both halves covers the same range.
+    #[test]
+    fn bezier_subdivision_covers_same_range() {
+        // A straight-line cubic: both halves together span from p0 to p3.
+        let p0 = [0.0_f32, 0.0];
+        let c1 = [33.0, 0.0];
+        let c2 = [66.0, 0.0];
+        let p3 = [100.0, 0.0];
+        // Midpoint at t=0.5 on a straight-line cubic is exactly (50, 0).
+        let split = [50.0_f32, 0.0];
+        // Left half: p0→split; right half: split→p3.
+        let d_left_start = dist_to_bezier(p0, p0, [16.5, 0.0], [33.0, 0.0], split);
+        let d_right_end = dist_to_bezier(p3, split, [66.0, 0.0], [83.5, 0.0], p3);
+        assert!(d_left_start < 1.0, "left half must start at p0, dist={}", d_left_start);
+        assert!(d_right_end < 1.0, "right half must end at p3, dist={}", d_right_end);
+    }
+
+    /// Arc length of a non-degenerate bezier is positive.
+    #[test]
+    fn bezier_arc_length_positive() {
+        let p0 = [0.0_f32, 0.0];
+        let c1 = [25.0, 50.0];
+        let c2 = [75.0, 50.0];
+        let p3 = [100.0, 0.0];
+        // Estimate arc length by summing 100-sample segment lengths.
+        let mut arc_len = 0.0_f32;
+        let mut prev = p0;
+        for i in 1..=100 {
+            let t = i as f32 / 100.0;
+            let mt = 1.0 - t;
+            let bx = mt.powi(3)*p0[0] + 3.0*mt*mt*t*c1[0] + 3.0*mt*t*t*c2[0] + t.powi(3)*p3[0];
+            let by = mt.powi(3)*p0[1] + 3.0*mt*mt*t*c1[1] + 3.0*mt*t*t*c2[1] + t.powi(3)*p3[1];
+            let dx = bx - prev[0];
+            let dy = by - prev[1];
+            arc_len += (dx*dx + dy*dy).sqrt();
+            prev = [bx, by];
+        }
+        assert!(arc_len > 0.0, "arc length of non-degenerate bezier must be positive, got {}", arc_len);
+        assert!(arc_len >= 100.0, "arc length of arched bezier must exceed straight-line distance of 100, got {}", arc_len);
+    }
+
+    /// Bounding box computed from bezier samples contains all sample points.
+    #[test]
+    fn bezier_bounding_box_contains_all_points() {
+        let p0 = [0.0_f32, 0.0];
+        let c1 = [20.0, 80.0];
+        let c2 = [80.0, 80.0];
+        let p3 = [100.0, 0.0];
+        let mut min_x = f32::INFINITY;
+        let mut min_y = f32::INFINITY;
+        let mut max_x = f32::NEG_INFINITY;
+        let mut max_y = f32::NEG_INFINITY;
+        for i in 0..=100 {
+            let t = i as f32 / 100.0;
+            let mt = 1.0 - t;
+            let bx = mt.powi(3)*p0[0] + 3.0*mt*mt*t*c1[0] + 3.0*mt*t*t*c2[0] + t.powi(3)*p3[0];
+            let by = mt.powi(3)*p0[1] + 3.0*mt*mt*t*c1[1] + 3.0*mt*t*t*c2[1] + t.powi(3)*p3[1];
+            if bx < min_x { min_x = bx; }
+            if bx > max_x { max_x = bx; }
+            if by < min_y { min_y = by; }
+            if by > max_y { max_y = by; }
+        }
+        // All sample points must fall within [min_x, max_x] x [min_y, max_y].
+        assert!(min_x <= 0.1, "min_x must be near 0 for this curve, got {}", min_x);
+        assert!(max_x >= 99.9, "max_x must be near 100, got {}", max_x);
+        assert!(min_y >= -0.1, "min_y must be >= 0, got {}", min_y);
+        assert!(max_y > 50.0, "max_y must exceed 50 for arched bezier, got {}", max_y);
+    }
+
+    /// Cubic bezier inflection-point count is 0, 1, or 2 (structural property).
+    #[test]
+    fn bezier_inflection_point_count() {
+        // A straight-line cubic has no inflection points.
+        let p0 = [0.0_f32, 0.0];
+        let c1 = [33.0, 0.0];
+        let c2 = [66.0, 0.0];
+        let p3 = [100.0, 0.0];
+        // Verify the curve is straight (no y variation) → 0 inflection points.
+        let max_y_deviation = (0..=100).map(|i| {
+            let t = i as f32 / 100.0;
+            let mt = 1.0 - t;
+            let by = mt.powi(3)*p0[1] + 3.0*mt*mt*t*c1[1] + 3.0*mt*t*t*c2[1] + t.powi(3)*p3[1];
+            by.abs()
+        }).fold(0.0_f32, f32::max);
+        assert!(max_y_deviation < 1e-5, "straight-line cubic must have zero y deviation, got {}", max_y_deviation);
+    }
+
+    /// Nearest point on curve: query point near one of the curve endpoints is closest to that endpoint.
+    #[test]
+    fn bezier_nearest_point_on_curve() {
+        let p0 = [0.0_f32, 0.0];
+        let c1 = [33.0, 0.0];
+        let c2 = [66.0, 0.0];
+        let p3 = [100.0, 0.0];
+        // Query point close to p0: distance to p0 should be very small.
+        let d_near_p0 = dist_to_bezier([1.0, 0.0], p0, c1, c2, p3);
+        // Query point close to p3: distance to p3 should be very small.
+        let d_near_p3 = dist_to_bezier([99.0, 0.0], p0, c1, c2, p3);
+        assert!(d_near_p0 < 2.0, "query near p0 must be close to the curve, dist={}", d_near_p0);
+        assert!(d_near_p3 < 2.0, "query near p3 must be close to the curve, dist={}", d_near_p3);
+        // Query far from the curve: much larger distance.
+        let d_far = dist_to_bezier([50.0, 500.0], p0, c1, c2, p3);
+        assert!(d_far > 400.0, "query far from curve must have large distance, got {}", d_far);
+    }
+
+    /// Bezier with all 4 points identical (degenerate): distance from any point near origin is small.
+    #[test]
+    fn bezier_all_points_same_degenerate() {
+        let p = [50.0_f32, 50.0];
+        let d = dist_to_bezier(p, p, p, p, p);
+        assert!(d < 0.5, "degenerate bezier (all same) must have near-zero self-distance, got {}", d);
+        // A point far from the degenerate bezier must have large distance.
+        let d_far = dist_to_bezier([200.0, 200.0], p, p, p, p);
+        assert!(d_far > 100.0, "far point from degenerate bezier must have large distance, got {}", d_far);
+    }
+
     /// Group hit testing returns the element with the highest z_index.
     #[test]
     fn group_hit_returns_topmost() {

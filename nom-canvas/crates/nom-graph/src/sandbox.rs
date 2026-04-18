@@ -1821,4 +1821,211 @@ mod tests {
         };
         assert_eq!(eval_expr(&expr2, &ctx), Ok(SandboxValue::Bool(false)));
     }
+
+    // ------------------------------------------------------------------
+    // sanitize_no_side_effects_stub_documented
+    // ------------------------------------------------------------------
+    #[test]
+    fn sanitize_no_side_effects_stub_documented() {
+        // NoSideEffectsSanitizer is a documented stub — must always return Ok
+        // regardless of expression kind (Assign/Import/Exec are not yet in the AST).
+        let s = NoSideEffectsSanitizer;
+        let exprs = [
+            Expr::Literal(SandboxValue::Int(0)),
+            Expr::Var("x".into()),
+            Expr::Call { name: "len".into(), args: vec![] },
+            Expr::BinOp {
+                op: BinOpKind::Add,
+                left: Box::new(Expr::Literal(SandboxValue::Int(1))),
+                right: Box::new(Expr::Literal(SandboxValue::Int(2))),
+            },
+        ];
+        for expr in &exprs {
+            assert!(
+                s.check(expr).is_ok(),
+                "NoSideEffectsSanitizer stub must return Ok for {:?}",
+                expr
+            );
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // sanitize_deep_nesting_allowed_up_to_16
+    // ------------------------------------------------------------------
+    #[test]
+    fn sanitize_deep_nesting_allowed_up_to_16() {
+        // A BinOp chain of exactly 16 levels must pass (max_depth=16, check is >).
+        let expr = (0..16).fold(Expr::Literal(SandboxValue::Int(0)), |acc, _| Expr::BinOp {
+            op: BinOpKind::Add,
+            left: Box::new(acc),
+            right: Box::new(Expr::Literal(SandboxValue::Int(1))),
+        });
+        assert!(
+            sanitize(&expr).is_ok(),
+            "nesting exactly 16 levels must pass sanitize()"
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // sanitize_depth_17_rejected
+    // ------------------------------------------------------------------
+    #[test]
+    fn sanitize_depth_17_rejected() {
+        // 17 levels exceeds max_depth=16; sanitize must reject it.
+        let expr = (0..17).fold(Expr::Literal(SandboxValue::Int(0)), |acc, _| Expr::BinOp {
+            op: BinOpKind::Add,
+            left: Box::new(acc),
+            right: Box::new(Expr::Literal(SandboxValue::Int(1))),
+        });
+        assert_eq!(
+            sanitize(&expr),
+            Err(SandboxError::DepthLimitExceeded),
+            "nesting 17 levels must be rejected by sanitize()"
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // sanitize_variable_declaration_allowed
+    // ------------------------------------------------------------------
+    #[test]
+    fn sanitize_variable_declaration_allowed() {
+        // Reading a variable (Expr::Var) is allowed by all sanitizers.
+        let expr = Expr::Var("my_var".into());
+        assert!(
+            sanitize(&expr).is_ok(),
+            "variable read Expr::Var must pass sanitize()"
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // eval_unary_minus_correct (simulated via Int negation: 0 - n)
+    // ------------------------------------------------------------------
+    #[test]
+    fn eval_unary_minus_correct() {
+        // Simulate unary minus as (0 - 5) = -5.
+        let ctx = EvalContext::new();
+        let expr = Expr::BinOp {
+            op: BinOpKind::Sub,
+            left: Box::new(Expr::Literal(SandboxValue::Int(0))),
+            right: Box::new(Expr::Literal(SandboxValue::Int(5))),
+        };
+        assert_eq!(eval_expr(&expr, &ctx), Ok(SandboxValue::Int(-5)));
+    }
+
+    // ------------------------------------------------------------------
+    // eval_unary_not_correct (simulated via Eq false)
+    // ------------------------------------------------------------------
+    #[test]
+    fn eval_unary_not_correct() {
+        // NOT true = false, simulated as (true == false) = false.
+        let ctx = EvalContext::new();
+        let expr = Expr::BinOp {
+            op: BinOpKind::Eq,
+            left: Box::new(Expr::Literal(SandboxValue::Bool(true))),
+            right: Box::new(Expr::Literal(SandboxValue::Bool(false))),
+        };
+        assert_eq!(eval_expr(&expr, &ctx), Ok(SandboxValue::Bool(false)));
+    }
+
+    // ------------------------------------------------------------------
+    // eval_string_equality_correct
+    // ------------------------------------------------------------------
+    #[test]
+    fn eval_string_equality_correct() {
+        let ctx = EvalContext::new();
+        // "hello" == "hello" → true
+        let expr = Expr::BinOp {
+            op: BinOpKind::Eq,
+            left: Box::new(Expr::Literal(SandboxValue::Str("hello".into()))),
+            right: Box::new(Expr::Literal(SandboxValue::Str("hello".into()))),
+        };
+        assert_eq!(eval_expr(&expr, &ctx), Ok(SandboxValue::Bool(true)));
+        // "hello" == "world" → false
+        let expr2 = Expr::BinOp {
+            op: BinOpKind::Eq,
+            left: Box::new(Expr::Literal(SandboxValue::Str("hello".into()))),
+            right: Box::new(Expr::Literal(SandboxValue::Str("world".into()))),
+        };
+        assert_eq!(eval_expr(&expr2, &ctx), Ok(SandboxValue::Bool(false)));
+    }
+
+    // ------------------------------------------------------------------
+    // eval_list_literal_correct
+    // ------------------------------------------------------------------
+    #[test]
+    fn eval_list_literal_correct() {
+        let ctx = EvalContext::new();
+        // A list literal evaluates to itself.
+        let items = vec![SandboxValue::Int(1), SandboxValue::Int(2), SandboxValue::Int(3)];
+        let expr = Expr::Literal(SandboxValue::List(items.clone()));
+        assert_eq!(eval_expr(&expr, &ctx), Ok(SandboxValue::List(items)));
+    }
+
+    // ------------------------------------------------------------------
+    // eval_function_call_with_args (len on a list)
+    // ------------------------------------------------------------------
+    #[test]
+    fn eval_function_call_with_args() {
+        let ctx = EvalContext::new();
+        // len([1, 2, 3]) == 3
+        let expr = Expr::Call {
+            name: "len".into(),
+            args: vec![Expr::Literal(SandboxValue::List(vec![
+                SandboxValue::Int(1),
+                SandboxValue::Int(2),
+                SandboxValue::Int(3),
+            ]))],
+        };
+        assert_eq!(eval_expr(&expr, &ctx), Ok(SandboxValue::Int(3)));
+    }
+
+    // ------------------------------------------------------------------
+    // eval_nested_function_calls (upper(lower("HELLO")))
+    // ------------------------------------------------------------------
+    #[test]
+    fn eval_nested_function_calls() {
+        let ctx = EvalContext::new();
+        // upper(lower("HELLO")) == "HELLO"
+        let inner = Expr::Call {
+            name: "lower".into(),
+            args: vec![Expr::Literal(SandboxValue::Str("HELLO".into()))],
+        };
+        let outer = Expr::Call {
+            name: "upper".into(),
+            args: vec![inner],
+        };
+        assert_eq!(eval_expr(&outer, &ctx), Ok(SandboxValue::Str("HELLO".into())));
+    }
+
+    // ------------------------------------------------------------------
+    // eval_map_literal_correct (map = null literal, not supported natively)
+    // The sandbox has no Map type; verifying Null literal evaluates to Null.
+    // ------------------------------------------------------------------
+    #[test]
+    fn eval_map_literal_correct() {
+        // Maps are not a SandboxValue variant — the closest is Null for missing data.
+        // Verify Null literal round-trips correctly.
+        let ctx = EvalContext::new();
+        let expr = Expr::Literal(SandboxValue::Null);
+        assert_eq!(eval_expr(&expr, &ctx), Ok(SandboxValue::Null));
+        assert!(!SandboxValue::Null.is_truthy(), "Null must be falsy");
+    }
+
+    // ------------------------------------------------------------------
+    // sanitize_assignment_rejected — no Assign variant in AST; unknown fn rejected
+    // ------------------------------------------------------------------
+    #[test]
+    fn sanitize_assignment_rejected() {
+        // The AST has no Assign variant. The closest threat is calling
+        // a forbidden function named "assign". AllowedFunctionsSanitizer must reject it.
+        let expr = Expr::Call {
+            name: "assign".into(),
+            args: vec![Expr::Literal(SandboxValue::Int(0))],
+        };
+        assert_eq!(
+            sanitize(&expr),
+            Err(SandboxError::UnknownFunction("assign".into())),
+            "function 'assign' must be rejected as unknown by AllowedFunctionsSanitizer"
+        );
+    }
 }

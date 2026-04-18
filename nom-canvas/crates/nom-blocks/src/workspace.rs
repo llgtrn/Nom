@@ -549,4 +549,273 @@ mod tests {
             assert!(seen.insert(*id), "duplicate id: {id}");
         }
     }
+
+    // ── wave AJ: additional workspace tests ────────────────────────────────────
+
+    /// Merging two workspaces: blocks from both appear in the merged result.
+    #[test]
+    fn workspace_merge_two_workspaces() {
+        let mut ws1 = Workspace::new();
+        ws1.insert_block(BlockModel::new(
+            "b1",
+            NomtuRef::new("e1", "fetch", "verb"),
+            "affine:paragraph",
+        ));
+        let mut ws2 = Workspace::new();
+        ws2.insert_block(BlockModel::new(
+            "b2",
+            NomtuRef::new("e2", "store", "verb"),
+            "affine:paragraph",
+        ));
+        // Manual merge: insert all blocks from ws2 into ws1
+        for (id, block) in ws2.blocks {
+            ws1.blocks.insert(id.clone(), block);
+            ws1.doc_tree.push(id);
+        }
+        assert_eq!(ws1.block_count(), 2);
+        assert!(ws1.blocks.contains_key("b1"));
+        assert!(ws1.blocks.contains_key("b2"));
+    }
+
+    /// Diff detects added blocks: blocks in ws2 not in ws1.
+    #[test]
+    fn workspace_diff_returns_added_blocks() {
+        let mut ws1 = Workspace::new();
+        ws1.insert_block(BlockModel::new(
+            "shared",
+            NomtuRef::new("e1", "w", "verb"),
+            "affine:paragraph",
+        ));
+        let mut ws2 = ws1.clone();
+        ws2.insert_block(BlockModel::new(
+            "added",
+            NomtuRef::new("e2", "x", "verb"),
+            "affine:paragraph",
+        ));
+        // Compute added: ids in ws2 not in ws1
+        let added: Vec<_> = ws2
+            .blocks
+            .keys()
+            .filter(|id| !ws1.blocks.contains_key(*id))
+            .collect();
+        assert_eq!(added.len(), 1);
+        assert_eq!(added[0], "added");
+    }
+
+    /// Diff detects removed blocks: blocks in ws1 not in ws2.
+    #[test]
+    fn workspace_diff_returns_removed_blocks() {
+        let mut ws1 = Workspace::new();
+        ws1.insert_block(BlockModel::new(
+            "keep",
+            NomtuRef::new("e1", "w", "verb"),
+            "affine:paragraph",
+        ));
+        ws1.insert_block(BlockModel::new(
+            "remove-me",
+            NomtuRef::new("e2", "x", "verb"),
+            "affine:paragraph",
+        ));
+        let mut ws2 = ws1.clone();
+        ws2.remove_block("remove-me");
+        // Compute removed: ids in ws1 not in ws2
+        let removed: Vec<_> = ws1
+            .blocks
+            .keys()
+            .filter(|id| !ws2.blocks.contains_key(*id))
+            .collect();
+        assert_eq!(removed.len(), 1);
+        assert_eq!(removed[0], "remove-me");
+    }
+
+    /// Diff of two empty workspaces is empty.
+    #[test]
+    fn workspace_diff_empty_workspaces() {
+        let ws1 = Workspace::new();
+        let ws2 = Workspace::new();
+        let added: Vec<_> = ws2
+            .blocks
+            .keys()
+            .filter(|id| !ws1.blocks.contains_key(*id))
+            .collect();
+        let removed: Vec<_> = ws1
+            .blocks
+            .keys()
+            .filter(|id| !ws2.blocks.contains_key(*id))
+            .collect();
+        assert!(added.is_empty());
+        assert!(removed.is_empty());
+    }
+
+    /// Find a block by kind by scanning blocks map.
+    #[test]
+    fn workspace_find_block_by_kind() {
+        let mut ws = Workspace::new();
+        ws.insert_block(BlockModel::new(
+            "b-verb",
+            NomtuRef::new("e1", "fetch", "verb"),
+            "affine:paragraph",
+        ));
+        ws.insert_block(BlockModel::new(
+            "b-concept",
+            NomtuRef::new("e2", "plan", "concept"),
+            "affine:note",
+        ));
+        let found: Vec<_> = ws
+            .blocks
+            .values()
+            .filter(|b| b.entity.kind == "concept")
+            .collect();
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].entity.word, "plan");
+    }
+
+    /// Find multiple blocks by kind returns all matching.
+    #[test]
+    fn workspace_find_blocks_by_kind_multiple() {
+        let mut ws = Workspace::new();
+        for i in 0..3u8 {
+            ws.insert_block(BlockModel::new(
+                format!("verb-{i}"),
+                NomtuRef::new(format!("ev{i}"), "do", "verb"),
+                "affine:paragraph",
+            ));
+        }
+        ws.insert_block(BlockModel::new(
+            "concept-1",
+            NomtuRef::new("ec1", "think", "concept"),
+            "affine:note",
+        ));
+        let verbs: Vec<_> = ws
+            .blocks
+            .values()
+            .filter(|b| b.entity.kind == "verb")
+            .collect();
+        assert_eq!(verbs.len(), 3);
+    }
+
+    /// connectors_for_block: connectors where given block's node is src or dst.
+    #[test]
+    fn workspace_connectors_for_block() {
+        let mut ws = Workspace::new();
+        let dict = crate::stub_dict::StubDictReader::new();
+        // Insert connectors referencing "n-target" as both src and dst
+        let c1 = Connector::new_with_validation(crate::connector::ConnectorValidation {
+            id: "c-src".into(),
+            from_node: "n-target".into(),
+            from_port: "output".into(),
+            to_node: "n-other".into(),
+            to_port: "input".into(),
+            dict: &dict,
+            from_kind: "verb",
+            to_kind: "concept",
+        });
+        let c2 = Connector::new_with_validation(crate::connector::ConnectorValidation {
+            id: "c-dst".into(),
+            from_node: "n-other".into(),
+            from_port: "output".into(),
+            to_node: "n-target".into(),
+            to_port: "input".into(),
+            dict: &dict,
+            from_kind: "verb",
+            to_kind: "concept",
+        });
+        let c3 = Connector::new_with_validation(crate::connector::ConnectorValidation {
+            id: "c-unrelated".into(),
+            from_node: "nx".into(),
+            from_port: "output".into(),
+            to_node: "ny".into(),
+            to_port: "input".into(),
+            dict: &dict,
+            from_kind: "verb",
+            to_kind: "concept",
+        });
+        ws.insert_connector(c1);
+        ws.insert_connector(c2);
+        ws.insert_connector(c3);
+        let for_target: Vec<_> = ws
+            .connectors
+            .values()
+            .filter(|c| c.src.0 == "n-target" || c.dst.0 == "n-target")
+            .collect();
+        assert_eq!(for_target.len(), 2);
+    }
+
+    /// Workspace serializes and deserializes with nodes and connectors intact.
+    #[test]
+    fn workspace_serialize_round_trip() {
+        use crate::graph_node::GraphNode;
+        let mut ws = Workspace::new();
+        ws.insert_block(BlockModel::new(
+            "b1",
+            NomtuRef::new("e1", "plan", "concept"),
+            "affine:note",
+        ));
+        ws.insert_node(GraphNode::new(
+            "n1",
+            NomtuRef::new("e2", "fetch", "verb"),
+            "verb",
+            [10.0, 20.0],
+        ));
+        let json = serde_json::to_string(&ws).expect("serialize workspace");
+        let ws2: Workspace = serde_json::from_str(&json).expect("deserialize workspace");
+        assert_eq!(ws2.block_count(), 1);
+        assert_eq!(ws2.node_count(), 1);
+        assert!(ws2.blocks.contains_key("b1"));
+        assert!(ws2.nodes.contains_key("n1"));
+    }
+
+    /// block_count returns the correct count after multiple inserts.
+    #[test]
+    fn workspace_block_count_correct() {
+        let mut ws = Workspace::new();
+        assert_eq!(ws.block_count(), 0);
+        for i in 0..7u8 {
+            ws.insert_block(BlockModel::new(
+                format!("b{i}"),
+                NomtuRef::new(format!("e{i}"), "w", "verb"),
+                "affine:paragraph",
+            ));
+        }
+        assert_eq!(ws.block_count(), 7);
+    }
+
+    /// connector_count returns the correct count after multiple inserts.
+    #[test]
+    fn workspace_connector_count_correct() {
+        let mut ws = Workspace::new();
+        let dict = crate::stub_dict::StubDictReader::new();
+        assert_eq!(ws.connector_count(), 0);
+        for i in 0..5u8 {
+            let conn = Connector::new_with_validation(crate::connector::ConnectorValidation {
+                id: format!("cc{i}"),
+                from_node: format!("n{i}"),
+                from_port: "output".into(),
+                to_node: format!("m{i}"),
+                to_port: "input".into(),
+                dict: &dict,
+                from_kind: "verb",
+                to_kind: "concept",
+            });
+            ws.insert_connector(conn);
+        }
+        assert_eq!(ws.connector_count(), 5);
+    }
+
+    /// Updating a block in-place replaces the stored value.
+    #[test]
+    fn workspace_update_block_in_place() {
+        let mut ws = Workspace::new();
+        let mut block = BlockModel::new(
+            "upd",
+            NomtuRef::new("e1", "original", "verb"),
+            "affine:paragraph",
+        );
+        ws.insert_block(block.clone());
+        // Mutate the block and re-insert to overwrite
+        block.entity = NomtuRef::new("e2", "updated", "verb");
+        ws.blocks.insert("upd".to_string(), block);
+        let stored = ws.blocks.get("upd").unwrap();
+        assert_eq!(stored.entity.word, "updated");
+    }
 }

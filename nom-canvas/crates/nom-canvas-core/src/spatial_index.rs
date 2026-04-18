@@ -783,4 +783,185 @@ mod tests {
         let count_99 = found.iter().filter(|&&id| id == 99).count();
         assert_eq!(count_99, 1, "re-inserted element must appear exactly once in query");
     }
+
+    // ── Wave AJ: spatial_index additional tests ──────────────────────────────
+
+    /// Inserting many small elements into a large canvas — all are queryable.
+    #[test]
+    fn spatial_index_small_elements_in_large_canvas() {
+        let mut idx = SpatialIndex::new();
+        // 50 tiny 1x1 elements scattered across a 10000x10000 canvas.
+        for i in 0..50_u64 {
+            let base = i as f32 * 200.0;
+            idx.insert(make_bounds(i + 1, [base, base], [base + 1.0, base + 1.0]));
+        }
+        assert_eq!(idx.len(), 50);
+        let found = idx.query_in_bounds([0.0, 0.0], [10001.0, 10001.0]);
+        assert_eq!(found.len(), 50, "all small elements in large canvas must be queryable");
+    }
+
+    /// Inserting one large element into a small canvas region — it is found.
+    #[test]
+    fn spatial_index_large_elements_in_small_canvas() {
+        let mut idx = SpatialIndex::new();
+        // One element covering the entire canvas.
+        idx.insert(make_bounds(1, [0.0, 0.0], [5000.0, 5000.0]));
+        // Also insert a tiny element in the corner.
+        idx.insert(make_bounds(2, [1.0, 1.0], [2.0, 2.0]));
+        assert_eq!(idx.len(), 2);
+        // Query a tiny region: must return the large element too (it overlaps).
+        let found = idx.query_in_bounds([0.5, 0.5], [1.5, 1.5]);
+        assert!(found.contains(&1), "large element must overlap tiny query region");
+        assert!(found.contains(&2), "tiny element must be in query region");
+    }
+
+    /// Range query returns only elements fully or partially inside the rectangle.
+    #[test]
+    fn spatial_index_range_query_all_inside_rect() {
+        let mut idx = SpatialIndex::new();
+        // 4 elements, 3 inside query rect, 1 outside.
+        idx.insert(make_bounds(1, [0.0, 0.0], [10.0, 10.0]));
+        idx.insert(make_bounds(2, [5.0, 5.0], [15.0, 15.0]));
+        idx.insert(make_bounds(3, [8.0, 8.0], [18.0, 18.0]));
+        idx.insert(make_bounds(4, [500.0, 500.0], [510.0, 510.0]));
+        let found = idx.query_in_bounds([0.0, 0.0], [20.0, 20.0]);
+        assert!(found.contains(&1), "element 1 must be in range");
+        assert!(found.contains(&2), "element 2 must be in range");
+        assert!(found.contains(&3), "element 3 must be in range");
+        assert!(!found.contains(&4), "element 4 must not be in range");
+    }
+
+    /// No false positives: elements clearly outside the query region are not returned.
+    #[test]
+    fn spatial_index_no_false_positives() {
+        let mut idx = SpatialIndex::new();
+        // All elements clustered around (1000, 1000).
+        for i in 1_u64..=10 {
+            let base = 1000.0 + i as f32 * 5.0;
+            idx.insert(make_bounds(i, [base, base], [base + 4.0, base + 4.0]));
+        }
+        // Query in a completely different region.
+        let found = idx.query_in_bounds([0.0, 0.0], [100.0, 100.0]);
+        assert!(found.is_empty(), "no elements should be found in far-away region");
+    }
+
+    /// Insert at boundary coordinates (very large positive and negative values).
+    #[test]
+    fn spatial_index_insert_at_boundary() {
+        let mut idx = SpatialIndex::new();
+        // Elements at extreme coordinates.
+        idx.insert(make_bounds(1, [-1e6, -1e6], [-999999.0, -999999.0]));
+        idx.insert(make_bounds(2, [1e6, 1e6], [1000001.0, 1000001.0]));
+        assert_eq!(idx.len(), 2);
+        // Query near element 1.
+        let found1 = idx.query_in_bounds([-1e6 - 1.0, -1e6 - 1.0], [-999998.0, -999998.0]);
+        assert!(found1.contains(&1), "element at extreme negative coords must be queryable");
+        // Query near element 2.
+        let found2 = idx.query_in_bounds([999999.0, 999999.0], [1e6 + 2.0, 1e6 + 2.0]);
+        assert!(found2.contains(&2), "element at extreme positive coords must be queryable");
+    }
+
+    /// Removing a non-existent element does not panic and leaves existing elements intact.
+    #[test]
+    fn spatial_index_remove_nonexistent_safe() {
+        let mut idx = SpatialIndex::new();
+        idx.insert(make_bounds(1, [0.0, 0.0], [10.0, 10.0]));
+        idx.insert(make_bounds(2, [20.0, 20.0], [30.0, 30.0]));
+        // Remove an id that was never inserted — must not panic.
+        idx.remove(9999, make_bounds(9999, [50.0, 50.0], [60.0, 60.0]));
+        // Original elements must still be present.
+        assert_eq!(idx.len(), 2, "removing non-existent must not affect existing elements");
+        let found = idx.query_in_bounds([0.0, 0.0], [35.0, 35.0]);
+        assert!(found.contains(&1), "element 1 must still be present");
+        assert!(found.contains(&2), "element 2 must still be present");
+    }
+
+    /// Updating bounds (remove + re-insert at new location).
+    #[test]
+    fn spatial_index_update_bounds() {
+        let mut idx = SpatialIndex::new();
+        idx.insert(make_bounds(1, [0.0, 0.0], [20.0, 20.0]));
+        // Update bounds: move element 1 to [100, 100]→[120, 120].
+        idx.remove(1, make_bounds(1, [0.0, 0.0], [20.0, 20.0]));
+        idx.insert(make_bounds(1, [100.0, 100.0], [120.0, 120.0]));
+        // Must not be found at old location.
+        let old = idx.query_in_bounds([0.0, 0.0], [20.0, 20.0]);
+        assert!(!old.contains(&1), "element 1 must not appear at old bounds");
+        // Must be found at new location.
+        let new = idx.query_in_bounds([100.0, 100.0], [120.0, 120.0]);
+        assert!(new.contains(&1), "element 1 must appear at updated bounds");
+    }
+
+    /// Insert many elements and verify they are still correct after many operations.
+    #[test]
+    fn spatial_index_rebalance_after_many_inserts() {
+        let mut idx = SpatialIndex::new();
+        // Insert 200 elements.
+        for i in 1_u64..=200 {
+            let base = i as f32 * 3.0;
+            idx.insert(make_bounds(i, [base, base], [base + 2.0, base + 2.0]));
+        }
+        assert_eq!(idx.len(), 200, "must have 200 elements after bulk insert");
+        // Remove 100 elements.
+        for i in 1_u64..=100 {
+            let base = i as f32 * 3.0;
+            idx.remove(i, make_bounds(i, [base, base], [base + 2.0, base + 2.0]));
+        }
+        assert_eq!(idx.len(), 100, "must have 100 elements after removing half");
+        // Re-insert the 100 removed elements at new positions.
+        for i in 1_u64..=100 {
+            let base = (i + 300) as f32 * 3.0;
+            idx.insert(make_bounds(i, [base, base], [base + 2.0, base + 2.0]));
+        }
+        assert_eq!(idx.len(), 200, "must have 200 elements after re-inserts");
+        // Large query must return all 200.
+        let found = idx.query_in_bounds([-1.0, -1.0], [10000.0, 10000.0]);
+        assert_eq!(found.len(), 200, "all 200 elements must be queryable after rebalance");
+    }
+
+    /// k-nearest-neighbors: querying nearest returns the single closest.
+    #[test]
+    fn spatial_index_k_nearest_neighbors() {
+        let mut idx = SpatialIndex::new();
+        idx.insert(make_bounds(1, [0.0, 0.0], [5.0, 5.0]));    // closest to query
+        idx.insert(make_bounds(2, [30.0, 30.0], [35.0, 35.0])); // medium distance
+        idx.insert(make_bounds(3, [100.0, 100.0], [105.0, 105.0])); // far
+        // Query nearest to (2, 2) — element 1 must win.
+        let near = idx.nearest([2.0, 2.0], 200.0);
+        assert_eq!(near, Some(1), "nearest to (2,2) must be element 1");
+        // Query nearest to (102, 102) — element 3 must win.
+        let near3 = idx.nearest([102.0, 102.0], 200.0);
+        assert_eq!(near3, Some(3), "nearest to (102,102) must be element 3");
+    }
+
+    /// Query with max_dist=0: only elements containing the point (distance=0) are returned.
+    #[test]
+    fn spatial_index_nearest_zero_dist_requires_containment() {
+        let mut idx = SpatialIndex::new();
+        idx.insert(make_bounds(1, [0.0, 0.0], [20.0, 20.0]));   // contains (10,10)
+        idx.insert(make_bounds(2, [50.0, 50.0], [70.0, 70.0])); // does not contain (10,10)
+        // nearest with max_dist=0: only element whose AABB contains (10,10) qualifies.
+        let near = idx.nearest([10.0, 10.0], 0.0);
+        assert_eq!(near, Some(1), "only containing element must be returned with max_dist=0");
+    }
+
+    /// Insert after a bulk removal restores correct len and queryability.
+    #[test]
+    fn spatial_index_insert_after_bulk_removal() {
+        let mut idx = SpatialIndex::new();
+        let bounds_list: Vec<_> = (1_u64..=10)
+            .map(|i| make_bounds(i, [i as f32 * 10.0, 0.0], [i as f32 * 10.0 + 8.0, 8.0]))
+            .collect();
+        for b in &bounds_list { idx.insert(*b); }
+        assert_eq!(idx.len(), 10);
+        for b in &bounds_list { idx.remove(b.id, *b); }
+        assert!(idx.is_empty());
+        // Re-insert 3 new elements.
+        idx.insert(make_bounds(100, [0.0, 0.0], [5.0, 5.0]));
+        idx.insert(make_bounds(101, [10.0, 0.0], [15.0, 5.0]));
+        idx.insert(make_bounds(102, [20.0, 0.0], [25.0, 5.0]));
+        assert_eq!(idx.len(), 3, "must have 3 elements after re-insert");
+        let found = idx.query_in_bounds([0.0, 0.0], [30.0, 10.0]);
+        assert_eq!(found.len(), 3, "all 3 re-inserted elements must be queryable");
+    }
 }

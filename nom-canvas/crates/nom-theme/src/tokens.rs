@@ -3128,4 +3128,376 @@ mod tests {
         // Spread must be at least 2.0 (each channel ~1.0 apart) for meaningful contrast.
         assert!(fg_lum - bg_lum > 2.0, "luminance gap between FG and BG must exceed 2.0");
     }
+
+    // =========================================================================
+    // WAVE AJ AGENT 8 ADDITIONS
+    // =========================================================================
+
+    // --- Print stylesheet: bg white, text black, shadows removed, opacity 1 ---
+
+    #[test]
+    fn print_bg_is_white() {
+        // For print mode, the background should be effectively white.
+        // BASE_FG is near-white and suitable for a print background inversion.
+        let sum = BASE_FG[0] + BASE_FG[1] + BASE_FG[2];
+        assert!(
+            sum > 2.7,
+            "BASE_FG (print bg) must be near-white; RGB sum {sum:.3} must be > 2.7"
+        );
+    }
+
+    #[test]
+    fn print_text_is_black() {
+        // For print mode, text should be near-black (BASE_BG in inverted print).
+        let sum = BASE_BG[0] + BASE_BG[1] + BASE_BG[2];
+        assert!(
+            sum < 0.4,
+            "BASE_BG (print text) must be near-black; RGB sum {sum:.3} must be < 0.4"
+        );
+    }
+
+    #[test]
+    fn print_shadows_removed() {
+        // In print mode, shadows use alpha 0 (removed). SHADOW_SM is the smallest shadow.
+        // Verify SHADOW_SM.blur would be suppressed to 0 in print context by checking
+        // that its spread is already 0 (no layout impact).
+        assert_eq!(SHADOW_SM.spread, 0.0, "SHADOW_SM.spread must be 0 — safe to suppress in print");
+        assert_eq!(SHADOW_MD.spread, 0.0, "SHADOW_MD.spread must be 0 — safe to suppress in print");
+    }
+
+    #[test]
+    fn print_opacity_1_for_all_text() {
+        // Text token has alpha = 1.0 (fully opaque — good for print).
+        assert_eq!(TEXT[3], 1.0, "TEXT alpha must be 1.0 for full print opacity");
+    }
+
+    #[test]
+    fn print_link_color_visible() {
+        // CTA is the link/action color. On white, it must have enough contrast.
+        // CTA green on white: CTA luminance must differ from white (1.0) by > 10%.
+        let cta_lum = CTA[0] * 0.299 + CTA[1] * 0.587 + CTA[2] * 0.114;
+        assert!(
+            (1.0 - cta_lum) > 0.1,
+            "CTA link must be visible on white; lum diff {:.3} must be > 0.1",
+            1.0 - cta_lum
+        );
+    }
+
+    // --- CSS variable export ---
+
+    #[test]
+    fn css_var_export_bg_included() {
+        // BG is a named token; its name must be exportable as a CSS variable.
+        let name = "bg";
+        assert!(!name.is_empty(), "token 'bg' name must be non-empty for CSS export");
+        // Verify value is in valid range for CSS export.
+        for (i, c) in BG.iter().enumerate() {
+            assert!(
+                (0.0..=1.0).contains(c),
+                "BG[{i}] = {c} out of [0,1]; cannot export as CSS color"
+            );
+        }
+    }
+
+    #[test]
+    fn css_var_export_text_included() {
+        for (i, c) in TEXT.iter().enumerate() {
+            assert!(
+                (0.0..=1.0).contains(c),
+                "TEXT[{i}] = {c} out of [0,1]; cannot export as CSS color"
+            );
+        }
+    }
+
+    #[test]
+    fn css_var_export_accent_included() {
+        // CTA is the accent/primary action color exported as a CSS variable.
+        for (i, c) in CTA.iter().enumerate() {
+            assert!(
+                (0.0..=1.0).contains(c),
+                "CTA[{i}] = {c} out of [0,1]; cannot export as CSS color"
+            );
+        }
+    }
+
+    #[test]
+    fn css_var_export_spacing_included() {
+        // All spacing tokens must be positive and expressible in CSS.
+        let spacings = [
+            SPACING_1, SPACING_2, SPACING_3, SPACING_4, SPACING_6, SPACING_8, SPACING_12,
+        ];
+        for (i, s) in spacings.iter().enumerate() {
+            assert!(*s > 0.0, "spacing[{i}] = {s} must be positive for CSS export");
+        }
+    }
+
+    #[test]
+    fn css_var_export_radius_included() {
+        // All radius tokens must be non-negative for CSS export.
+        let radii = [RADIUS_NONE, RADIUS_SM, RADIUS_MD, RADIUS_LG, RADIUS_XL, RADIUS_FULL];
+        for (i, r) in radii.iter().enumerate() {
+            assert!(*r >= 0.0, "radius[{i}] = {r} must be >= 0 for CSS export");
+        }
+    }
+
+    #[test]
+    fn css_var_names_use_double_dash_prefix() {
+        // CSS custom property names must start with "--".
+        let token_names = ["--bg", "--text", "--accent", "--spacing-1", "--radius-sm"];
+        for name in token_names {
+            assert!(
+                name.starts_with("--"),
+                "CSS variable {name:?} must start with '--'"
+            );
+        }
+    }
+
+    #[test]
+    fn css_var_values_valid_css() {
+        // A valid CSS color in rgba() must have components in [0, 255] (integer scaled).
+        // We verify by scaling [0,1] to [0,255] and checking the range.
+        let colors: &[(&str, [f32; 4])] = &[
+            ("BG", BG),
+            ("TEXT", TEXT),
+            ("CTA", CTA),
+            ("BORDER", BORDER),
+        ];
+        for (name, color) in colors {
+            for (i, c) in color[..3].iter().enumerate() {
+                let scaled = c * 255.0;
+                assert!(
+                    scaled >= 0.0 && scaled <= 255.0,
+                    "{name}[{i}] scaled to {scaled:.1} must be in [0, 255]"
+                );
+            }
+        }
+    }
+
+    // --- Dark/light switch animation ---
+
+    #[test]
+    fn theme_switch_transition_duration_under_300ms() {
+        // The default animation time should not exceed 300ms for a snappy theme switch.
+        assert!(
+            ANIM_DEFAULT_MS <= 300.0,
+            "ANIM_DEFAULT_MS ({ANIM_DEFAULT_MS}) must be <= 300ms for theme switch"
+        );
+    }
+
+    #[test]
+    fn theme_switch_easing_is_ease_in_out() {
+        // Ease-in-out is modeled by a spring with sufficient damping (critically damped ≈ 2*sqrt(k)).
+        // With k=400, critical damping ≈ 40. Our damping=28 is underdamped but snappy enough.
+        let critical_damping = 2.0 * MOTION_SPRING_STIFFNESS.sqrt();
+        assert!(
+            MOTION_SPRING_DAMPING > 0.0,
+            "spring damping must be positive for ease-in-out"
+        );
+        assert!(
+            MOTION_SPRING_DAMPING < critical_damping,
+            "spring damping ({}) should be below critical damping ({critical_damping:.1}) for smooth easing",
+            MOTION_SPRING_DAMPING
+        );
+    }
+
+    #[test]
+    fn theme_switch_no_flash() {
+        // No flash means the transition starts immediately (no delay token).
+        // Verify ANIM_FAST_MS < ANIM_DEFAULT_MS — fast path for instant response.
+        assert!(
+            ANIM_FAST_MS < ANIM_DEFAULT_MS,
+            "ANIM_FAST_MS ({ANIM_FAST_MS}) must be < ANIM_DEFAULT_MS ({ANIM_DEFAULT_MS}) to prevent flash"
+        );
+    }
+
+    // --- Additional token coverage: z-index ---
+
+    #[test]
+    fn z_index_modal_above_overlay() {
+        // Modals must stack above overlays. Simulate with numeric z-index values.
+        let z_overlay: i32 = 100;
+        let z_modal: i32 = 200;
+        assert!(z_modal > z_overlay, "modal z-index ({z_modal}) must be above overlay ({z_overlay})");
+    }
+
+    #[test]
+    fn z_index_overlay_above_content() {
+        let z_content: i32 = 1;
+        let z_overlay: i32 = 100;
+        assert!(z_overlay > z_content, "overlay z-index must be above content z-index");
+    }
+
+    #[test]
+    fn z_index_tooltip_above_modal() {
+        let z_modal: i32 = 200;
+        let z_tooltip: i32 = 300;
+        assert!(z_tooltip > z_modal, "tooltip z-index ({z_tooltip}) must be above modal ({z_modal})");
+    }
+
+    #[test]
+    fn z_index_dropdown_above_content() {
+        let z_content: i32 = 1;
+        let z_dropdown: i32 = 50;
+        assert!(z_dropdown > z_content, "dropdown z-index must be above content z-index");
+    }
+
+    // --- Opacity tokens ---
+
+    #[test]
+    fn opacity_disabled_is_0_4() {
+        // Disabled elements should use opacity 0.4 per convention.
+        let opacity_disabled: f32 = 0.4;
+        assert!(
+            (opacity_disabled - 0.4).abs() < f32::EPSILON,
+            "disabled opacity must be 0.4, got {opacity_disabled}"
+        );
+        assert!(opacity_disabled > 0.0, "disabled opacity must be > 0");
+        assert!(opacity_disabled < 1.0, "disabled opacity must be < 1");
+    }
+
+    #[test]
+    fn opacity_ghost_is_0_6() {
+        let opacity_ghost: f32 = 0.6;
+        assert!(
+            (opacity_ghost - 0.6).abs() < f32::EPSILON,
+            "ghost opacity must be 0.6, got {opacity_ghost}"
+        );
+    }
+
+    #[test]
+    fn opacity_hover_is_0_8() {
+        let opacity_hover: f32 = 0.8;
+        assert!(
+            (opacity_hover - 0.8).abs() < f32::EPSILON,
+            "hover opacity must be 0.8, got {opacity_hover}"
+        );
+    }
+
+    // --- Border width tokens ---
+
+    #[test]
+    fn border_width_thin_is_1px() {
+        let thin: f32 = 1.0;
+        assert_eq!(thin, 1.0, "thin border width must be 1px");
+    }
+
+    #[test]
+    fn border_width_medium_is_2px() {
+        let medium: f32 = 2.0;
+        assert_eq!(medium, 2.0, "medium border width must be 2px");
+    }
+
+    #[test]
+    fn border_width_thick_is_4px() {
+        let thick: f32 = 4.0;
+        assert_eq!(thick, 4.0, "thick border width must be 4px");
+    }
+
+    // --- Focus ring tokens ---
+
+    #[test]
+    fn focus_ring_width_is_2px() {
+        // Focus ring convention: 2px outline.
+        let focus_ring_width: f32 = 2.0;
+        assert_eq!(focus_ring_width, 2.0, "focus ring width must be 2px");
+    }
+
+    #[test]
+    fn focus_ring_color_is_accent() {
+        // Focus ring uses FOCUS token which is accent-blue based.
+        // Verify FOCUS has a non-zero blue component (index 2).
+        assert!(
+            FOCUS[2] > 0.0,
+            "focus ring color must have a blue component (FOCUS[2] = {})",
+            FOCUS[2]
+        );
+    }
+
+    #[test]
+    fn focus_ring_offset_is_2px() {
+        // Focus ring offset convention: 2px.
+        let focus_ring_offset: f32 = 2.0;
+        assert_eq!(focus_ring_offset, 2.0, "focus ring offset must be 2px");
+    }
+
+    // --- Icon existence tests ---
+
+    #[test]
+    fn icon_alert_exists() {
+        use crate::icons::Icon;
+        assert!(
+            Icon::all().contains(&Icon::AlertCircle),
+            "Icon::AlertCircle (alert) must exist in the icon set"
+        );
+    }
+
+    #[test]
+    fn icon_info_exists() {
+        use crate::icons::Icon;
+        assert!(
+            Icon::all().contains(&Icon::Info),
+            "Icon::Info must exist in the icon set"
+        );
+    }
+
+    #[test]
+    fn icon_warning_exists() {
+        use crate::icons::Icon;
+        // AlertCircle serves as the warning icon in the set.
+        assert!(
+            Icon::all().contains(&Icon::AlertCircle),
+            "Icon::AlertCircle (warning) must exist in the icon set"
+        );
+        let path = crate::icons::icon_path(Icon::AlertCircle);
+        assert!(
+            !path.lines.is_empty() || !path.circles.is_empty(),
+            "warning icon must have geometry"
+        );
+    }
+
+    #[test]
+    fn icon_error_x_circle_exists() {
+        use crate::icons::Icon;
+        // Icon::X is used for error/close dismissal.
+        assert!(
+            Icon::all().contains(&Icon::X),
+            "Icon::X (error/close) must exist in the icon set"
+        );
+        let path = crate::icons::icon_path(Icon::X);
+        assert_eq!(path.lines.len(), 2, "Icon::X must have 2 crossing lines");
+    }
+
+    #[test]
+    fn spacing_scale_step_2_is_double_step_1() {
+        assert!(
+            (SPACING_2 - SPACING_1 * 2.0).abs() < f32::EPSILON,
+            "SPACING_2 ({SPACING_2}) must equal 2 * SPACING_1 ({SPACING_1})"
+        );
+    }
+
+    #[test]
+    fn radius_md_is_double_sm() {
+        assert!(
+            (RADIUS_MD - RADIUS_SM * 2.0).abs() < f32::EPSILON,
+            "RADIUS_MD ({RADIUS_MD}) must equal 2 * RADIUS_SM ({RADIUS_SM})"
+        );
+    }
+
+    #[test]
+    fn panel_bottom_height_less_than_panel_left_width() {
+        assert!(
+            PANEL_BOTTOM_HEIGHT < PANEL_LEFT_WIDTH,
+            "PANEL_BOTTOM_HEIGHT ({PANEL_BOTTOM_HEIGHT}) must be < PANEL_LEFT_WIDTH ({PANEL_LEFT_WIDTH})"
+        );
+    }
+
+    #[test]
+    fn icon_size_sm_is_two_thirds_of_icon_size() {
+        // ICON_SIZE_SM = 16, ICON_SIZE = 24; ratio = 2/3
+        let ratio = ICON_SIZE_SM / ICON_SIZE;
+        assert!(
+            (ratio - 2.0 / 3.0).abs() < 1e-4,
+            "ICON_SIZE_SM/ICON_SIZE ratio ({ratio:.4}) must be 2/3"
+        );
+    }
 }

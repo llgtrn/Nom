@@ -643,4 +643,271 @@ mod tests {
             "debug output must contain source node id"
         );
     }
+
+    // ── wave AJ: additional connector tests ────────────────────────────────────
+
+    /// Self-referential connector (src node == dst node) is valid when ports are compatible.
+    #[test]
+    fn connector_allows_self_referential_if_supported() {
+        let dict = StubDictReader::new();
+        let c = Connector::new_with_validation(ConnectorValidation {
+            id: "self-ref".into(),
+            from_node: "same-node".into(),
+            from_port: "output".into(),
+            to_node: "same-node".into(),
+            to_port: "input".into(),
+            dict: &dict,
+            from_kind: "verb",
+            to_kind: "verb",
+        });
+        // "any"→"any" ports are compatible regardless of src==dst
+        assert!(c.is_valid());
+        assert_eq!(c.src.0, "same-node");
+        assert_eq!(c.dst.0, "same-node");
+    }
+
+    /// Only valid (compatible) port kinds pass connector validation.
+    #[test]
+    fn connector_kind_whitelist_enforcement() {
+        // integer → text: incompatible → invalid
+        let dict = StubDictReader::new()
+            .with_shapes("verb", vec![make_shape("out", "integer")])
+            .with_shapes("concept", vec![make_shape("in", "text")]);
+        let bad = Connector::new_with_validation(ConnectorValidation {
+            id: "whitelist-bad".into(),
+            from_node: "n1".into(),
+            from_port: "out".into(),
+            to_node: "n2".into(),
+            to_port: "in".into(),
+            dict: &dict,
+            from_kind: "verb",
+            to_kind: "concept",
+        });
+        assert!(!bad.is_valid());
+
+        // prose → prose: compatible → valid
+        let dict2 = StubDictReader::new()
+            .with_shapes("verb", vec![make_shape("out", "prose")])
+            .with_shapes("concept", vec![make_shape("in", "prose")]);
+        let good = Connector::new_with_validation(ConnectorValidation {
+            id: "whitelist-good".into(),
+            from_node: "n1".into(),
+            from_port: "out".into(),
+            to_node: "n2".into(),
+            to_port: "in".into(),
+            dict: &dict2,
+            from_kind: "verb",
+            to_kind: "concept",
+        });
+        assert!(good.is_valid());
+    }
+
+    /// Connector serializes and deserializes to identical field values.
+    #[test]
+    fn connector_from_serialized_round_trip() {
+        let c = valid_connector();
+        let json = serde_json::to_string(&c).expect("serialize");
+        let c2: Connector = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(c.id, c2.id);
+        assert_eq!(c.src, c2.src);
+        assert_eq!(c.dst, c2.dst);
+        assert!((c.confidence - c2.confidence).abs() < f32::EPSILON);
+        assert_eq!(c.reason, c2.reason);
+        assert_eq!(c.is_valid(), c2.is_valid());
+    }
+
+    /// Two independently constructed connectors with the same fields have equal field values.
+    #[test]
+    fn connector_hash_by_fields() {
+        let dict = StubDictReader::new();
+        let make = || {
+            Connector::new_with_validation(ConnectorValidation {
+                id: "hash-test".into(),
+                from_node: "src".into(),
+                from_port: "output".into(),
+                to_node: "dst".into(),
+                to_port: "input".into(),
+                dict: &dict,
+                from_kind: "verb",
+                to_kind: "concept",
+            })
+        };
+        let c1 = make();
+        let c2 = make();
+        assert_eq!(c1.id, c2.id);
+        assert_eq!(c1.src, c2.src);
+        assert_eq!(c1.dst, c2.dst);
+        assert_eq!(c1.is_valid(), c2.is_valid());
+    }
+
+    /// Two connectors differ when their validation result differs due to different kinds.
+    #[test]
+    fn connector_ne_different_kind() {
+        let dict = StubDictReader::new();
+        let c1 = Connector::new_with_validation(ConnectorValidation {
+            id: "ne-kind".into(),
+            from_node: "n1".into(),
+            from_port: "output".into(),
+            to_node: "n2".into(),
+            to_port: "input".into(),
+            dict: &dict,
+            from_kind: "verb",
+            to_kind: "concept",
+        });
+        // Change to_kind to one with incompatible shape
+        let dict2 = StubDictReader::new()
+            .with_shapes("verb", vec![make_shape("output", "text")])
+            .with_shapes("noun", vec![make_shape("input", "integer")]);
+        let c2 = Connector::new_with_validation(ConnectorValidation {
+            id: "ne-kind".into(),
+            from_node: "n1".into(),
+            from_port: "output".into(),
+            to_node: "n2".into(),
+            to_port: "input".into(),
+            dict: &dict2,
+            from_kind: "verb",
+            to_kind: "noun",
+        });
+        // c1 is valid (any/any), c2 is not (text/integer mismatch)
+        assert_ne!(c1.is_valid(), c2.is_valid());
+    }
+
+    /// Two connectors differ when their source node ID differs.
+    #[test]
+    fn connector_ne_different_source() {
+        let dict = StubDictReader::new();
+        let c1 = Connector::new_with_validation(ConnectorValidation {
+            id: "c".into(),
+            from_node: "src-A".into(),
+            from_port: "output".into(),
+            to_node: "dst".into(),
+            to_port: "input".into(),
+            dict: &dict,
+            from_kind: "verb",
+            to_kind: "concept",
+        });
+        let c2 = Connector::new_with_validation(ConnectorValidation {
+            id: "c".into(),
+            from_node: "src-B".into(),
+            from_port: "output".into(),
+            to_node: "dst".into(),
+            to_port: "input".into(),
+            dict: &dict,
+            from_kind: "verb",
+            to_kind: "concept",
+        });
+        assert_ne!(c1.src.0, c2.src.0);
+    }
+
+    /// Two connectors differ when their target node ID differs.
+    #[test]
+    fn connector_ne_different_target() {
+        let dict = StubDictReader::new();
+        let c1 = Connector::new_with_validation(ConnectorValidation {
+            id: "c".into(),
+            from_node: "src".into(),
+            from_port: "output".into(),
+            to_node: "dst-A".into(),
+            to_port: "input".into(),
+            dict: &dict,
+            from_kind: "verb",
+            to_kind: "concept",
+        });
+        let c2 = Connector::new_with_validation(ConnectorValidation {
+            id: "c".into(),
+            from_node: "src".into(),
+            from_port: "output".into(),
+            to_node: "dst-B".into(),
+            to_port: "input".into(),
+            dict: &dict,
+            from_kind: "verb",
+            to_kind: "concept",
+        });
+        assert_ne!(c1.dst.0, c2.dst.0);
+    }
+
+    /// Batch creation of 10 connectors all get distinct IDs and are valid.
+    #[test]
+    fn connector_batch_create_10_connectors() {
+        let dict = StubDictReader::new();
+        let connectors: Vec<Connector> = (0..10)
+            .map(|i| {
+                Connector::new_with_validation(ConnectorValidation {
+                    id: format!("batch-{i}"),
+                    from_node: format!("src-{i}"),
+                    from_port: "output".into(),
+                    to_node: format!("dst-{i}"),
+                    to_port: "input".into(),
+                    dict: &dict,
+                    from_kind: "verb",
+                    to_kind: "concept",
+                })
+            })
+            .collect();
+        assert_eq!(connectors.len(), 10);
+        let ids: std::collections::HashSet<_> = connectors.iter().map(|c| &c.id).collect();
+        assert_eq!(ids.len(), 10);
+        assert!(connectors.iter().all(|c| c.is_valid()));
+    }
+
+    /// A newly created connector has a non-empty id.
+    #[test]
+    fn connector_kind_is_non_empty_after_creation() {
+        let c = valid_connector();
+        assert!(!c.id.is_empty(), "connector id must be non-empty");
+    }
+
+    /// Debug representation contains the source node id.
+    #[test]
+    fn connector_to_string_contains_source() {
+        let dict = StubDictReader::new();
+        let c = Connector::new_with_validation(ConnectorValidation {
+            id: "c-debug-src".into(),
+            from_node: "node-source-xyz".into(),
+            from_port: "output".into(),
+            to_node: "node-target".into(),
+            to_port: "input".into(),
+            dict: &dict,
+            from_kind: "verb",
+            to_kind: "concept",
+        });
+        let s = format!("{c:?}");
+        assert!(s.contains("node-source-xyz"), "debug must contain source node id");
+    }
+
+    /// Debug representation contains the target node id.
+    #[test]
+    fn connector_to_string_contains_target() {
+        let dict = StubDictReader::new();
+        let c = Connector::new_with_validation(ConnectorValidation {
+            id: "c-debug-dst".into(),
+            from_node: "src".into(),
+            from_port: "output".into(),
+            to_node: "node-target-xyz".into(),
+            to_port: "input".into(),
+            dict: &dict,
+            from_kind: "verb",
+            to_kind: "concept",
+        });
+        let s = format!("{c:?}");
+        assert!(s.contains("node-target-xyz"), "debug must contain target node id");
+    }
+
+    /// Debug representation contains the connector id.
+    #[test]
+    fn connector_to_string_contains_kind() {
+        let dict = StubDictReader::new();
+        let c = Connector::new_with_validation(ConnectorValidation {
+            id: "wire-kind-check".into(),
+            from_node: "n1".into(),
+            from_port: "output".into(),
+            to_node: "n2".into(),
+            to_port: "input".into(),
+            dict: &dict,
+            from_kind: "verb",
+            to_kind: "concept",
+        });
+        let s = format!("{c:?}");
+        assert!(s.contains("wire-kind-check"), "debug must contain connector id");
+    }
 }

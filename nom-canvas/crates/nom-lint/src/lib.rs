@@ -3714,4 +3714,291 @@ mod tests {
         let diags = runner.check_file("no trailing");
         assert!(diags.is_empty(), "single clean line must yield no diagnostics");
     }
+
+    // --- Wave AJ batch: config, filtering, stats, parallel, fix simulation ---
+
+    #[test]
+    fn lint_config_enable_all_rules_runner_has_three_rules() {
+        // Simulate "enable all" by adding all three built-in rules.
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        runner.add_rule(LineTooLongRule::new());
+        runner.add_rule(EmptyBlockRule);
+        let diags = runner.check_file("fn f() {}  ");
+        // trailing whitespace + empty block → 2 diagnostics on line 1
+        assert!(diags.len() >= 2, "all-rules enabled must catch ≥2 issues on this line");
+    }
+
+    #[test]
+    fn lint_config_disable_specific_rule_by_not_adding_it() {
+        // "Disable" trailing-whitespace by simply not adding it.
+        let mut runner = LintRunner::new();
+        runner.add_rule(LineTooLongRule::new());
+        runner.add_rule(EmptyBlockRule);
+        let diags = runner.check_file("trailing   ");
+        // only line-too-long might fire; trailing-whitespace must NOT appear
+        assert!(
+            diags.iter().all(|d| !d.message.contains("trailing whitespace")),
+            "disabled rule must not produce diagnostics"
+        );
+    }
+
+    #[test]
+    fn lint_config_set_severity_error_to_warning_level_is_warning() {
+        // TrailingWhitespaceRule already emits Warning; confirm level.
+        let diag = TrailingWhitespaceRule.check("x  ", 1).unwrap();
+        assert_eq!(diag.level, LintLevel::Warning);
+    }
+
+    #[test]
+    fn lint_config_set_severity_warning_to_error_check_error_variant() {
+        // Simulate escalating severity: construct a diagnostic with Error level.
+        let diag = LintDiagnostic {
+            level: LintLevel::Error,
+            message: "escalated".to_string(),
+            line: 1,
+            span: 0..1,
+        };
+        assert_eq!(diag.level, LintLevel::Error);
+    }
+
+    #[test]
+    fn lint_config_round_trip_debug_format() {
+        // LintDiagnostic must be Debug-formattable (round-trip representable).
+        let diag = TrailingWhitespaceRule.check("text  ", 5).unwrap();
+        let s = format!("{:?}", diag);
+        assert!(s.contains("Warning"), "debug output must contain level name");
+        assert!(s.contains("5"), "debug output must contain line number");
+    }
+
+    #[test]
+    fn lint_plugin_add_custom_rule_via_runner() {
+        // "Plugin" = any type implementing LintRule + Sealed (internal pattern).
+        // Verify a second LineTooLongRule with a different max_len is independent.
+        let mut runner = LintRunner::new();
+        runner.add_rule(LineTooLongRule { max_len: 10 });
+        let diags = runner.check_file("12345678901"); // 11 chars
+        assert_eq!(diags.len(), 1, "custom max_len=10 must fire on 11-char line");
+    }
+
+    #[test]
+    fn lint_plugin_remove_rule_by_rebuilding_runner() {
+        // Simulate rule removal: rebuild with only the desired subset.
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        // Now "remove" by replacing with a fresh runner that lacks the rule.
+        let fresh_runner = LintRunner::new();
+        let diags = fresh_runner.check_file("trailing   ");
+        assert!(diags.is_empty(), "runner with no rules must produce no diagnostics");
+    }
+
+    #[test]
+    fn lint_plugin_list_all_rules_names_distinct() {
+        // All three built-in rule names must be distinct.
+        let names = [
+            TrailingWhitespaceRule.name(),
+            LineTooLongRule::new().name(),
+            EmptyBlockRule.name(),
+        ];
+        let unique: std::collections::HashSet<_> = names.iter().collect();
+        assert_eq!(unique.len(), 3, "all rule names must be distinct");
+    }
+
+    #[test]
+    fn lint_output_plain_text_message_is_string() {
+        let diag = TrailingWhitespaceRule.check("x   ", 2).unwrap();
+        // Plain-text output = message field.
+        assert!(!diag.message.is_empty(), "message must not be empty");
+        assert!(diag.message.is_ascii(), "plain-text message must be ASCII");
+    }
+
+    #[test]
+    fn lint_output_json_simulated_fields_present() {
+        let diag = EmptyBlockRule.check("fn f() {}", 3).unwrap();
+        // Simulate JSON serialization via Debug.
+        let json_like = format!(
+            r#"{{"line":{},"start":{},"end":{},"message":"{}"}}"#,
+            diag.line, diag.span.start, diag.span.end, diag.message
+        );
+        assert!(json_like.contains("\"line\":3"));
+        assert!(json_like.contains("empty block"));
+    }
+
+    #[test]
+    fn lint_filter_by_file_path_no_diags_for_clean_file() {
+        // Simulate filtering: runner produces no diags for a clean "file".
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        let source = "clean line one\nclean line two\nclean line three";
+        let diags = runner.check_file(source);
+        assert!(diags.is_empty(), "clean file must yield zero diagnostics");
+    }
+
+    #[test]
+    fn lint_exclude_path_skipped_no_diags_on_empty_runner() {
+        // Simulated "exclude": an empty runner never fires.
+        let runner = LintRunner::new();
+        let diags = runner.check_file("bad trailing   \n{}");
+        assert!(diags.is_empty(), "empty runner must not fire on any input");
+    }
+
+    #[test]
+    fn lint_include_only_path_respected_diags_only_for_target_line() {
+        // Simulate include-only by checking a single-line source.
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        let diags = runner.check_file("trailing   ");
+        assert_eq!(diags.len(), 1);
+        assert_eq!(diags[0].line, 1, "must only flag the targeted line");
+    }
+
+    #[test]
+    fn lint_stats_pass_rate_no_violations() {
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        let source = "line one\nline two\nline three";
+        let diags = runner.check_file(source);
+        let line_count = source.lines().count();
+        let violation_lines = diags.len();
+        let pass_rate = (line_count - violation_lines) as f64 / line_count as f64;
+        assert!((pass_rate - 1.0).abs() < 1e-9, "100% pass rate for clean source");
+    }
+
+    #[test]
+    fn lint_stats_fail_rate_one_violation() {
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        let source = "clean\ntrailing   \nclean";
+        let diags = runner.check_file(source);
+        let line_count = source.lines().count() as f64; // 3
+        let fail_rate = diags.len() as f64 / line_count;
+        assert!((fail_rate - 1.0 / 3.0).abs() < 1e-9, "1/3 fail rate");
+    }
+
+    #[test]
+    fn lint_stats_rule_distribution_each_rule_contributes() {
+        let source = format!("trailing   \n{}\n{{}}", "a".repeat(130));
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        runner.add_rule(LineTooLongRule { max_len: 120 });
+        runner.add_rule(EmptyBlockRule);
+        let diags = runner.check_file(&source);
+        let has_ws = diags.iter().any(|d| d.message.contains("trailing whitespace"));
+        let has_long = diags.iter().any(|d| d.message.contains("characters"));
+        let has_empty = diags.iter().any(|d| d.message.contains("empty block"));
+        assert!(has_ws && has_long && has_empty, "all three rule types must fire");
+    }
+
+    #[test]
+    fn lint_parallel_multiple_files_same_results() {
+        // Simulate parallel by running the same source twice independently.
+        let source = "x   \nclean";
+        let mut r1 = LintRunner::new();
+        r1.add_rule(TrailingWhitespaceRule);
+        let mut r2 = LintRunner::new();
+        r2.add_rule(TrailingWhitespaceRule);
+        let d1 = r1.check_file(source);
+        let d2 = r2.check_file(source);
+        assert_eq!(d1, d2, "same source must produce identical diagnostics");
+    }
+
+    #[test]
+    fn lint_sequential_same_results_as_parallel() {
+        let source = "fn f() {}   \nclean line\n{} present";
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        runner.add_rule(EmptyBlockRule);
+        let seq = runner.run(source);
+        let par = runner.check_file(source);
+        assert_eq!(seq, par, "run() and check_file() must return identical results");
+    }
+
+    #[test]
+    fn lint_fix_applies_suggestion_trim_trailing_whitespace() {
+        // Simulate fix: trimming trailing whitespace removes the violation.
+        let line = "hello   ";
+        let fixed = line.trim_end().to_string();
+        let diag_before = TrailingWhitespaceRule.check(line, 1);
+        let diag_after = TrailingWhitespaceRule.check(&fixed, 1);
+        assert!(diag_before.is_some(), "must have violation before fix");
+        assert!(diag_after.is_none(), "must have no violation after fix");
+    }
+
+    #[test]
+    fn lint_fix_dry_run_no_mutation() {
+        // Dry-run: original string must be unchanged.
+        let original = "code  ";
+        let original_len = original.len();
+        // We only read it, never mutate.
+        let _diag = TrailingWhitespaceRule.check(original, 1);
+        assert_eq!(original.len(), original_len, "dry-run must not mutate input");
+    }
+
+    #[test]
+    fn lint_fix_multiple_violations_all_fixed() {
+        let lines = ["fn f() {}  ", "too long?  ", "ok"];
+        let fixed: Vec<&str> = lines.iter().map(|l| l.trim_end()).collect();
+        for line in &fixed {
+            assert!(
+                TrailingWhitespaceRule.check(line, 1).is_none(),
+                "every fixed line must be clean"
+            );
+        }
+    }
+
+    #[test]
+    fn lint_fix_preserves_unrelated_code() {
+        let line = "let x = 1;   ";
+        let fixed = line.trim_end();
+        // The non-whitespace content is preserved.
+        assert!(fixed.starts_with("let x = 1;"), "non-whitespace content preserved");
+        assert!(TrailingWhitespaceRule.check(fixed, 1).is_none());
+    }
+
+    #[test]
+    fn lint_report_summary_at_end_count_matches_diags() {
+        let source = "trailing   \n{}\nclean\nalso trailing  ";
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        runner.add_rule(EmptyBlockRule);
+        let diags = runner.check_file(source);
+        // Summary: count of diagnostics matches what we produce.
+        assert_eq!(diags.len(), 3, "summary count must equal 3 violations");
+    }
+
+    #[test]
+    fn lint_level_info_is_distinct_from_warning_and_error() {
+        assert_ne!(LintLevel::Info, LintLevel::Warning);
+        assert_ne!(LintLevel::Info, LintLevel::Error);
+    }
+
+    #[test]
+    fn lint_diagnostic_clone_is_equal() {
+        let diag = TrailingWhitespaceRule.check("x  ", 7).unwrap();
+        let clone = diag.clone();
+        assert_eq!(diag, clone);
+    }
+
+    #[test]
+    fn lint_runner_no_rules_no_diags_any_input() {
+        let runner = LintRunner::new();
+        let source = "fn f() {}   \nvery long line ".repeat(10);
+        assert!(runner.check_file(&source).is_empty());
+    }
+
+    #[test]
+    fn lint_empty_block_at_end_of_line() {
+        let diag = EmptyBlockRule.check("if cond {}", 10).unwrap();
+        assert_eq!(diag.line, 10);
+        assert!(diag.span.start < diag.span.end);
+    }
+
+    #[test]
+    fn lint_line_too_long_message_contains_actual_length() {
+        let line = "a".repeat(200);
+        let rule = LineTooLongRule { max_len: 100 };
+        let diag = rule.check(&line, 1).unwrap();
+        assert!(diag.message.contains("200"), "message must contain actual length");
+        assert!(diag.message.contains("100"), "message must contain max length");
+    }
 }

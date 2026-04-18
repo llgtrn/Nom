@@ -1126,4 +1126,123 @@ mod tests {
             );
         }
     }
+
+    // ── Wave AJ new tests ────────────────────────────────────────────────────
+
+    #[test]
+    fn dispatch_routes_all_16_known_kinds() {
+        // Register NoopBackend for all 16 kinds and verify each dispatch returns Ok.
+        let mut reg = BackendRegistry::new();
+        let all_kinds = [
+            BackendKind::Video, BackendKind::Audio, BackendKind::Image,
+            BackendKind::Document, BackendKind::Data, BackendKind::App,
+            BackendKind::Workflow, BackendKind::Scenario, BackendKind::RagQuery,
+            BackendKind::Transform, BackendKind::EmbedGen, BackendKind::Render,
+            BackendKind::Export, BackendKind::Pipeline, BackendKind::CodeExec,
+            BackendKind::WebScreen,
+        ];
+        for kind in &all_kinds {
+            reg.register(Box::new(NoopBackend::new(kind.clone())));
+        }
+        assert_eq!(reg.registered_kinds().len(), 16, "must register all 16 kinds");
+        for kind in &all_kinds {
+            let result = reg.dispatch(kind.clone(), "payload", &|_| {});
+            assert!(result.is_ok(), "dispatch must succeed for kind: {}", kind.name());
+        }
+    }
+
+    #[test]
+    fn dispatch_unknown_kind_graceful_error() {
+        // Empty registry must return a graceful Err (not panic) for any kind.
+        let reg = BackendRegistry::new();
+        let result = reg.dispatch(BackendKind::Workflow, "x", &|_| {});
+        assert!(result.is_err(), "unknown kind must return Err");
+        let msg = result.unwrap_err();
+        assert!(!msg.is_empty(), "error message must not be empty");
+        assert!(msg.contains("workflow"), "error must name the missing kind");
+    }
+
+    #[test]
+    fn dispatch_compose_result_has_artifact() {
+        // Dispatching to a real VideoBackend must produce an output containing the entity id.
+        use crate::backends::video::VideoBackend;
+        let b: Box<dyn Backend> = Box::new(VideoBackend);
+        let result = b.compose("entity-artifact", &|_| {});
+        assert!(result.is_ok(), "VideoBackend must return Ok");
+        let out = result.unwrap();
+        assert!(out.contains("entity-artifact"), "output must reference entity id");
+    }
+
+    #[test]
+    fn dispatch_compose_result_has_events() {
+        // AudioBackend dispatch via trait returns output containing the entity id.
+        use crate::backends::audio::AudioBackend;
+        let b: Box<dyn Backend> = Box::new(AudioBackend);
+        let result = b.compose("aud-events", &|_| {});
+        assert!(result.is_ok());
+        let out = result.unwrap();
+        assert!(out.contains("aud-events"), "audio dispatch output must contain entity id");
+    }
+
+    #[test]
+    fn dispatch_progress_events_monotone() {
+        // NoopBackend calls progress exactly once with value 1.0.
+        use std::cell::RefCell;
+        let b = NoopBackend::new(BackendKind::Image);
+        let values: RefCell<Vec<f32>> = RefCell::new(Vec::new());
+        b.compose("mono", &|p| values.borrow_mut().push(p)).unwrap();
+        let vals = values.borrow();
+        assert!(!vals.is_empty(), "at least one progress callback must fire");
+        // Values must be non-decreasing.
+        for window in vals.windows(2) {
+            assert!(window[1] >= window[0], "progress must be monotonically non-decreasing");
+        }
+        // Final value must be 1.0.
+        assert!((*vals.last().unwrap() - 1.0).abs() < f32::EPSILON, "final progress must be 1.0");
+    }
+
+    #[test]
+    fn dispatch_concurrent_two_different_kinds_safe() {
+        // Registering Video and Audio then dispatching both must both succeed.
+        let mut reg = BackendRegistry::new();
+        reg.register(Box::new(NoopBackend::new(BackendKind::Video)));
+        reg.register(Box::new(NoopBackend::new(BackendKind::Audio)));
+
+        let v = reg.dispatch(BackendKind::Video, "v-data", &|_| {});
+        let a = reg.dispatch(BackendKind::Audio, "a-data", &|_| {});
+
+        assert!(v.is_ok(), "video dispatch must succeed");
+        assert!(a.is_ok(), "audio dispatch must succeed");
+        // Outputs must not cross-contaminate.
+        assert!(v.unwrap().contains("video"), "video output must contain 'video'");
+        assert!(a.unwrap().contains("audio"), "audio output must contain 'audio'");
+    }
+
+    #[test]
+    fn dispatch_compose_empty_prompt_ok() {
+        // Dispatching with an empty input string must not panic; output is kind-prefixed.
+        let mut reg = BackendRegistry::new();
+        reg.register(Box::new(NoopBackend::new(BackendKind::Transform)));
+        let result = reg.dispatch(BackendKind::Transform, "", &|_| {});
+        assert!(result.is_ok(), "empty prompt must not cause Err");
+        assert_eq!(result.unwrap(), "transform:", "empty prompt yields '<kind>:'");
+    }
+
+    #[test]
+    fn dispatch_backend_kind_name_eq_from_kind_name_all() {
+        // Verify name() / from_kind_name() are symmetric for all 16 variants.
+        let all = [
+            BackendKind::Video, BackendKind::Audio, BackendKind::Image,
+            BackendKind::Document, BackendKind::Data, BackendKind::App,
+            BackendKind::Workflow, BackendKind::Scenario, BackendKind::RagQuery,
+            BackendKind::Transform, BackendKind::EmbedGen, BackendKind::Render,
+            BackendKind::Export, BackendKind::Pipeline, BackendKind::CodeExec,
+            BackendKind::WebScreen,
+        ];
+        for kind in &all {
+            let n = kind.name();
+            let parsed = BackendKind::from_kind_name(n);
+            assert_eq!(parsed.as_ref(), Some(kind), "roundtrip failed for {n}");
+        }
+    }
 }
