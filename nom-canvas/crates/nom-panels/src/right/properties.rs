@@ -181,4 +181,109 @@ mod tests {
         // total: 2 + 3 + 2 = 7
         assert_eq!(scene.quads.len(), 7);
     }
+
+    #[test]
+    fn properties_panel_paint_scene_no_rows() {
+        let mut panel = PropertiesPanel::new();
+        panel.load_entity("ent-1", "Concept");
+        let mut scene = Scene::new();
+        panel.paint_scene(280.0, 400.0, &mut scene);
+        // header bg + header border = 2
+        assert_eq!(scene.quads.len(), 2);
+    }
+
+    #[test]
+    fn properties_panel_paint_scene_all_non_editable() {
+        let mut panel = PropertiesPanel::new();
+        panel.load_entity("ent-1", "Concept");
+        panel.set_row("a", "v1", false);
+        panel.set_row("b", "v2", false);
+        let mut scene = Scene::new();
+        panel.paint_scene(280.0, 400.0, &mut scene);
+        // header(2) + 2 rows × (bg+border=2) = 2 + 4 = 6
+        assert_eq!(scene.quads.len(), 6);
+    }
+
+    #[test]
+    fn properties_panel_paint_scene_all_editable() {
+        let mut panel = PropertiesPanel::new();
+        panel.load_entity("ent-1", "Concept");
+        panel.set_row("a", "v1", true);
+        panel.set_row("b", "v2", true);
+        let mut scene = Scene::new();
+        panel.paint_scene(280.0, 400.0, &mut scene);
+        // header(2) + 2 rows × (bg+border+focus=3) = 2 + 6 = 8
+        assert_eq!(scene.quads.len(), 8);
+    }
+
+    #[test]
+    fn properties_row_update_keeps_count() {
+        let mut panel = PropertiesPanel::new();
+        panel.set_row("key1", "val1", false);
+        panel.set_row("key2", "val2", true);
+        assert_eq!(panel.row_count(), 2);
+        // update existing
+        panel.set_row("key1", "new_val", true);
+        assert_eq!(panel.row_count(), 2);
+        assert_eq!(panel.rows[0].value, "new_val");
+        assert!(panel.rows[0].editable);
+    }
+
+    #[test]
+    fn properties_load_entity_clears_rows() {
+        let mut panel = PropertiesPanel::new();
+        panel.set_row("x", "y", false);
+        panel.set_row("a", "b", true);
+        assert_eq!(panel.row_count(), 2);
+        panel.load_entity("new-id", "NewKind");
+        assert_eq!(panel.row_count(), 0);
+        assert_eq!(panel.entity.id(), Some("new-id"));
+    }
+
+    #[test]
+    fn properties_panel_id_and_title() {
+        let panel = PropertiesPanel::new();
+        assert_eq!(panel.id(), "properties");
+        assert_eq!(panel.title(), "Properties");
+        assert_eq!(panel.default_size(), 280.0);
+    }
+
+    #[test]
+    fn properties_panel_position_is_right() {
+        let panel = PropertiesPanel::new();
+        assert_eq!(panel.position(), crate::dock::DockPosition::Right);
+    }
+
+    #[test]
+    fn properties_panel_activation_priority() {
+        let panel = PropertiesPanel::new();
+        assert_eq!(panel.activation_priority(), 20);
+    }
+
+    #[test]
+    fn properties_panel_default_is_empty() {
+        let panel = PropertiesPanel::default();
+        assert_eq!(panel.row_count(), 0);
+        assert_eq!(panel.entity, crate::entity_ref::PanelEntityRef::None);
+    }
+
+    #[test]
+    fn properties_row_readonly_detection() {
+        let mut panel = PropertiesPanel::new();
+        panel.set_row("locked", "value", false);
+        panel.set_row("editable", "value", true);
+        assert!(!panel.rows[0].editable);
+        assert!(panel.rows[1].editable);
+    }
+
+    #[test]
+    fn properties_multiple_loads_reset_each_time() {
+        let mut panel = PropertiesPanel::new();
+        panel.load_entity("ent-1", "A");
+        panel.set_row("k", "v", false);
+        panel.load_entity("ent-2", "B");
+        assert_eq!(panel.row_count(), 0);
+        assert_eq!(panel.entity.id(), Some("ent-2"));
+        assert_eq!(panel.entity.kind(), Some("B"));
+    }
 }

@@ -402,4 +402,145 @@ mod tests {
         assert_eq!(errors[0].severity, Severity::Warning);
         assert!(errors[0].message.contains("wrong_port"));
     }
+
+    /// ValidationError error() produces Error severity with no labels or footers by default
+    #[test]
+    fn validation_error_defaults_have_no_labels_or_footers() {
+        let err = ValidationError::error(0..1, "bare error");
+        assert!(err.labels.is_empty());
+        assert!(err.footers.is_empty());
+        assert_eq!(err.severity, Severity::Error);
+    }
+
+    /// ValidationError warning() produces Warning severity
+    #[test]
+    fn validation_warning_defaults_have_no_labels_or_footers() {
+        let w = ValidationError::warning(5..10, "bare warning");
+        assert!(w.labels.is_empty());
+        assert!(w.footers.is_empty());
+        assert_eq!(w.severity, Severity::Warning);
+    }
+
+    /// validate_block collects errors from both sub-validators
+    #[test]
+    fn validate_block_runs_both_validators() {
+        use crate::dict_reader::ClauseShape;
+        // Kind is unknown -> GrammarDerivationValidator error
+        // Slot is not in shapes -> SlotShapeValidator would also warn, but kind error fires first
+        let dict = StubDictReader::new().with_shapes(
+            "phantom",
+            vec![ClauseShape {
+                name: "output".into(),
+                grammar_shape: "text".into(),
+                is_required: false,
+                description: String::new(),
+            }],
+        );
+        let mut block = BlockModel::new(
+            "bX",
+            NomtuRef::new("eX", "x", "phantom"),
+            "affine:paragraph",
+        );
+        // "phantom" is not in StubDictReader's known set → GrammarDerivationValidator fires
+        block.set_slot("bad_slot", crate::slot::SlotValue::Bool(false));
+        let errors = validate_block(&block, &dict);
+        // At minimum the GrammarDerivationValidator error fires
+        assert!(!errors.is_empty());
+        let has_error = errors.iter().any(|e| e.severity == Severity::Error);
+        assert!(has_error, "expected at least one Error severity");
+    }
+
+    /// validate_block error footer contains the entity word
+    #[test]
+    fn validate_block_error_footer_has_entity_word() {
+        let dict = StubDictReader::new();
+        let block = BlockModel::new(
+            "bF",
+            NomtuRef::new("eF", "my_word", "unknown_kind_xyz"),
+            "affine:note",
+        );
+        let errors = validate_block(&block, &dict);
+        assert!(!errors.is_empty());
+        // GrammarDerivationValidator adds a footer with the entity word
+        assert!(
+            errors[0].footers.iter().any(|f| f.contains("my_word")),
+            "footer must contain entity word 'my_word'"
+        );
+    }
+
+    /// SlotShapeValidator passes when block has no slots at all
+    #[test]
+    fn slot_shape_validator_no_slots_passes() {
+        let dict = StubDictReader::new();
+        let block = BlockModel::new(
+            "bS",
+            NomtuRef::new("eS", "noop", "verb"),
+            "affine:paragraph",
+        );
+        let errors = SlotShapeValidator.validate(&block, &dict);
+        assert!(errors.is_empty(), "no slots = no warnings");
+    }
+
+    /// SlotShapeValidator emits a warning per unknown slot
+    #[test]
+    fn slot_shape_validator_multiple_unknown_slots() {
+        use crate::dict_reader::ClauseShape;
+        let dict = StubDictReader::new().with_shapes(
+            "verb",
+            vec![ClauseShape {
+                name: "known".into(),
+                grammar_shape: "text".into(),
+                is_required: false,
+                description: String::new(),
+            }],
+        );
+        let mut block = BlockModel::new(
+            "bM",
+            NomtuRef::new("eM", "run", "verb"),
+            "affine:paragraph",
+        );
+        block.set_slot("unknown_a", crate::slot::SlotValue::Bool(true));
+        block.set_slot("unknown_b", crate::slot::SlotValue::Bool(false));
+        let errors = SlotShapeValidator.validate(&block, &dict);
+        assert_eq!(errors.len(), 2, "one warning per unknown slot");
+        assert!(errors.iter().all(|e| e.severity == Severity::Warning));
+    }
+
+    /// Label span is preserved when attached to ValidationError
+    #[test]
+    fn label_span_preserved() {
+        let label = Label {
+            span: 10..20,
+            message: "label span test".into(),
+        };
+        let err = ValidationError::error(0..5, "err").with_label(label);
+        assert_eq!(err.labels[0].span.start, 10u32);
+        assert_eq!(err.labels[0].span.end, 20u32);
+    }
+
+    /// Multiple footers on the same error accumulate correctly
+    #[test]
+    fn validation_error_multiple_footers() {
+        let err = ValidationError::error(0..1, "e")
+            .with_footer("hint one")
+            .with_footer("hint two")
+            .with_footer("hint three");
+        assert_eq!(err.footers.len(), 3);
+        assert_eq!(err.footers[2], "hint three");
+    }
+
+    /// GrammarDerivationValidator error span length matches kind string length
+    #[test]
+    fn grammar_derivation_error_span_matches_kind_length() {
+        let dict = StubDictReader::new();
+        let kind = "very_long_unknown_kind_name";
+        let block = BlockModel::new(
+            "bL",
+            NomtuRef::new("eL", "w", kind),
+            "affine:note",
+        );
+        let errors = GrammarDerivationValidator.validate(&block, &dict);
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].span.end as usize, kind.len());
+    }
 }

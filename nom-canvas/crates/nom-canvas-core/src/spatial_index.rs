@@ -331,4 +331,91 @@ mod tests {
         assert!(found.contains(&1), "overlapping element 1 must be returned");
         assert!(found.contains(&2), "overlapping element 2 must be returned");
     }
+
+    #[test]
+    fn spatial_index_bulk_insert_and_len() {
+        let mut idx = SpatialIndex::new();
+        for i in 1_u64..=50 {
+            let base = i as f32 * 10.0;
+            idx.insert(make_bounds(i, [base, 0.0], [base + 8.0, 8.0]));
+        }
+        assert_eq!(idx.len(), 50, "expected 50 elements after bulk insert");
+    }
+
+    #[test]
+    fn spatial_index_bulk_remove_all() {
+        let mut idx = SpatialIndex::new();
+        let bounds_list: Vec<_> = (1_u64..=5)
+            .map(|i| {
+                let base = i as f32 * 20.0;
+                make_bounds(i, [base, base], [base + 10.0, base + 10.0])
+            })
+            .collect();
+        for b in &bounds_list {
+            idx.insert(*b);
+        }
+        assert_eq!(idx.len(), 5);
+        for b in &bounds_list {
+            idx.remove(b.id, *b);
+        }
+        assert!(idx.is_empty(), "index must be empty after removing all elements");
+    }
+
+    #[test]
+    fn spatial_index_nearest_among_many() {
+        let mut idx = SpatialIndex::new();
+        // Insert 5 elements at various positions.
+        idx.insert(make_bounds(1, [0.0, 0.0], [10.0, 10.0]));      // centre (5,5)
+        idx.insert(make_bounds(2, [100.0, 0.0], [110.0, 10.0]));    // centre (105,5)
+        idx.insert(make_bounds(3, [0.0, 100.0], [10.0, 110.0]));    // centre (5,105)
+        idx.insert(make_bounds(4, [50.0, 50.0], [60.0, 60.0]));     // centre (55,55)
+        idx.insert(make_bounds(5, [200.0, 200.0], [210.0, 210.0])); // far away
+        // Query near element 1
+        let near = idx.nearest([3.0, 3.0], 100.0);
+        assert_eq!(near, Some(1), "nearest to (3,3) should be element 1");
+    }
+
+    #[test]
+    fn spatial_index_no_match_in_narrow_region() {
+        let mut idx = SpatialIndex::new();
+        idx.insert(make_bounds(1, [100.0, 100.0], [200.0, 200.0]));
+        idx.insert(make_bounds(2, [300.0, 300.0], [400.0, 400.0]));
+        // Query a region between them — neither element overlaps [210,210]→[290,290]
+        let found = idx.query_in_bounds([210.0, 210.0], [290.0, 290.0]);
+        assert!(found.is_empty(), "no elements in the gap region");
+    }
+
+    #[test]
+    fn spatial_index_reinsert_after_remove() {
+        let mut idx = SpatialIndex::new();
+        let b = make_bounds(42, [0.0, 0.0], [20.0, 20.0]);
+        idx.insert(b);
+        idx.remove(42, b);
+        assert!(idx.is_empty(), "should be empty after remove");
+        idx.insert(b);
+        assert_eq!(idx.len(), 1, "should have 1 element after re-insert");
+        let found = idx.query_in_bounds([5.0, 5.0], [15.0, 15.0]);
+        assert!(found.contains(&42), "re-inserted element must be queryable");
+    }
+
+    #[test]
+    fn spatial_index_remove_nonexistent_is_safe() {
+        // Removing an ID that was never inserted should not panic.
+        let mut idx = SpatialIndex::new();
+        idx.insert(make_bounds(1, [0.0, 0.0], [10.0, 10.0]));
+        // This should not panic even if the element doesn't exist.
+        idx.remove(999, make_bounds(999, [100.0, 100.0], [110.0, 110.0]));
+        assert_eq!(idx.len(), 1, "original element must still be present");
+    }
+
+    #[test]
+    fn spatial_index_range_query_touching_edge() {
+        // Element exactly touches the query boundary.
+        let mut idx = SpatialIndex::new();
+        idx.insert(make_bounds(1, [50.0, 50.0], [100.0, 100.0]));
+        // Query region whose right edge = element's left edge (50,50).
+        let found = idx.query_in_bounds([0.0, 0.0], [50.0, 50.0]);
+        // Touching (degenerate overlap) should be included.
+        assert!(found.contains(&1), "element touching query boundary must be returned");
+    }
 }

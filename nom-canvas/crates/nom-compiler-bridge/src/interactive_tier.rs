@@ -328,4 +328,119 @@ mod tests {
         let result = worker.do_hover("any_word");
         let _ = result; // None is acceptable in stub mode
     }
+
+    #[test]
+    fn simple_tokenize_stub_empty_source() {
+        let spans = simple_tokenize_stub("");
+        assert!(spans.is_empty());
+    }
+
+    #[test]
+    fn simple_tokenize_stub_multiple_spaces() {
+        let spans = simple_tokenize_stub("a   b");
+        assert_eq!(spans.len(), 2);
+        assert_eq!(spans[0].text, "a");
+        assert_eq!(spans[1].text, "b");
+    }
+
+    #[test]
+    fn simple_tokenize_stub_single_word() {
+        let spans = simple_tokenize_stub("nomtu");
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].start, 0);
+        assert_eq!(spans[0].end, 5);
+    }
+
+    #[test]
+    fn simple_tokenize_stub_span_offsets_non_overlapping() {
+        let spans = simple_tokenize_stub("one two three");
+        assert_eq!(spans.len(), 3);
+        assert!(spans[0].end <= spans[1].start);
+        assert!(spans[1].end <= spans[2].start);
+    }
+
+    #[test]
+    fn interactive_tier_ops_classify_kind_found() {
+        let state = SharedState::new("a.db", "b.db");
+        state.update_grammar_kinds(vec![
+            crate::shared::GrammarKind { name: "action".into(), description: "".into() },
+        ]);
+        let ops = InteractiveTierOps::new(&state);
+        let kind = ops.classify_kind("action");
+        assert_eq!(kind, Some("action".to_string()));
+    }
+
+    #[test]
+    fn interactive_tier_ops_classify_kind_not_found() {
+        let state = SharedState::new("a.db", "b.db");
+        state.update_grammar_kinds(vec![
+            crate::shared::GrammarKind { name: "action".into(), description: "".into() },
+        ]);
+        let ops = InteractiveTierOps::new(&state);
+        let kind = ops.classify_kind("nonexistent");
+        assert!(kind.is_none());
+    }
+
+    #[test]
+    fn interactive_tier_ops_classify_kind_empty_cache() {
+        let state = SharedState::new("a.db", "b.db");
+        let ops = InteractiveTierOps::new(&state);
+        assert!(ops.classify_kind("anything").is_none());
+    }
+
+    #[test]
+    fn interactive_tier_ops_hover_info_any_word() {
+        let state = SharedState::new("a.db", "b.db");
+        let ops = InteractiveTierOps::new(&state);
+        let info = ops.hover_info("define");
+        assert_eq!(info, Some("nomtu: define".to_string()));
+    }
+
+    #[test]
+    fn interactive_tier_ops_tokenize_line_unicode() {
+        let state = SharedState::new("a.db", "b.db");
+        let ops = InteractiveTierOps::new(&state);
+        let tokens = ops.tokenize_line("définir résultat");
+        assert_eq!(tokens.len(), 2);
+        assert_eq!(tokens[0], "définir");
+        assert_eq!(tokens[1], "résultat");
+    }
+
+    #[test]
+    fn interactive_tier_ops_shared_returns_same_ref() {
+        let state = SharedState::new("a.db", "b.db");
+        let ops = InteractiveTierOps::new(&state);
+        // shared() returns the same path strings as the original state
+        assert_eq!(ops.shared().dict_path, "a.db");
+        assert_eq!(ops.shared().grammar_path, "b.db");
+    }
+
+    #[test]
+    fn token_span_role_is_unknown_in_stub() {
+        let spans = simple_tokenize_stub("hello");
+        assert_eq!(spans[0].role, TokenRole::Unknown);
+    }
+
+    #[test]
+    fn interactive_tier_complete_prefix_empty_prefix_all_match() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        state.update_grammar_kinds(vec![
+            crate::shared::GrammarKind { name: "emit".into(), description: "".into() },
+            crate::shared::GrammarKind { name: "flow".into(), description: "".into() },
+        ]);
+        let worker = InteractiveWorker::new(state);
+        let items = worker.do_complete("", None);
+        assert_eq!(items.len(), 2);
+    }
+
+    #[test]
+    fn interactive_tier_complete_prefix_no_match() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        state.update_grammar_kinds(vec![
+            crate::shared::GrammarKind { name: "emit".into(), description: "".into() },
+        ]);
+        let worker = InteractiveWorker::new(state);
+        let items = worker.do_complete("zzz", None);
+        assert!(items.is_empty());
+    }
 }

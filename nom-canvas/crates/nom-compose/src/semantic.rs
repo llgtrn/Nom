@@ -312,4 +312,140 @@ mod tests {
         m.description = Some("fact table".into());
         assert_eq!(m.description.as_deref(), Some("fact table"));
     }
+
+    #[test]
+    fn semantic_model_no_description_by_default() {
+        let m = SemanticModel::new("x", "raw.x");
+        assert!(m.description.is_none());
+    }
+
+    #[test]
+    fn semantic_model_overwrite_description() {
+        let mut m = SemanticModel::new("t", "raw.t");
+        m.description = Some("first".into());
+        m.description = Some("second".into());
+        assert_eq!(m.description.as_deref(), Some("second"));
+    }
+
+    #[test]
+    fn semantic_data_type_unknown_returns_none() {
+        assert_eq!(SemanticDataType::parse("notype"), None);
+        assert_eq!(SemanticDataType::parse(""), None);
+        assert_eq!(SemanticDataType::parse("INT"), None); // case-sensitive
+    }
+
+    #[test]
+    fn semantic_model_column_with_description() {
+        let mut m = SemanticModel::new("t", "raw.t");
+        m.add_column(SemanticColumn {
+            name: "col".into(),
+            data_type: SemanticDataType::String,
+            description: Some("a column".into()),
+        });
+        let col = m.column("col").unwrap();
+        assert_eq!(col.description.as_deref(), Some("a column"));
+    }
+
+    #[test]
+    fn semantic_registry_allows_multiple_models_with_same_source() {
+        let mut reg = SemanticRegistry::new();
+        reg.register(SemanticModel::new("view_a", "raw.events"));
+        reg.register(SemanticModel::new("view_b", "raw.events"));
+        assert_eq!(reg.model_count(), 2);
+        assert!(reg.get("view_a").is_some());
+        assert!(reg.get("view_b").is_some());
+    }
+
+    #[test]
+    fn semantic_sql_single_column() {
+        let mut m = SemanticModel::new("t", "raw.t");
+        m.add_column(SemanticColumn {
+            name: "only_col".into(),
+            data_type: SemanticDataType::Boolean,
+            description: None,
+        });
+        assert_eq!(m.to_select_sql(), "SELECT only_col FROM raw.t");
+    }
+
+    #[test]
+    fn semantic_registry_get_returns_correct_model() {
+        let mut reg = SemanticRegistry::new();
+        reg.register(SemanticModel::new("alpha", "raw.alpha"));
+        reg.register(SemanticModel::new("beta", "raw.beta"));
+        assert_eq!(reg.get("alpha").unwrap().source_table, "raw.alpha");
+        assert_eq!(reg.get("beta").unwrap().source_table, "raw.beta");
+    }
+
+    #[test]
+    fn semantic_model_add_column_chaining() {
+        let mut m = SemanticModel::new("chain", "raw.chain");
+        m.add_column(SemanticColumn {
+            name: "x".into(),
+            data_type: SemanticDataType::Integer,
+            description: None,
+        })
+        .add_column(SemanticColumn {
+            name: "y".into(),
+            data_type: SemanticDataType::Float,
+            description: None,
+        });
+        assert_eq!(m.column_count(), 2);
+    }
+
+    #[test]
+    fn semantic_data_type_json_variants() {
+        assert_eq!(SemanticDataType::parse("json"), Some(SemanticDataType::Json));
+        assert_eq!(SemanticDataType::parse("jsonb"), Some(SemanticDataType::Json));
+    }
+
+    #[test]
+    fn semantic_registry_first_model_returned() {
+        let mut reg = SemanticRegistry::new();
+        reg.register(SemanticModel::new("first", "raw.first"));
+        reg.register(SemanticModel::new("second", "raw.second"));
+        assert!(reg.get("first").is_some());
+        assert!(reg.get("second").is_some());
+    }
+
+    #[test]
+    fn semantic_model_sql_preserves_column_order() {
+        let mut m = SemanticModel::new("t", "raw.t");
+        for name in &["z", "a", "m"] {
+            m.add_column(SemanticColumn {
+                name: (*name).into(),
+                data_type: SemanticDataType::String,
+                description: None,
+            });
+        }
+        let sql = m.to_select_sql();
+        let z_pos = sql.find('z').unwrap();
+        let a_pos = sql.find('a').unwrap();
+        let m_pos = sql.find('m').unwrap();
+        assert!(z_pos < a_pos, "z must appear before a in SELECT");
+        assert!(a_pos < m_pos, "a must appear before m in SELECT");
+    }
+
+    #[test]
+    fn semantic_data_type_date_variant() {
+        assert_eq!(SemanticDataType::parse("date"), Some(SemanticDataType::Date));
+    }
+
+    #[test]
+    fn semantic_model_registry_ten_models() {
+        let mut reg = SemanticRegistry::new();
+        for i in 0..10 {
+            reg.register(SemanticModel::new(format!("model_{i}"), format!("raw.t{i}")));
+        }
+        assert_eq!(reg.model_count(), 10);
+        for i in 0..10 {
+            assert!(reg.get(&format!("model_{i}")).is_some());
+        }
+    }
+
+    #[test]
+    fn semantic_column_data_type_equality() {
+        assert_eq!(SemanticDataType::Integer, SemanticDataType::Integer);
+        assert_ne!(SemanticDataType::Integer, SemanticDataType::String);
+        assert_ne!(SemanticDataType::Boolean, SemanticDataType::Float);
+    }
 }

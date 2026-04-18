@@ -522,4 +522,157 @@ mod tests {
         let delta = anim.delta_with_motion(Duration::from_millis(150), MotionPreference::Full);
         assert!((delta - 0.5).abs() < 1e-6);
     }
+
+    // -----------------------------------------------------------------------
+    // Spring physics convergence
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn spring_value_at_zero_is_zero() {
+        assert!((easing::spring_value(200.0, 20.0, 0.0)).abs() < 1e-6);
+    }
+
+    #[test]
+    fn spring_value_converges_near_one_at_large_t() {
+        // At t=2.0 the spring should be very close to settled.
+        let v = easing::spring_value(400.0, 28.0, 2.0);
+        assert!((v - 1.0).abs() < 0.01, "spring at t=2.0: {v}");
+    }
+
+    #[test]
+    fn spring_critically_damped_returns_one() {
+        // zeta >= 1 → overdamped path, should return a value close to 1 at t=1.
+        // omega = sqrt(stiffness); zeta = damping / (2*omega).
+        // Choose damping so zeta >= 1: damping = 2*omega = 2*sqrt(100) = 20.
+        let v = easing::spring_value(100.0, 20.0, 1.0);
+        // Overdamped does not oscillate — value must be in [0, 1].
+        assert!(v >= 0.0 && v <= 1.0, "overdamped spring value out of range: {v}");
+    }
+
+    #[test]
+    fn spring_fn_closure_matches_spring_value() {
+        let f = easing::spring(400.0, 28.0);
+        let expected = easing::spring_value(400.0, 28.0, 0.5);
+        assert!((f(0.5) - expected).abs() < 1e-6);
+    }
+
+    // -----------------------------------------------------------------------
+    // Cubic-bezier timing (ease_in_out correctness)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn ease_in_out_symmetric_at_midpoint() {
+        let f = easing::ease_in_out();
+        // ease_in_out must equal 0.5 at t=0.5 (symmetric).
+        assert!((f(0.5) - 0.5).abs() < 1e-6, "ease_in_out(0.5) must be 0.5");
+    }
+
+    #[test]
+    fn ease_in_out_at_zero_and_one() {
+        let f = easing::ease_in_out();
+        assert!((f(0.0) - 0.0).abs() < 1e-6);
+        assert!((f(1.0) - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn ease_out_quint_at_boundaries() {
+        let f = easing::ease_out_quint();
+        assert!((f(0.0) - 0.0).abs() < 1e-5, "ease_out_quint(0)={}", f(0.0));
+        assert!((f(1.0) - 1.0).abs() < 1e-5, "ease_out_quint(1)={}", f(1.0));
+    }
+
+    #[test]
+    fn ease_out_quint_greater_than_ease_out_at_midpoint() {
+        // ease_out_quint accelerates more steeply than ease_out at early progress.
+        let quint = easing::ease_out_quint()(0.5);
+        let quad = easing::ease_out()(0.5);
+        assert!(quint > quad, "ease_out_quint({quint}) should exceed ease_out({quad}) at t=0.5");
+    }
+
+    // -----------------------------------------------------------------------
+    // Reduced-motion flag behaviour
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn reduced_motion_preference_eq() {
+        assert_eq!(MotionPreference::Reduced, MotionPreference::Reduced);
+        assert_eq!(MotionPreference::Full, MotionPreference::Full);
+        assert_ne!(MotionPreference::Full, MotionPreference::Reduced);
+    }
+
+    #[test]
+    fn reduced_motion_always_returns_one_regardless_of_elapsed() {
+        let anim = Animation::new(Duration::from_secs(5), easing::linear());
+        // Even at t=0, reduced motion jumps to 1.0.
+        assert_eq!(anim.delta_with_motion(Duration::ZERO, MotionPreference::Reduced), 1.0);
+        assert_eq!(anim.delta_with_motion(Duration::from_millis(1), MotionPreference::Reduced), 1.0);
+        assert_eq!(anim.delta_with_motion(Duration::from_secs(10), MotionPreference::Reduced), 1.0);
+    }
+
+    // -----------------------------------------------------------------------
+    // AnimationGroup: more coverage
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn animation_group_empty_sample_returns_zero() {
+        let group = AnimationGroup::new();
+        assert!((group.sample(0.5) - 0.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn animation_group_sample_at_zero() {
+        let group = AnimationGroup::new().then(1.0, easing::linear());
+        assert!((group.sample(0.0) - 0.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn animation_group_three_steps_total_duration() {
+        let group = AnimationGroup::new()
+            .then(0.1, easing::linear())
+            .then(0.2, easing::ease_in())
+            .then(0.7, easing::ease_out());
+        assert!((group.total_duration() - 1.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn animation_group_zero_duration_step_returns_final_value() {
+        let group = AnimationGroup::new().then(0.0, easing::linear());
+        // Zero-duration step: local_t=1.0 → linear(1.0)=1.0.
+        assert!((group.sample(0.0) - 1.0).abs() < 1e-6);
+    }
+
+    // -----------------------------------------------------------------------
+    // Interpolation helpers
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn lerp_negative_to_positive() {
+        let v = lerp(-1.0, 1.0, 0.5);
+        assert!((v - 0.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn lerp_t_greater_than_one_extrapolates() {
+        // lerp does NOT clamp — t=2.0 extrapolates beyond `to`.
+        let v = lerp(0.0, 10.0, 2.0);
+        assert!((v - 20.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn lerp_hsla_at_zero_returns_from() {
+        let from = Hsla::new(30.0, 0.2, 0.4, 0.6);
+        let to = Hsla::new(90.0, 0.8, 0.9, 1.0);
+        let result = lerp_hsla(from, to, 0.0);
+        assert!((result.h - from.h).abs() < 1e-5);
+        assert!((result.s - from.s).abs() < 1e-5);
+    }
+
+    #[test]
+    fn lerp_hsla_at_one_returns_to() {
+        let from = Hsla::new(30.0, 0.2, 0.4, 0.6);
+        let to = Hsla::new(90.0, 0.8, 0.9, 1.0);
+        let result = lerp_hsla(from, to, 1.0);
+        assert!((result.h - to.h).abs() < 1e-5);
+        assert!((result.a - to.a).abs() < 1e-5);
+    }
 }

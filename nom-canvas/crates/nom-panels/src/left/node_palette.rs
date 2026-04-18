@@ -289,4 +289,86 @@ mod tests {
         // "TextBlock" matches by kind_name, "MediaVideo"/"MediaAudio" match by description
         assert!(block_results.len() >= 1);
     }
+
+    #[test]
+    fn node_palette_search_no_match_returns_empty() {
+        let palette = NodePalette::load_from_kinds(SAMPLE_KINDS);
+        let results = palette.search("xyznotfound");
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn node_palette_search_exact_kind_name() {
+        let palette = NodePalette::load_from_kinds(SAMPLE_KINDS);
+        let results = palette.search("Entity");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].kind_name, "Entity");
+    }
+
+    #[test]
+    fn node_palette_search_partial_description_not_matched() {
+        // search only covers kind_name and display_name, NOT description
+        let kinds: &[(&str, &str, &str)] = &[
+            ("K1", "Alpha", "unique_desc_xyz"),
+        ];
+        let palette = NodePalette::load_from_kinds(kinds);
+        // description not searched — "unique_desc_xyz" is only in description
+        let results = palette.search("unique_desc_xyz");
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn node_palette_single_entry() {
+        let kinds: &[(&str, &str, &str)] = &[("Single", "Only One", "sole entry")];
+        let palette = NodePalette::load_from_kinds(kinds);
+        assert_eq!(palette.entry_count(), 1);
+        let all = palette.search("");
+        assert_eq!(all.len(), 1);
+        let none = palette.search("zzz");
+        assert!(none.is_empty());
+    }
+
+    #[test]
+    fn node_palette_paint_scene_empty_palette() {
+        let palette = NodePalette::load_from_kinds(&[]);
+        let mut scene = nom_gpui::scene::Scene::new();
+        palette.paint_scene(200.0, &mut scene);
+        assert_eq!(scene.quads.len(), 0);
+    }
+
+    #[test]
+    fn node_palette_paint_scene_single_entry() {
+        let kinds: &[(&str, &str, &str)] = &[("K", "K", "d")];
+        let palette = NodePalette::load_from_kinds(kinds);
+        let mut scene = nom_gpui::scene::Scene::new();
+        palette.paint_scene(100.0, &mut scene);
+        // 1 entry → 2 quads (bg + border)
+        assert_eq!(scene.quads.len(), 2);
+    }
+
+    #[test]
+    fn node_palette_entry_equality() {
+        let a = PaletteEntry {
+            kind_name: "K".to_string(),
+            display_name: "D".to_string(),
+            description: "desc".to_string(),
+        };
+        let b = a.clone();
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn node_palette_entry_inequality() {
+        let a = PaletteEntry {
+            kind_name: "K1".to_string(),
+            display_name: "D".to_string(),
+            description: "desc".to_string(),
+        };
+        let b = PaletteEntry {
+            kind_name: "K2".to_string(),
+            display_name: "D".to_string(),
+            description: "desc".to_string(),
+        };
+        assert_ne!(a, b);
+    }
 }

@@ -312,4 +312,104 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn rag_max_k_clamping_top_k_larger_than_chunks() {
+        let mut store = InMemoryStore::new();
+        let chunks = vec![
+            RagChunk { id: "a".into(), text: "one".into(), score: 0.5 },
+            RagChunk { id: "b".into(), text: "two".into(), score: 0.8 },
+        ];
+        let out = RagQueryBackend::compose(
+            RagQueryInput {
+                entity: NomtuRef { id: "e1".into(), word: "q".into(), kind: "verb".into() },
+                query: "test".into(),
+                top_k: 10, // more than available chunks
+                chunks,
+            },
+            &mut store,
+            &LogProgressSink,
+        );
+        // Should return at most the available chunks (2), not error.
+        assert_eq!(out.chunks_used.len(), 2);
+    }
+
+    #[test]
+    fn rag_relevance_ordering_score_descending() {
+        let mut store = InMemoryStore::new();
+        let chunks = vec![
+            RagChunk { id: "low".into(), text: "least".into(), score: 0.1 },
+            RagChunk { id: "high".into(), text: "most".into(), score: 0.95 },
+            RagChunk { id: "mid".into(), text: "middle".into(), score: 0.5 },
+        ];
+        let out = RagQueryBackend::compose(
+            RagQueryInput {
+                entity: NomtuRef { id: "e2".into(), word: "rank".into(), kind: "noun".into() },
+                query: "relevance".into(),
+                top_k: 3,
+                chunks,
+            },
+            &mut store,
+            &LogProgressSink,
+        );
+        assert_eq!(out.chunks_used[0], "high");
+        assert_eq!(out.chunks_used[1], "mid");
+        assert_eq!(out.chunks_used[2], "low");
+    }
+
+    #[test]
+    fn rag_answer_contains_query_and_context() {
+        let mut store = InMemoryStore::new();
+        let chunks = vec![
+            RagChunk { id: "c1".into(), text: "important context".into(), score: 0.9 },
+        ];
+        let out = RagQueryBackend::compose(
+            RagQueryInput {
+                entity: NomtuRef { id: "e3".into(), word: "find".into(), kind: "verb".into() },
+                query: "my specific query".into(),
+                top_k: 1,
+                chunks,
+            },
+            &mut store,
+            &LogProgressSink,
+        );
+        assert!(out.answer.contains("my specific query"));
+        assert!(out.answer.contains("important context"));
+    }
+
+    #[test]
+    fn rag_empty_corpus_answer_still_contains_query() {
+        let mut store = InMemoryStore::new();
+        let out = RagQueryBackend::compose(
+            RagQueryInput {
+                entity: NomtuRef { id: "e4".into(), word: "find".into(), kind: "verb".into() },
+                query: "no corpus query".into(),
+                top_k: 5,
+                chunks: vec![],
+            },
+            &mut store,
+            &LogProgressSink,
+        );
+        assert!(out.answer.contains("no corpus query"));
+        assert_eq!(out.chunks_used.len(), 0);
+    }
+
+    #[test]
+    fn rag_top_k_zero_returns_no_chunks() {
+        let mut store = InMemoryStore::new();
+        let chunks = vec![
+            RagChunk { id: "a".into(), text: "ignored".into(), score: 1.0 },
+        ];
+        let out = RagQueryBackend::compose(
+            RagQueryInput {
+                entity: NomtuRef { id: "e5".into(), word: "skip".into(), kind: "verb".into() },
+                query: "zero".into(),
+                top_k: 0,
+                chunks,
+            },
+            &mut store,
+            &LogProgressSink,
+        );
+        assert_eq!(out.chunks_used.len(), 0);
+    }
 }

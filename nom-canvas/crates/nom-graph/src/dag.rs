@@ -1071,4 +1071,222 @@ mod tests {
         assert_eq!(e.src_port, "result_port");
         assert_eq!(e.dst_port, "input_port");
     }
+
+    // ------------------------------------------------------------------
+    // Multi-root DAG: two independent source nodes both appear before sinks
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_two_roots_both_precede_shared_sink() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("root1", "verb"));
+        dag.add_node(ExecNode::new("root2", "verb"));
+        dag.add_node(ExecNode::new("sink", "verb"));
+        dag.add_edge("root1", "out", "sink", "in");
+        dag.add_edge("root2", "out", "sink", "in");
+        let sorted = dag.topological_sort().unwrap();
+        assert_eq!(sorted.len(), 3);
+        let pos = |id: &str| sorted.iter().position(|x| x == id).unwrap();
+        assert!(pos("root1") < pos("sink"), "root1 must precede sink");
+        assert!(pos("root2") < pos("sink"), "root2 must precede sink");
+    }
+
+    #[test]
+    fn dag_three_roots_no_edges() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("r1", "verb"));
+        dag.add_node(ExecNode::new("r2", "verb"));
+        dag.add_node(ExecNode::new("r3", "verb"));
+        let sorted = dag.topological_sort().unwrap();
+        assert_eq!(sorted.len(), 3, "all three independent roots must appear");
+        for r in &["r1", "r2", "r3"] {
+            assert!(sorted.contains(&r.to_string()), "{r} must be in sorted list");
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Kahn edge cases: edge to non-existent node still counts
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_edge_weight_exactly_half() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("x", "verb"));
+        dag.add_node(ExecNode::new("y", "verb"));
+        dag.add_edge_weighted("x", "out", "y", "in", 0.5);
+        assert!((dag.edges[0].confidence - 0.5).abs() < 1e-7);
+    }
+
+    #[test]
+    fn dag_kahn_single_chain_five_nodes() {
+        // a→b→c→d→e must sort in exactly that order.
+        let mut dag = Dag::new();
+        for name in &["a", "b", "c", "d", "e"] {
+            dag.add_node(ExecNode::new(*name, "verb"));
+        }
+        dag.add_edge("a", "out", "b", "in");
+        dag.add_edge("b", "out", "c", "in");
+        dag.add_edge("c", "out", "d", "in");
+        dag.add_edge("d", "out", "e", "in");
+        let sorted = dag.topological_sort().unwrap();
+        assert_eq!(sorted.len(), 5);
+        let pos = |id: &str| sorted.iter().position(|x| x == id).unwrap();
+        assert!(pos("a") < pos("b"));
+        assert!(pos("b") < pos("c"));
+        assert!(pos("c") < pos("d"));
+        assert!(pos("d") < pos("e"));
+    }
+
+    #[test]
+    fn dag_kahn_three_node_cycle_detected() {
+        // X→Y→Z→X is a three-cycle.
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("X", "verb"));
+        dag.add_node(ExecNode::new("Y", "verb"));
+        dag.add_node(ExecNode::new("Z", "verb"));
+        dag.add_edge("X", "out", "Y", "in");
+        dag.add_edge("Y", "out", "Z", "in");
+        dag.add_edge("Z", "out", "X", "in");
+        assert!(dag.topological_sort().is_err(), "X→Y→Z→X must be detected as cycle");
+    }
+
+    #[test]
+    fn dag_kahn_returns_all_cycle_nodes_in_error() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("P", "verb"));
+        dag.add_node(ExecNode::new("Q", "verb"));
+        dag.add_node(ExecNode::new("R", "verb"));
+        dag.add_edge("P", "out", "Q", "in");
+        dag.add_edge("Q", "out", "R", "in");
+        dag.add_edge("R", "out", "P", "in");
+        let err = dag.topological_sort().unwrap_err();
+        assert!(err.contains(&"P".to_string()), "P must be in cycle error");
+        assert!(err.contains(&"Q".to_string()), "Q must be in cycle error");
+        assert!(err.contains(&"R".to_string()), "R must be in cycle error");
+    }
+
+    // ------------------------------------------------------------------
+    // Kahn: node with no neighbors sorts correctly
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_kahn_isolated_plus_chain() {
+        // Chain a→b plus isolated node c — c can appear anywhere, a before b.
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("a", "verb"));
+        dag.add_node(ExecNode::new("b", "verb"));
+        dag.add_node(ExecNode::new("c", "verb")); // isolated
+        dag.add_edge("a", "out", "b", "in");
+        let sorted = dag.topological_sort().unwrap();
+        assert_eq!(sorted.len(), 3);
+        let pos = |id: &str| sorted.iter().position(|x| x == id).unwrap();
+        assert!(pos("a") < pos("b"), "a must precede b");
+        assert!(sorted.contains(&"c".to_string()), "c must appear in sort");
+    }
+
+    #[test]
+    fn dag_kahn_fan_in_two_to_one() {
+        // Two parents both feed one child.
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("p1", "verb"));
+        dag.add_node(ExecNode::new("p2", "verb"));
+        dag.add_node(ExecNode::new("child", "verb"));
+        dag.add_edge("p1", "out", "child", "in");
+        dag.add_edge("p2", "out", "child", "in");
+        let sorted = dag.topological_sort().unwrap();
+        let pos = |id: &str| sorted.iter().position(|x| x == id).unwrap();
+        assert!(pos("p1") < pos("child"), "p1 must precede child");
+        assert!(pos("p2") < pos("child"), "p2 must precede child");
+    }
+
+    #[test]
+    fn dag_kahn_fan_out_one_to_three() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("src", "verb"));
+        for c in ["c1", "c2", "c3"] {
+            dag.add_node(ExecNode::new(c, "verb"));
+            dag.add_edge("src", "out", c, "in");
+        }
+        let sorted = dag.topological_sort().unwrap();
+        let src_pos = sorted.iter().position(|x| x == "src").unwrap();
+        for c in ["c1", "c2", "c3"] {
+            let child_pos = sorted.iter().position(|x| x == c).unwrap();
+            assert!(src_pos < child_pos, "src must precede {c}");
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Edge: port strings are stored as-is
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_edge_port_strings_preserved() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("a", "verb"));
+        dag.add_node(ExecNode::new("b", "verb"));
+        dag.add_edge("a", "custom_src_port", "b", "custom_dst_port");
+        let e = &dag.edges[0];
+        assert_eq!(e.src_port, "custom_src_port");
+        assert_eq!(e.dst_port, "custom_dst_port");
+    }
+
+    // ------------------------------------------------------------------
+    // Weighted edge: confidence 0.25 stored correctly
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_weighted_edge_confidence_quarter() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("u", "verb"));
+        dag.add_node(ExecNode::new("v", "verb"));
+        dag.add_edge_weighted("u", "out", "v", "in", 0.25);
+        assert!((dag.edges[0].confidence - 0.25).abs() < 1e-6);
+    }
+
+    // ------------------------------------------------------------------
+    // Add multiple edges in sequence: edge_count increments correctly
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_edge_count_increments_on_each_add() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("a", "verb"));
+        dag.add_node(ExecNode::new("b", "verb"));
+        dag.add_node(ExecNode::new("c", "verb"));
+        assert_eq!(dag.edge_count(), 0);
+        dag.add_edge("a", "out", "b", "in");
+        assert_eq!(dag.edge_count(), 1);
+        dag.add_edge("b", "out", "c", "in");
+        assert_eq!(dag.edge_count(), 2);
+    }
+
+    // ------------------------------------------------------------------
+    // Two-node DAG: topological order is src before dst
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_two_node_topological_order() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("first", "verb"));
+        dag.add_node(ExecNode::new("second", "verb"));
+        dag.add_edge("first", "out", "second", "in");
+        let sorted = dag.topological_sort().unwrap();
+        assert_eq!(sorted[0], "first");
+        assert_eq!(sorted[1], "second");
+    }
+
+    // ------------------------------------------------------------------
+    // Deep chain: 10-node linear chain sorts correctly
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_deep_chain_ten_nodes() {
+        let mut dag = Dag::new();
+        let names: Vec<String> = (0..10).map(|i| format!("n{i}")).collect();
+        for name in &names {
+            dag.add_node(ExecNode::new(name.clone(), "verb"));
+        }
+        for i in 0..9 {
+            dag.add_edge(names[i].clone(), "out", names[i + 1].clone(), "in");
+        }
+        let sorted = dag.topological_sort().unwrap();
+        assert_eq!(sorted.len(), 10);
+        for i in 0..9 {
+            let pi = sorted.iter().position(|x| x == &names[i]).unwrap();
+            let pj = sorted.iter().position(|x| x == &names[i + 1]).unwrap();
+            assert!(pi < pj, "n{i} must precede n{}", i + 1);
+        }
+    }
 }

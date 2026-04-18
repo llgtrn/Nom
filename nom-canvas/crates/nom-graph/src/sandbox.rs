@@ -897,4 +897,351 @@ mod tests {
             "node queried with its own vec must rank first"
         );
     }
+
+    // ------------------------------------------------------------------
+    // SandboxValue: is_truthy covers all variants
+    // ------------------------------------------------------------------
+    #[test]
+    fn sandbox_value_truthy_null_is_false() {
+        assert!(!SandboxValue::Null.is_truthy());
+    }
+
+    #[test]
+    fn sandbox_value_truthy_bool_true() {
+        assert!(SandboxValue::Bool(true).is_truthy());
+    }
+
+    #[test]
+    fn sandbox_value_truthy_bool_false() {
+        assert!(!SandboxValue::Bool(false).is_truthy());
+    }
+
+    #[test]
+    fn sandbox_value_truthy_int_nonzero() {
+        assert!(SandboxValue::Int(1).is_truthy());
+        assert!(SandboxValue::Int(-1).is_truthy());
+    }
+
+    #[test]
+    fn sandbox_value_truthy_int_zero() {
+        assert!(!SandboxValue::Int(0).is_truthy());
+    }
+
+    #[test]
+    fn sandbox_value_truthy_float_nonzero() {
+        assert!(SandboxValue::Float(0.1).is_truthy());
+    }
+
+    #[test]
+    fn sandbox_value_truthy_float_zero() {
+        assert!(!SandboxValue::Float(0.0).is_truthy());
+    }
+
+    #[test]
+    fn sandbox_value_truthy_nonempty_str() {
+        assert!(SandboxValue::Str("hi".into()).is_truthy());
+    }
+
+    #[test]
+    fn sandbox_value_truthy_empty_str() {
+        assert!(!SandboxValue::Str(String::new()).is_truthy());
+    }
+
+    #[test]
+    fn sandbox_value_truthy_nonempty_list() {
+        assert!(SandboxValue::List(vec![SandboxValue::Int(1)]).is_truthy());
+    }
+
+    #[test]
+    fn sandbox_value_truthy_empty_list() {
+        assert!(!SandboxValue::List(vec![]).is_truthy());
+    }
+
+    // ------------------------------------------------------------------
+    // SandboxValue: type_name returns correct strings
+    // ------------------------------------------------------------------
+    #[test]
+    fn sandbox_value_type_name_null() {
+        assert_eq!(SandboxValue::Null.type_name(), "null");
+    }
+
+    #[test]
+    fn sandbox_value_type_name_bool() {
+        assert_eq!(SandboxValue::Bool(true).type_name(), "bool");
+    }
+
+    #[test]
+    fn sandbox_value_type_name_int() {
+        assert_eq!(SandboxValue::Int(0).type_name(), "int");
+    }
+
+    #[test]
+    fn sandbox_value_type_name_float() {
+        assert_eq!(SandboxValue::Float(0.0).type_name(), "float");
+    }
+
+    #[test]
+    fn sandbox_value_type_name_str() {
+        assert_eq!(SandboxValue::Str("x".into()).type_name(), "str");
+    }
+
+    #[test]
+    fn sandbox_value_type_name_list() {
+        assert_eq!(SandboxValue::List(vec![]).type_name(), "list");
+    }
+
+    // ------------------------------------------------------------------
+    // eval_expr: subtraction
+    // ------------------------------------------------------------------
+    #[test]
+    fn eval_expr_subtraction() {
+        let ctx = EvalContext::new();
+        let expr = Expr::BinOp {
+            op: BinOpKind::Sub,
+            left: Box::new(Expr::Literal(SandboxValue::Int(10))),
+            right: Box::new(Expr::Literal(SandboxValue::Int(3))),
+        };
+        assert_eq!(eval_expr(&expr, &ctx), Ok(SandboxValue::Int(7)));
+    }
+
+    // ------------------------------------------------------------------
+    // eval_expr: multiplication
+    // ------------------------------------------------------------------
+    #[test]
+    fn eval_expr_multiplication() {
+        let ctx = EvalContext::new();
+        let expr = Expr::BinOp {
+            op: BinOpKind::Mul,
+            left: Box::new(Expr::Literal(SandboxValue::Int(6))),
+            right: Box::new(Expr::Literal(SandboxValue::Int(7))),
+        };
+        assert_eq!(eval_expr(&expr, &ctx), Ok(SandboxValue::Int(42)));
+    }
+
+    // ------------------------------------------------------------------
+    // eval_expr: equality comparison
+    // ------------------------------------------------------------------
+    #[test]
+    fn eval_expr_equality_true() {
+        let ctx = EvalContext::new();
+        let expr = Expr::BinOp {
+            op: BinOpKind::Eq,
+            left: Box::new(Expr::Literal(SandboxValue::Int(5))),
+            right: Box::new(Expr::Literal(SandboxValue::Int(5))),
+        };
+        assert_eq!(eval_expr(&expr, &ctx), Ok(SandboxValue::Bool(true)));
+    }
+
+    // ------------------------------------------------------------------
+    // eval_expr: inequality comparison
+    // ------------------------------------------------------------------
+    #[test]
+    fn eval_expr_inequality_true() {
+        let ctx = EvalContext::new();
+        let expr = Expr::BinOp {
+            op: BinOpKind::Neq,
+            left: Box::new(Expr::Literal(SandboxValue::Int(1))),
+            right: Box::new(Expr::Literal(SandboxValue::Int(2))),
+        };
+        assert_eq!(eval_expr(&expr, &ctx), Ok(SandboxValue::Bool(true)));
+    }
+
+    // ------------------------------------------------------------------
+    // eval_expr: greater-than comparison
+    // ------------------------------------------------------------------
+    #[test]
+    fn eval_expr_greater_than_true() {
+        let ctx = EvalContext::new();
+        let expr = Expr::BinOp {
+            op: BinOpKind::Gt,
+            left: Box::new(Expr::Literal(SandboxValue::Int(10))),
+            right: Box::new(Expr::Literal(SandboxValue::Int(3))),
+        };
+        assert_eq!(eval_expr(&expr, &ctx), Ok(SandboxValue::Bool(true)));
+    }
+
+    // ------------------------------------------------------------------
+    // eval_expr: logical AND
+    // ------------------------------------------------------------------
+    #[test]
+    fn eval_expr_logical_and_false() {
+        let ctx = EvalContext::new();
+        let expr = Expr::BinOp {
+            op: BinOpKind::And,
+            left: Box::new(Expr::Literal(SandboxValue::Bool(true))),
+            right: Box::new(Expr::Literal(SandboxValue::Bool(false))),
+        };
+        assert_eq!(eval_expr(&expr, &ctx), Ok(SandboxValue::Bool(false)));
+    }
+
+    // ------------------------------------------------------------------
+    // eval_expr: logical OR
+    // ------------------------------------------------------------------
+    #[test]
+    fn eval_expr_logical_or_true() {
+        let ctx = EvalContext::new();
+        let expr = Expr::BinOp {
+            op: BinOpKind::Or,
+            left: Box::new(Expr::Literal(SandboxValue::Bool(false))),
+            right: Box::new(Expr::Literal(SandboxValue::Bool(true))),
+        };
+        assert_eq!(eval_expr(&expr, &ctx), Ok(SandboxValue::Bool(true)));
+    }
+
+    // ------------------------------------------------------------------
+    // eval_expr: if with false condition takes else branch
+    // ------------------------------------------------------------------
+    #[test]
+    fn eval_expr_if_false_branch() {
+        let ctx = EvalContext::new();
+        let expr = Expr::If {
+            cond: Box::new(Expr::Literal(SandboxValue::Bool(false))),
+            then: Box::new(Expr::Literal(SandboxValue::Int(1))),
+            else_: Box::new(Expr::Literal(SandboxValue::Int(99))),
+        };
+        assert_eq!(eval_expr(&expr, &ctx), Ok(SandboxValue::Int(99)));
+    }
+
+    // ------------------------------------------------------------------
+    // eval_expr: call upper
+    // ------------------------------------------------------------------
+    #[test]
+    fn eval_expr_call_upper() {
+        let ctx = EvalContext::new();
+        let expr = Expr::Call {
+            name: "upper".into(),
+            args: vec![Expr::Literal(SandboxValue::Str("hello".into()))],
+        };
+        assert_eq!(eval_expr(&expr, &ctx), Ok(SandboxValue::Str("HELLO".into())));
+    }
+
+    // ------------------------------------------------------------------
+    // eval_expr: call lower
+    // ------------------------------------------------------------------
+    #[test]
+    fn eval_expr_call_lower() {
+        let ctx = EvalContext::new();
+        let expr = Expr::Call {
+            name: "lower".into(),
+            args: vec![Expr::Literal(SandboxValue::Str("WORLD".into()))],
+        };
+        assert_eq!(eval_expr(&expr, &ctx), Ok(SandboxValue::Str("world".into())));
+    }
+
+    // ------------------------------------------------------------------
+    // eval_expr: call trim
+    // ------------------------------------------------------------------
+    #[test]
+    fn eval_expr_call_trim() {
+        let ctx = EvalContext::new();
+        let expr = Expr::Call {
+            name: "trim".into(),
+            args: vec![Expr::Literal(SandboxValue::Str("  hi  ".into()))],
+        };
+        assert_eq!(eval_expr(&expr, &ctx), Ok(SandboxValue::Str("hi".into())));
+    }
+
+    // ------------------------------------------------------------------
+    // eval_expr: call abs
+    // ------------------------------------------------------------------
+    #[test]
+    fn eval_expr_call_abs() {
+        let ctx = EvalContext::new();
+        let expr = Expr::Call {
+            name: "abs".into(),
+            args: vec![Expr::Literal(SandboxValue::Int(-7))],
+        };
+        assert_eq!(eval_expr(&expr, &ctx), Ok(SandboxValue::Int(7)));
+    }
+
+    // ------------------------------------------------------------------
+    // eval_expr: undefined variable returns error
+    // ------------------------------------------------------------------
+    #[test]
+    fn eval_expr_undefined_var_returns_error() {
+        let ctx = EvalContext::new();
+        let result = eval_expr(&Expr::Var("missing".into()), &ctx);
+        assert_eq!(result, Err(SandboxError::UndefinedVar("missing".into())));
+    }
+
+    // ------------------------------------------------------------------
+    // EvalContext: set and get round-trip
+    // ------------------------------------------------------------------
+    #[test]
+    fn eval_context_set_get_roundtrip() {
+        let mut ctx = EvalContext::new();
+        ctx.set("myvar", SandboxValue::Str("test_value".into()));
+        match ctx.get("myvar") {
+            Some(SandboxValue::Str(s)) => assert_eq!(s, "test_value"),
+            other => panic!("unexpected: {:?}", other),
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // EvalContext: default() produces empty context
+    // ------------------------------------------------------------------
+    #[test]
+    fn eval_context_default_is_empty() {
+        let ctx = EvalContext::default();
+        assert!(ctx.get("anything").is_none());
+    }
+
+    // ------------------------------------------------------------------
+    // SandboxError: Display formatting
+    // ------------------------------------------------------------------
+    #[test]
+    fn sandbox_error_display_undefined_var() {
+        let e = SandboxError::UndefinedVar("x".into());
+        assert!(format!("{e}").contains("x"), "display must include var name");
+    }
+
+    #[test]
+    fn sandbox_error_display_division_by_zero() {
+        let e = SandboxError::DivisionByZero;
+        assert!(format!("{e}").contains("zero"));
+    }
+
+    #[test]
+    fn sandbox_error_display_unknown_function() {
+        let e = SandboxError::UnknownFunction("hack".into());
+        assert!(format!("{e}").contains("hack"));
+    }
+
+    // ------------------------------------------------------------------
+    // DepthLimitSanitizer: depth exactly at limit is OK
+    // ------------------------------------------------------------------
+    #[test]
+    fn depth_limit_sanitizer_exactly_at_limit_is_ok() {
+        // max_depth=4: build a 3-level nesting — must pass.
+        let expr = Expr::BinOp {
+            op: BinOpKind::Add,
+            left: Box::new(Expr::BinOp {
+                op: BinOpKind::Add,
+                left: Box::new(Expr::BinOp {
+                    op: BinOpKind::Add,
+                    left: Box::new(Expr::Literal(SandboxValue::Int(1))),
+                    right: Box::new(Expr::Literal(SandboxValue::Int(2))),
+                }),
+                right: Box::new(Expr::Literal(SandboxValue::Int(3))),
+            }),
+            right: Box::new(Expr::Literal(SandboxValue::Int(4))),
+        };
+        assert!(DepthLimitSanitizer { max_depth: 4 }.check(&expr).is_ok());
+    }
+
+    // ------------------------------------------------------------------
+    // AllowedFunctionsSanitizer: nested blocked call inside allowed call is rejected
+    // ------------------------------------------------------------------
+    #[test]
+    fn allowed_functions_sanitizer_nested_blocked_rejected() {
+        // upper(forbidden_fn()) — forbidden_fn is not in the allow list
+        let expr = Expr::Call {
+            name: "upper".into(),
+            args: vec![Expr::Call {
+                name: "forbidden_fn".into(),
+                args: vec![],
+            }],
+        };
+        assert!(AllowedFunctionsSanitizer::default_safe().check(&expr).is_err());
+    }
 }

@@ -189,4 +189,102 @@ mod tests {
         let items = complete_from_dict("aa", None, &state);
         assert!(items.len() <= 20, "complete_from_dict must cap at 20 items");
     }
+
+    #[test]
+    fn kind_mapping_attribute_and_constraint() {
+        assert_eq!(kind_to_completion_kind("attribute"), CompletionKind::Field);
+        assert_eq!(kind_to_completion_kind("constraint"), CompletionKind::Snippet);
+    }
+
+    #[test]
+    fn kind_mapping_unknown_falls_to_keyword() {
+        assert_eq!(kind_to_completion_kind("unknown_kind"), CompletionKind::Keyword);
+        assert_eq!(kind_to_completion_kind(""), CompletionKind::Keyword);
+    }
+
+    #[test]
+    fn completion_insert_text_matches_label() {
+        let state = SharedState::new("a.db", "b.db");
+        state.update_grammar_kinds(vec![crate::shared::GrammarKind {
+            name: "stream".into(),
+            description: "data flow".into(),
+        }]);
+        let items = complete_from_dict("st", None, &state);
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].label, items[0].insert_text);
+    }
+
+    #[test]
+    fn completion_detail_contains_description() {
+        let state = SharedState::new("a.db", "b.db");
+        state.update_grammar_kinds(vec![crate::shared::GrammarKind {
+            name: "render".into(),
+            description: "output action".into(),
+        }]);
+        let items = complete_from_dict("ren", None, &state);
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].detail.as_deref(), Some("output action"));
+    }
+
+    #[test]
+    fn completion_sort_text_is_none_in_stub() {
+        let state = SharedState::new("a.db", "b.db");
+        state.update_grammar_kinds(vec![crate::shared::GrammarKind {
+            name: "emit".into(),
+            description: "send".into(),
+        }]);
+        let items = complete_from_dict("em", None, &state);
+        assert!(!items.is_empty());
+        assert!(items[0].sort_text.is_none());
+    }
+
+    #[test]
+    fn completion_kind_filter_no_match_returns_empty() {
+        let state = SharedState::new("a.db", "b.db");
+        state.update_grammar_kinds(vec![crate::shared::GrammarKind {
+            name: "verb".into(),
+            description: "action".into(),
+        }]);
+        // kind_filter "zz" doesn't appear in name "verb" → empty
+        let items = complete_from_dict("", Some("zz"), &state);
+        assert!(items.is_empty());
+    }
+
+    #[test]
+    fn completion_kind_filter_match_returns_items() {
+        let state = SharedState::new("a.db", "b.db");
+        state.update_grammar_kinds(vec![
+            crate::shared::GrammarKind {
+                name: "verb_run".into(),
+                description: "run action".into(),
+            },
+            crate::shared::GrammarKind {
+                name: "noun_entity".into(),
+                description: "entity".into(),
+            },
+        ]);
+        // kind_filter "verb" matches name "verb_run" (contains check)
+        let items = complete_from_dict("", Some("verb"), &state);
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].label, "verb_run");
+    }
+
+    #[test]
+    fn completion_empty_cache_returns_empty() {
+        let state = SharedState::new("a.db", "b.db");
+        let items = complete_from_dict("anything", None, &state);
+        assert!(items.is_empty());
+    }
+
+    #[test]
+    fn completion_unicode_prefix_matches() {
+        let state = SharedState::new("a.db", "b.db");
+        state.update_grammar_kinds(vec![crate::shared::GrammarKind {
+            name: "définir".into(),
+            description: "declare".into(),
+        }]);
+        let items = complete_from_dict("dé", None, &state);
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].label, "définir");
+    }
 }

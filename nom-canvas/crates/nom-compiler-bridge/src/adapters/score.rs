@@ -154,4 +154,83 @@ mod tests {
         let low_status = CompileStatus::from_score(0.0);
         assert_eq!(low_status, CompileStatus::Unknown);
     }
+
+    #[test]
+    fn status_color_not_checked_has_unit_alpha() {
+        let color = status_color(&CompileStatus::NotChecked);
+        assert_eq!(color[3], 1.0);
+    }
+
+    #[test]
+    fn status_color_unknown_has_unit_alpha() {
+        let color = status_color(&CompileStatus::Unknown);
+        assert_eq!(color[3], 1.0);
+    }
+
+    #[test]
+    fn status_color_low_confidence_has_unit_alpha() {
+        let color = status_color(&CompileStatus::LowConfidence);
+        assert_eq!(color[3], 1.0);
+    }
+
+    #[test]
+    fn status_color_all_components_finite() {
+        for status in [
+            CompileStatus::Valid,
+            CompileStatus::LowConfidence,
+            CompileStatus::Unknown,
+            CompileStatus::NotChecked,
+        ] {
+            let c = status_color(&status);
+            for v in c {
+                assert!(v.is_finite(), "color component must be finite");
+            }
+        }
+    }
+
+    #[test]
+    fn status_label_not_checked() {
+        assert_eq!(status_label(&CompileStatus::NotChecked), "—");
+    }
+
+    #[test]
+    fn score_to_status_valid_word_matches_kind_in_cache() {
+        let state = SharedState::new("a.db", "b.db");
+        state.update_grammar_kinds(vec![GrammarKind {
+            name: "metric".into(),
+            description: "measurement".into(),
+        }]);
+        // word == "metric" is in the cache → Valid
+        let s = score_to_status("metric", "other_kind", &state);
+        assert_eq!(s, CompileStatus::Valid);
+    }
+
+    #[test]
+    fn score_to_status_multiple_kinds_still_valid() {
+        let state = SharedState::new("a.db", "b.db");
+        state.update_grammar_kinds(vec![
+            GrammarKind { name: "alpha".into(), description: "".into() },
+            GrammarKind { name: "beta".into(), description: "".into() },
+            GrammarKind { name: "gamma".into(), description: "".into() },
+        ]);
+        let s = score_to_status("beta", "zzz", &state);
+        assert_eq!(s, CompileStatus::Valid);
+    }
+
+    #[test]
+    fn score_to_status_unknown_when_cache_has_entries_but_no_match() {
+        let state = SharedState::new("a.db", "b.db");
+        state.update_grammar_kinds(vec![
+            GrammarKind { name: "alpha".into(), description: "".into() },
+        ]);
+        let s = score_to_status("omega", "delta", &state);
+        assert_eq!(s, CompileStatus::Unknown);
+    }
+
+    #[test]
+    fn status_color_valid_green_hue() {
+        let color = status_color(&CompileStatus::Valid);
+        // hue is in [0.39, 0.41] (green region around 0.397)
+        assert!(color[0] > 0.3 && color[0] < 0.5, "valid color should be greenish");
+    }
 }

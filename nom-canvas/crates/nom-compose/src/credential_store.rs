@@ -253,4 +253,109 @@ mod tests {
             assert!(s.get(v).is_some(), "vendor {v} must be present");
         }
     }
+
+    #[test]
+    fn credential_per_kind_isolation() {
+        let mut s = CredentialStore::new();
+        s.set(
+            "svc_api",
+            Credential {
+                kind: "api_key".into(),
+                value: "key-a".into(),
+            },
+        );
+        s.set(
+            "svc_bearer",
+            Credential {
+                kind: "bearer_token".into(),
+                value: "tok-b".into(),
+            },
+        );
+        assert_eq!(s.get("svc_api").unwrap().kind, "api_key");
+        assert_eq!(s.get("svc_bearer").unwrap().kind, "bearer_token");
+        assert_ne!(
+            s.get("svc_api").unwrap().value,
+            s.get("svc_bearer").unwrap().value
+        );
+    }
+
+    #[test]
+    fn credential_store_overwrite_changes_kind_and_value() {
+        let mut s = CredentialStore::new();
+        s.set(
+            "svc",
+            Credential {
+                kind: "api_key".into(),
+                value: "old_key".into(),
+            },
+        );
+        s.set(
+            "svc",
+            Credential {
+                kind: "oauth2".into(),
+                value: "new_tok".into(),
+            },
+        );
+        let c = s.get("svc").unwrap();
+        assert_eq!(c.kind, "oauth2");
+        assert_eq!(c.value, "new_tok");
+        assert_eq!(s.len(), 1);
+    }
+
+    #[test]
+    fn credential_store_missing_key_is_none() {
+        let s = CredentialStore::new();
+        assert!(
+            s.get("missing_vendor").is_none(),
+            "missing key must return None"
+        );
+    }
+
+    #[test]
+    fn credential_store_vendor_names_after_remove() {
+        let mut s = CredentialStore::new();
+        s.set(
+            "x",
+            Credential {
+                kind: "api_key".into(),
+                value: "v".into(),
+            },
+        );
+        s.set(
+            "y",
+            Credential {
+                kind: "api_key".into(),
+                value: "w".into(),
+            },
+        );
+        s.remove("x");
+        let names = s.vendor_names();
+        assert_eq!(names, vec!["y"]);
+    }
+
+    #[test]
+    fn credential_store_set_empty_value() {
+        let mut s = CredentialStore::new();
+        s.set(
+            "svc",
+            Credential {
+                kind: "api_key".into(),
+                value: "".into(),
+            },
+        );
+        assert_eq!(s.get("svc").unwrap().value, "");
+    }
+
+    #[test]
+    fn credential_store_len_after_remove_decreases() {
+        let mut s = CredentialStore::new();
+        s.set("a", Credential { kind: "k".into(), value: "v".into() });
+        s.set("b", Credential { kind: "k".into(), value: "v".into() });
+        assert_eq!(s.len(), 2);
+        s.remove("a");
+        assert_eq!(s.len(), 1);
+        s.remove("b");
+        assert_eq!(s.len(), 0);
+        assert!(s.is_empty());
+    }
 }

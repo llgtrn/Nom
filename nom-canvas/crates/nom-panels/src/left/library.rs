@@ -179,4 +179,104 @@ mod tests {
         // "Function" selected: 3, "Concept": 2, "Entity": 2  → total: 1 + 3 + 2 + 2 = 8
         assert_eq!(scene.quads.len(), 8);
     }
+
+    #[test]
+    fn library_panel_paint_scene_no_selection() {
+        let mut panel = LibraryPanel::new();
+        panel.load_kinds(SAMPLE_KINDS);
+        // No kind selected
+        let mut scene = Scene::new();
+        panel.paint_scene(248.0, 500.0, &mut scene);
+        // header(1) + 3 kinds × (bg+border=2) = 1 + 6 = 7
+        assert_eq!(scene.quads.len(), 7);
+    }
+
+    #[test]
+    fn library_panel_paint_scene_empty() {
+        let panel = LibraryPanel::new();
+        let mut scene = Scene::new();
+        panel.paint_scene(248.0, 500.0, &mut scene);
+        // header only
+        assert_eq!(scene.quads.len(), 1);
+    }
+
+    #[test]
+    fn library_kind_entry_count_preserved() {
+        let mut panel = LibraryPanel::new();
+        panel.load_kinds(SAMPLE_KINDS);
+        assert_eq!(panel.kinds[0].entry_count, 42);
+        assert_eq!(panel.kinds[1].entry_count, 17);
+        assert_eq!(panel.kinds[2].entry_count, 8);
+    }
+
+    #[test]
+    fn library_kind_struct_fields() {
+        let kind = LibraryKind {
+            name: "MyKind".to_string(),
+            description: "desc".to_string(),
+            entry_count: 99,
+        };
+        assert_eq!(kind.name, "MyKind");
+        assert_eq!(kind.description, "desc");
+        assert_eq!(kind.entry_count, 99);
+    }
+
+    #[test]
+    fn library_kind_equality() {
+        let a = LibraryKind {
+            name: "K".to_string(),
+            description: "d".to_string(),
+            entry_count: 5,
+        };
+        let b = a.clone();
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn library_select_kind_unknown_noop() {
+        let mut panel = LibraryPanel::new();
+        panel.load_kinds(SAMPLE_KINDS);
+        panel.select_kind("DoesNotExist");
+        assert!(panel.selected_kind.is_none());
+    }
+
+    #[test]
+    fn library_panel_id_and_title() {
+        let panel = LibraryPanel::new();
+        assert_eq!(panel.id(), "library");
+        assert_eq!(panel.title(), "Library");
+        assert_eq!(panel.default_size(), 248.0);
+    }
+
+    #[test]
+    fn library_panel_position_is_left() {
+        let panel = LibraryPanel::new();
+        assert_eq!(panel.position(), crate::dock::DockPosition::Left);
+    }
+
+    #[test]
+    fn library_panel_activation_priority() {
+        let panel = LibraryPanel::new();
+        assert_eq!(panel.activation_priority(), 20);
+    }
+
+    #[test]
+    fn library_panel_default_is_empty() {
+        let panel = LibraryPanel::default();
+        assert_eq!(panel.kind_count(), 0);
+        assert!(panel.selected_kind.is_none());
+    }
+
+    #[test]
+    fn library_single_kind_selected() {
+        let mut panel = LibraryPanel::new();
+        panel.load_kinds(&[("OnlyKind", "The only kind", 1)]);
+        panel.select_kind("OnlyKind");
+        assert_eq!(panel.selected_kind.as_deref(), Some("OnlyKind"));
+
+        let mut scene = Scene::new();
+        panel.paint_scene(200.0, 400.0, &mut scene);
+        // header(1) + bg(1) + border(1) + focus_ring(1) = 4
+        assert_eq!(scene.quads.len(), 4);
+    }
 }

@@ -1197,4 +1197,205 @@ mod tests {
         assert_eq!(gid.pop(), Some(ElementId::new(4)));
         assert_eq!(gid.0.len(), 4);
     }
+
+    // ---- Pixels: saturating-like ops using f32 ----
+
+    #[test]
+    fn pixels_add_negative_gives_correct_result() {
+        // Adding a negative pixel value is valid and well-defined.
+        let result = Pixels(10.0) + Pixels(-3.0);
+        assert_eq!(result, Pixels(7.0));
+    }
+
+    #[test]
+    fn pixels_sub_to_negative() {
+        let result = Pixels(5.0) - Pixels(8.0);
+        assert_eq!(result, Pixels(-3.0));
+    }
+
+    #[test]
+    fn pixels_mul_by_zero() {
+        let result = Pixels(42.0) * 0.0;
+        assert_eq!(result, Pixels(0.0));
+    }
+
+    #[test]
+    fn pixels_mul_by_negative() {
+        let result = Pixels(5.0) * -1.0;
+        assert_eq!(result, Pixels(-5.0));
+    }
+
+    #[test]
+    fn pixels_floor_already_integer() {
+        assert_eq!(Pixels(4.0).floor(), Pixels(4.0));
+    }
+
+    #[test]
+    fn pixels_ceil_already_integer() {
+        assert_eq!(Pixels(7.0).ceil(), Pixels(7.0));
+    }
+
+    #[test]
+    fn pixels_neg_double_negation() {
+        let p = Pixels(3.0);
+        assert_eq!(-(-p), p);
+    }
+
+    #[test]
+    fn pixels_zero_abs_is_zero() {
+        assert_eq!(Pixels(0.0).abs(), Pixels(0.0));
+    }
+
+    // ---- Bounds: more edge-case geometry ----
+
+    #[test]
+    fn bounds_intersects_touching_edges_excluded() {
+        // Two adjacent (touching) rects — they share an edge but strictly
+        // the intersection check is exclusive on the touching sides.
+        let a = Bounds::new(
+            Point::new(Pixels(0.0), Pixels(0.0)),
+            Size::new(Pixels(10.0), Pixels(10.0)),
+        );
+        let b = Bounds::new(
+            Point::new(Pixels(10.0), Pixels(0.0)),
+            Size::new(Pixels(10.0), Pixels(10.0)),
+        );
+        // Right edge of a == left edge of b → not strictly overlapping.
+        assert!(!a.intersects(&b));
+    }
+
+    #[test]
+    fn bounds_expand_zero_amount_unchanged() {
+        let b = Bounds::new(
+            Point::new(Pixels(5.0), Pixels(5.0)),
+            Size::new(Pixels(10.0), Pixels(10.0)),
+        );
+        let expanded = b.expand(Pixels(0.0));
+        assert_eq!(expanded, b);
+    }
+
+    #[test]
+    fn bounds_expand_large_amount() {
+        let b = Bounds::new(
+            Point::new(Pixels(0.0), Pixels(0.0)),
+            Size::new(Pixels(10.0), Pixels(10.0)),
+        );
+        let e = b.expand(Pixels(100.0));
+        assert_eq!(e.origin.x, Pixels(-100.0));
+        assert_eq!(e.size.width, Pixels(210.0));
+    }
+
+    #[test]
+    fn bounds_center_offset_origin() {
+        let b = Bounds::new(
+            Point::new(Pixels(10.0), Pixels(20.0)),
+            Size::new(Pixels(40.0), Pixels(20.0)),
+        );
+        let c = b.center();
+        assert!((c.x.0 - 30.0).abs() < 1e-5, "cx={}", c.x.0);
+        assert!((c.y.0 - 30.0).abs() < 1e-5, "cy={}", c.y.0);
+    }
+
+    #[test]
+    fn size_contains_equal_is_true() {
+        let s = Size::new(Pixels(10.0), Pixels(10.0));
+        assert!(s.contains(&s));
+    }
+
+    // ---- Vec2 additional coverage ----
+
+    #[test]
+    fn vec2_zero_length_is_zero() {
+        assert!((Vec2::zero().length()).abs() < 1e-6);
+    }
+
+    #[test]
+    fn vec2_add_zero_unchanged() {
+        let v = Vec2::new(3.0, 4.0);
+        let result = v + Vec2::zero();
+        assert!((result.x - v.x).abs() < 1e-6);
+        assert!((result.y - v.y).abs() < 1e-6);
+    }
+
+    #[test]
+    fn vec2_dot_with_self_equals_length_squared() {
+        let v = Vec2::new(3.0, 4.0);
+        let dot = v.dot(v);
+        let len_sq = v.length() * v.length();
+        assert!((dot - len_sq).abs() < 1e-5);
+    }
+
+    // ---- Corners ----
+
+    #[test]
+    fn corners_all_sets_all_fields() {
+        let c = Corners::all(Pixels(12.0));
+        assert_eq!(c.top_left, Pixels(12.0));
+        assert_eq!(c.top_right, Pixels(12.0));
+        assert_eq!(c.bottom_right, Pixels(12.0));
+        assert_eq!(c.bottom_left, Pixels(12.0));
+    }
+
+    #[test]
+    fn corners_default_is_zero() {
+        let c = Corners::<Pixels>::default();
+        assert_eq!(c.top_left, Pixels(0.0));
+    }
+
+    // ---- Edges ----
+
+    #[test]
+    fn edges_all_sets_all_fields() {
+        let e = Edges::all(Pixels(3.0));
+        assert_eq!(e.top, Pixels(3.0));
+        assert_eq!(e.right, Pixels(3.0));
+        assert_eq!(e.bottom, Pixels(3.0));
+        assert_eq!(e.left, Pixels(3.0));
+    }
+
+    #[test]
+    fn edges_default_is_zero() {
+        let e = Edges::<Pixels>::default();
+        assert_eq!(e.top, Pixels(0.0));
+        assert_eq!(e.left, Pixels(0.0));
+    }
+
+    // ---- AtlasBounds / AtlasTile ----
+
+    #[test]
+    fn atlas_bounds_default_is_zero() {
+        let b = AtlasBounds::default();
+        assert_eq!(b.left, 0);
+        assert_eq!(b.top, 0);
+        assert_eq!(b.right, 0);
+        assert_eq!(b.bottom, 0);
+    }
+
+    #[test]
+    fn atlas_tile_default_padding_is_zero() {
+        let t = AtlasTile::default();
+        assert!((t.padding - 0.0).abs() < 1e-6);
+    }
+
+    // ---- LayoutId ----
+
+    #[test]
+    fn layout_id_new_stores_value() {
+        let id = LayoutId::new(42);
+        assert_eq!(id.0, 42);
+    }
+
+    #[test]
+    fn layout_id_equality() {
+        assert_eq!(LayoutId::new(7), LayoutId::new(7));
+        assert_ne!(LayoutId::new(7), LayoutId::new(8));
+    }
+
+    // ---- ElementId ----
+
+    #[test]
+    fn element_id_new_stores_value() {
+        let id = ElementId::new(100);
+        assert_eq!(id.0, 100);
+    }
 }

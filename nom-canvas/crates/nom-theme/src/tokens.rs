@@ -1478,6 +1478,67 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
+    // WCAG AAA contrast (7:1) checks
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn wcag_aaa_white_on_black_exceeds_7() {
+        let lum_white = relative_luminance(1.0, 1.0, 1.0);
+        let lum_black = relative_luminance(0.0, 0.0, 0.0);
+        let ratio = contrast_ratio(lum_white, lum_black);
+        assert!(
+            ratio >= 7.0,
+            "white on black must meet WCAG AAA (>= 7:1), got {ratio:.2}"
+        );
+    }
+
+    #[test]
+    fn wcag_linearize_midpoint_is_below_half() {
+        // sRGB 0.5 linearizes to roughly 0.214 — confirms gamma expansion.
+        let linear = linearize(0.5);
+        assert!(
+            linear < 0.5,
+            "linearize(0.5) must be < 0.5 due to gamma, got {linear:.4}"
+        );
+        assert!(linear > 0.0, "linearize(0.5) must be > 0.0");
+    }
+
+    #[test]
+    fn wcag_contrast_ratio_symmetric() {
+        // contrast_ratio(a, b) == contrast_ratio(b, a)
+        let l1 = relative_luminance(BASE_FG[0], BASE_FG[1], BASE_FG[2]);
+        let l2 = relative_luminance(BG[0], BG[1], BG[2]);
+        let r1 = contrast_ratio(l1, l2);
+        let r2 = contrast_ratio(l2, l1);
+        assert!(
+            (r1 - r2).abs() < 1e-5,
+            "contrast_ratio must be symmetric: {r1:.4} vs {r2:.4}"
+        );
+    }
+
+    #[test]
+    fn wcag_base_fg_luminance_above_0_9() {
+        // Near-white BASE_FG must have relative luminance > 0.9.
+        let lum = relative_luminance(BASE_FG[0], BASE_FG[1], BASE_FG[2]);
+        assert!(
+            lum > 0.9,
+            "BASE_FG relative luminance ({lum:.4}) must be > 0.9"
+        );
+    }
+
+    #[test]
+    fn wcag_error_meets_aa_on_base_bg() {
+        // ERROR (red) on BASE_BG (dark) should meet WCAG AA (4.5:1).
+        let lum_err = relative_luminance(ERROR[0], ERROR[1], ERROR[2]);
+        let lum_bg = relative_luminance(BASE_BG[0], BASE_BG[1], BASE_BG[2]);
+        let ratio = contrast_ratio(lum_err, lum_bg);
+        assert!(
+            ratio >= 4.5,
+            "ERROR on BASE_BG contrast ({ratio:.2}) must be >= 4.5:1 for WCAG AA"
+        );
+    }
+
+    // -----------------------------------------------------------------------
     // Color arithmetic: Hsla mix commutativity
     // -----------------------------------------------------------------------
 

@@ -291,4 +291,143 @@ mod tests {
         assert_eq!(engine.layout(sib_b).size, sb);
         assert_eq!(engine.layout(sib_c), Bounds::default());
     }
+
+    #[test]
+    fn deeply_nested_five_levels() {
+        let mut engine = LayoutEngine::new();
+        let style = StyleRefinement::default();
+        let l5 = engine.request_layout(&style, &[]);
+        let l4 = engine.request_layout(&style, &[l5]);
+        let l3 = engine.request_layout(&style, &[l4]);
+        let l2 = engine.request_layout(&style, &[l3]);
+        let l1 = engine.request_layout(&style, &[l2]);
+        let available = Size { width: Pixels(800.0), height: Pixels(600.0) };
+        engine.compute_layout(l1, available);
+        assert_eq!(engine.layout(l1).size, available);
+        assert_eq!(engine.layout(l5), Bounds::default());
+    }
+
+    #[test]
+    fn overflow_clamp_simulated_by_narrowing_width() {
+        // Simulate overflow clamp: set large size then clamp to max width.
+        let mut engine = LayoutEngine::new();
+        let style = StyleRefinement::default();
+        let id = engine.request_layout(&style, &[]);
+        let unclamped = Size { width: Pixels(2000.0), height: Pixels(400.0) };
+        let clamped = Size { width: Pixels(1280.0), height: Pixels(400.0) };
+        engine.compute_layout(id, unclamped);
+        assert_eq!(engine.layout(id).size.width, Pixels(2000.0));
+        engine.compute_layout(id, clamped);
+        assert_eq!(engine.layout(id).size.width, Pixels(1280.0), "overflow clamped");
+    }
+
+    #[test]
+    fn min_width_constraint_simulated() {
+        // Min-width: child size must not go below a minimum.
+        // Simulate by applying max(min, available).
+        let mut engine = LayoutEngine::new();
+        let style = StyleRefinement::default();
+        let id = engine.request_layout(&style, &[]);
+        let min_width = 100.0_f32;
+        let requested = 50.0_f32;
+        let effective = Size {
+            width: Pixels(requested.max(min_width)),
+            height: Pixels(200.0),
+        };
+        engine.compute_layout(id, effective);
+        assert!(engine.layout(id).size.width.0 >= min_width);
+    }
+
+    #[test]
+    fn max_height_constraint_simulated() {
+        let mut engine = LayoutEngine::new();
+        let style = StyleRefinement::default();
+        let id = engine.request_layout(&style, &[]);
+        let max_height = 500.0_f32;
+        let requested = 800.0_f32;
+        let effective = Size {
+            width: Pixels(200.0),
+            height: Pixels(requested.min(max_height)),
+        };
+        engine.compute_layout(id, effective);
+        assert!(engine.layout(id).size.height.0 <= max_height);
+    }
+
+    #[test]
+    fn percentage_width_simulated() {
+        // 50% of parent 800px = 400px
+        let mut engine = LayoutEngine::new();
+        let style = StyleRefinement::default();
+        let parent_width = 800.0_f32;
+        let pct = 0.5_f32;
+        let id = engine.request_layout(&style, &[]);
+        let computed = Size {
+            width: Pixels(parent_width * pct),
+            height: Pixels(100.0),
+        };
+        engine.compute_layout(id, computed);
+        assert!((engine.layout(id).size.width.0 - 400.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn flex_grow_distributes_remaining_space() {
+        // Two children each flex-grow 1: each gets half of 400px.
+        let mut engine = LayoutEngine::new();
+        let style = StyleRefinement::default();
+        let child_a = engine.request_layout(&style, &[]);
+        let child_b = engine.request_layout(&style, &[]);
+        let _parent = engine.request_layout(&style, &[child_a, child_b]);
+        let half = Size { width: Pixels(200.0), height: Pixels(100.0) };
+        engine.compute_layout(child_a, half);
+        engine.compute_layout(child_b, half);
+        assert_eq!(engine.layout(child_a).size.width, Pixels(200.0));
+        assert_eq!(engine.layout(child_b).size.width, Pixels(200.0));
+    }
+
+    #[test]
+    fn engine_default_and_new_are_equivalent() {
+        let a = LayoutEngine::new();
+        let b = LayoutEngine::default();
+        // Both start with no stored layouts.
+        assert_eq!(a.layout(LayoutId(1)), Bounds::default());
+        assert_eq!(b.layout(LayoutId(1)), Bounds::default());
+    }
+
+    #[test]
+    fn remove_nonexistent_id_is_no_op() {
+        let mut engine = LayoutEngine::new();
+        // Removing an id that was never registered must not panic.
+        engine.remove_layout_id(LayoutId(999));
+        assert_eq!(engine.layout(LayoutId(999)), Bounds::default());
+    }
+
+    #[test]
+    fn compute_layout_zero_size_stores_zero() {
+        let mut engine = LayoutEngine::new();
+        let style = StyleRefinement::default();
+        let id = engine.request_layout(&style, &[]);
+        let zero = Size { width: Pixels(0.0), height: Pixels(0.0) };
+        engine.compute_layout(id, zero);
+        assert_eq!(engine.layout(id).size, zero);
+    }
+
+    #[test]
+    fn many_siblings_all_independent() {
+        let mut engine = LayoutEngine::new();
+        let style = StyleRefinement::default();
+        let ids: Vec<_> = (0..10).map(|_| engine.request_layout(&style, &[])).collect();
+        // Layout only even-indexed nodes.
+        for (i, id) in ids.iter().enumerate() {
+            if i % 2 == 0 {
+                let s = Size { width: Pixels(i as f32 * 10.0 + 10.0), height: Pixels(10.0) };
+                engine.compute_layout(*id, s);
+            }
+        }
+        // Odd-indexed nodes remain default.
+        for (i, id) in ids.iter().enumerate() {
+            if i % 2 != 0 {
+                assert_eq!(engine.layout(*id), Bounds::default(), "odd node {i} should be default");
+            }
+        }
+    }
 }

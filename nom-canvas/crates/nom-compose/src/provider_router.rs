@@ -402,4 +402,88 @@ mod tests {
         let vs = r.vendors_for(&BackendKind::Video);
         assert!(vs.is_empty());
     }
+
+    #[test]
+    fn fallback_exhaustion_all_tiers_fail() {
+        let mut r = ProviderRouter::new();
+        r.register(
+            FailingVendor {
+                name: "p",
+                kind: BackendKind::Image,
+            },
+            FallbackLevel::Primary,
+        );
+        r.register(
+            FailingVendor {
+                name: "s",
+                kind: BackendKind::Image,
+            },
+            FallbackLevel::Secondary,
+        );
+        r.register(
+            FailingVendor {
+                name: "t",
+                kind: BackendKind::Image,
+            },
+            FallbackLevel::Tertiary,
+        );
+        let result = r.compose_with_fallback(&BackendKind::Image, "x", &|_| {}, true);
+        assert!(
+            result.is_err(),
+            "all tiers failing must return Err"
+        );
+    }
+
+    #[test]
+    fn retry_delay_backoff_math() {
+        // Primary = 2^0 * 1000 = 1000, Secondary = 2^1 * 1000 = 2000, Tertiary = 2^2 * 1000 = 4000
+        assert_eq!(FallbackLevel::Primary.retry_delay_ms(), 1000);
+        assert_eq!(FallbackLevel::Secondary.retry_delay_ms(), 2000);
+        assert_eq!(FallbackLevel::Tertiary.retry_delay_ms(), 4000);
+        // Each level doubles.
+        assert_eq!(
+            FallbackLevel::Secondary.retry_delay_ms(),
+            FallbackLevel::Primary.retry_delay_ms() * 2
+        );
+        assert_eq!(
+            FallbackLevel::Tertiary.retry_delay_ms(),
+            FallbackLevel::Secondary.retry_delay_ms() * 2
+        );
+    }
+
+    #[test]
+    fn provider_router_tertiary_only_succeeds() {
+        let mut r = ProviderRouter::new();
+        r.register(
+            StubMediaVendor {
+                name: "tertiary_ok",
+                kind: BackendKind::Render,
+            },
+            FallbackLevel::Tertiary,
+        );
+        let result = r.compose_with_fallback(&BackendKind::Render, "data", &|_| {}, false);
+        assert_eq!(result, Ok("stub_output".to_string()));
+    }
+
+    #[test]
+    fn provider_router_multiple_success_returns_primary_output() {
+        let mut r = ProviderRouter::new();
+        r.register(
+            StubMediaVendor {
+                name: "p",
+                kind: BackendKind::Data,
+            },
+            FallbackLevel::Primary,
+        );
+        r.register(
+            StubMediaVendor {
+                name: "s",
+                kind: BackendKind::Data,
+            },
+            FallbackLevel::Secondary,
+        );
+        // try_fallbacks=false: only primary is tried
+        let result = r.compose_with_fallback(&BackendKind::Data, "in", &|_| {}, false);
+        assert!(result.is_ok());
+    }
 }

@@ -154,4 +154,67 @@ mod tests {
         assert_eq!(pos.top_row, 5);
         assert_eq!(pos.anchor_row, 7);
     }
+
+    #[test]
+    fn scroll_default_top_row_is_zero() {
+        let pos = ScrollPosition::default();
+        assert_eq!(pos.top_row, 0);
+        assert_eq!(pos.vertical_offset, 0.0);
+    }
+
+    #[test]
+    fn scroll_by_multiple_lines() {
+        let mut pos = ScrollPosition::default();
+        pos.scroll_by(48.0, 16.0); // 3 full lines
+        assert_eq!(pos.top_row, 3);
+    }
+
+    #[test]
+    fn scroll_by_fractional_stays_in_offset() {
+        let mut pos = ScrollPosition::default();
+        pos.scroll_by(10.0, 16.0); // less than one line
+        assert_eq!(pos.top_row, 0);
+        assert!((pos.vertical_offset - 10.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn scroll_by_negative_at_top_clamps_to_zero() {
+        let mut pos = ScrollPosition::default(); // top_row=0
+        pos.scroll_by(-50.0, 16.0);
+        assert_eq!(pos.top_row, 0);
+        assert!(pos.vertical_offset >= 0.0);
+    }
+
+    #[test]
+    fn ensure_visible_row_above_scrolls_up() {
+        let mut pos = ScrollPosition::with_anchor(10, 0);
+        pos.ensure_visible(5, 5);
+        assert_eq!(pos.top_row, 5);
+    }
+
+    #[test]
+    fn scroll_to_line_at_top_row_exactly() {
+        let mut pos = ScrollPosition::with_anchor(5, 0);
+        pos.scroll_to_line(5, 5);
+        // line 5 == top_row, so it's visible; no change
+        assert_eq!(pos.top_row, 5);
+    }
+
+    #[test]
+    fn scroll_to_pixel_offset_zero() {
+        let pos = ScrollPosition::default();
+        assert_eq!(pos.to_pixel_offset(16.0), 0.0);
+    }
+
+    #[test]
+    fn scroll_horizontal_offset_defaults_zero() {
+        let pos = ScrollPosition::default();
+        assert_eq!(pos.horizontal_offset, 0.0);
+    }
+
+    #[test]
+    fn scroll_with_anchor_col_stored() {
+        let pos = ScrollPosition::with_anchor(3, 7);
+        assert_eq!(pos.anchor_col, 7);
+    }
 }

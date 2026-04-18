@@ -115,4 +115,71 @@ mod tests {
         registry.execute("move_end", &mut ctx);
         assert_eq!(ctx.cursor, 20);
     }
+
+    #[test]
+    fn command_registry_overwrite_same_id() {
+        let mut registry = CommandRegistry::new();
+        registry.register("cmd", |ctx| ctx.cursor = 1);
+        registry.register("cmd", |ctx| ctx.cursor = 99);
+        let mut ctx = EditorContext {
+            cursor: 0,
+            buffer_len: 100,
+        };
+        registry.execute("cmd", &mut ctx);
+        assert_eq!(ctx.cursor, 99);
+    }
+
+    #[test]
+    fn command_registry_empty_has_no_commands() {
+        let registry = CommandRegistry::new();
+        assert!(registry.command_ids().is_empty());
+    }
+
+    #[test]
+    fn command_registry_execute_returns_false_for_unknown() {
+        let registry = CommandRegistry::new();
+        let mut ctx = EditorContext {
+            cursor: 0,
+            buffer_len: 0,
+        };
+        assert!(!registry.execute("unknown", &mut ctx));
+    }
+
+    #[test]
+    fn command_registry_multiple_commands_all_execute() {
+        let mut registry = CommandRegistry::new();
+        registry.register("move_start", |ctx| ctx.cursor = 0);
+        registry.register("move_end", |ctx| ctx.cursor = ctx.buffer_len);
+        let mut ctx = EditorContext {
+            cursor: 5,
+            buffer_len: 10,
+        };
+        registry.execute("move_start", &mut ctx);
+        assert_eq!(ctx.cursor, 0);
+        registry.execute("move_end", &mut ctx);
+        assert_eq!(ctx.cursor, 10);
+    }
+
+    #[test]
+    fn command_registry_has_command_after_register() {
+        let mut registry = CommandRegistry::new();
+        assert!(!registry.has_command("save"));
+        registry.register("save", |_| {});
+        assert!(registry.has_command("save"));
+    }
+
+    #[test]
+    fn command_registry_dispatch_and_execute_equivalent() {
+        let mut registry = CommandRegistry::new();
+        let count = Arc::new(Mutex::new(0u32));
+        let c1 = count.clone();
+        registry.register("inc", move |_| *c1.lock().unwrap() += 1);
+        let mut ctx = EditorContext {
+            cursor: 0,
+            buffer_len: 0,
+        };
+        registry.dispatch("inc", &mut ctx);
+        registry.execute("inc", &mut ctx);
+        assert_eq!(*count.lock().unwrap(), 2);
+    }
 }

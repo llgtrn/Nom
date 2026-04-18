@@ -189,4 +189,113 @@ mod tests {
         assert!(rows.iter().any(|row| row.name == "alpha"));
         assert!(rows.iter().any(|row| row.name == "zeta"));
     }
+
+    /// Default StubDictReader contains the "noun" kind
+    #[test]
+    fn stub_dict_contains_noun() {
+        let dict = StubDictReader::new();
+        assert!(dict.is_known_kind("noun"));
+    }
+
+    /// Default StubDictReader contains the "event" kind
+    #[test]
+    fn stub_dict_contains_event() {
+        let dict = StubDictReader::new();
+        assert!(dict.is_known_kind("event"));
+    }
+
+    /// Default StubDictReader contains the "media" kind
+    #[test]
+    fn stub_dict_contains_media() {
+        let dict = StubDictReader::new();
+        assert!(dict.is_known_kind("media"));
+    }
+
+    /// Default StubDictReader contains the "workflow" kind
+    #[test]
+    fn stub_dict_contains_workflow() {
+        let dict = StubDictReader::new();
+        assert!(dict.is_known_kind("workflow"));
+    }
+
+    /// Default StubDictReader contains the "agent" kind
+    #[test]
+    fn stub_dict_contains_agent() {
+        let dict = StubDictReader::new();
+        assert!(dict.is_known_kind("agent"));
+    }
+
+    /// list_kinds descriptions contain the kind name
+    #[test]
+    fn stub_dict_list_kinds_descriptions_contain_name() {
+        let dict = StubDictReader::new();
+        for row in dict.list_kinds() {
+            assert!(
+                row.description.contains(&row.name),
+                "description '{}' must contain kind name '{}'",
+                row.description,
+                row.name
+            );
+        }
+    }
+
+    /// with_shapes for a new kind that was not in known_kinds still returns those shapes
+    #[test]
+    fn stub_dict_with_shapes_for_unknown_kind_returns_shapes() {
+        let dict = StubDictReader::new().with_shapes(
+            "custom_new_kind",
+            vec![ClauseShape {
+                name: "slot_x".into(),
+                grammar_shape: "number".into(),
+                is_required: false,
+                description: "custom slot".into(),
+            }],
+        );
+        let shapes = dict.clause_shapes_for("custom_new_kind");
+        assert_eq!(shapes.len(), 1);
+        assert_eq!(shapes[0].name, "slot_x");
+    }
+
+    /// clause_shapes_for returns input and output for concept kind (default)
+    #[test]
+    fn stub_dict_concept_default_shapes() {
+        let dict = StubDictReader::new();
+        let shapes = dict.clause_shapes_for("concept");
+        assert!(shapes.iter().any(|s| s.name == "input"));
+        assert!(shapes.iter().any(|s| s.name == "output"));
+    }
+
+    /// StubDictReader with multiple custom kinds all are recognized
+    #[test]
+    fn stub_dict_with_kinds_multiple_are_known() {
+        let dict = StubDictReader::with_kinds(&["kind_a", "kind_b", "kind_c"]);
+        assert!(dict.is_known_kind("kind_a"));
+        assert!(dict.is_known_kind("kind_b"));
+        assert!(dict.is_known_kind("kind_c"));
+    }
+
+    /// lookup_entity returns NomtuRef with the provided word
+    #[test]
+    fn stub_dict_lookup_entity_returns_word() {
+        let dict = StubDictReader::new();
+        let r = dict.lookup_entity("compose", "verb").unwrap();
+        assert_eq!(r.word, "compose");
+    }
+
+    /// clause_shapes_for metric kind returns default shapes
+    #[test]
+    fn stub_dict_metric_default_shapes() {
+        let dict = StubDictReader::new();
+        let shapes = dict.clause_shapes_for("metric");
+        // metric has no custom shapes → default input + output
+        assert!(!shapes.is_empty());
+    }
+
+    /// StubDictReader default is equivalent to new()
+    #[test]
+    fn stub_dict_default_same_as_new() {
+        let d1 = StubDictReader::new();
+        let d2 = StubDictReader::default();
+        assert_eq!(d1.list_kinds().len(), d2.list_kinds().len());
+    }
 }

@@ -730,4 +730,16 @@ mod tests {
         assert!((sel.transform_origin[0] - 42.0).abs() < 1e-6);
         assert!((sel.transform_origin[1] - (-7.0)).abs() < 1e-6);
     }
+
+    /// Removing an element that was never added keeps len unchanged.
+    #[test]
+    fn remove_nonexistent_is_safe() {
+        let mut sel = Selection::empty();
+        sel.add(1);
+        sel.add(2);
+        sel.remove(99); // id 99 was never added
+        assert_eq!(sel.len(), 2, "len must remain 2 after removing nonexistent id");
+        assert!(sel.contains(1));
+        assert!(sel.contains(2));
+    }
 }

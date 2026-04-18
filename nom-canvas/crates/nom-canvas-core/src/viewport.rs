@@ -595,4 +595,138 @@ mod tests {
         assert!(!vp.is_point_visible([5000.0, 5000.0]));
         assert!(!vp.is_point_visible([-5000.0, -5000.0]));
     }
+
+    /// zoom_toward at minimum clamp (0.1) still preserves cursor point.
+    #[test]
+    fn zoom_toward_min_clamp_preserves_cursor() {
+        let mut vp = Viewport::new(800.0, 600.0);
+        let cursor = [200.0_f32, 150.0];
+        let canvas_before = vp.screen_to_canvas(cursor);
+        vp.zoom_toward(0.0001, cursor);
+        assert!((vp.zoom - 0.1).abs() < 1e-6, "zoom must clamp to 0.1");
+        let canvas_after = vp.screen_to_canvas(cursor);
+        assert!(
+            (canvas_after[0] - canvas_before[0]).abs() < 1e-3,
+            "canvas x under cursor changed at min zoom"
+        );
+        assert!(
+            (canvas_after[1] - canvas_before[1]).abs() < 1e-3,
+            "canvas y under cursor changed at min zoom"
+        );
+    }
+
+    /// zoom_toward at maximum clamp (32.0) still preserves cursor point.
+    #[test]
+    fn zoom_toward_max_clamp_preserves_cursor() {
+        let mut vp = Viewport::new(800.0, 600.0);
+        let cursor = [600.0_f32, 400.0];
+        let canvas_before = vp.screen_to_canvas(cursor);
+        vp.zoom_toward(1000.0, cursor);
+        assert!((vp.zoom - 32.0).abs() < 1e-6, "zoom must clamp to 32.0");
+        let canvas_after = vp.screen_to_canvas(cursor);
+        assert!(
+            (canvas_after[0] - canvas_before[0]).abs() < 1e-3,
+            "canvas x under cursor changed at max zoom"
+        );
+        assert!(
+            (canvas_after[1] - canvas_before[1]).abs() < 1e-3,
+            "canvas y under cursor changed at max zoom"
+        );
+    }
+
+    /// visible_bounds at minimum zoom covers a very large canvas area.
+    #[test]
+    fn visible_bounds_large_at_min_zoom() {
+        let mut vp = Viewport::new(800.0, 600.0);
+        vp.zoom_toward(0.1, [400.0, 300.0]);
+        let (tl, br) = vp.visible_bounds();
+        let w = br[0] - tl[0];
+        let h = br[1] - tl[1];
+        // At 0.1x zoom the visible canvas width = 800 / 0.1 = 8000
+        assert!(w > 7000.0, "visible width at min zoom should be huge, got {}", w);
+        assert!(h > 5000.0, "visible height at min zoom should be huge, got {}", h);
+    }
+
+    /// visible_bounds at maximum zoom covers a very small canvas area.
+    #[test]
+    fn visible_bounds_small_at_max_zoom() {
+        let mut vp = Viewport::new(800.0, 600.0);
+        vp.zoom_toward(32.0, [400.0, 300.0]);
+        let (tl, br) = vp.visible_bounds();
+        let w = br[0] - tl[0];
+        let h = br[1] - tl[1];
+        // At 32x zoom the visible canvas width = 800 / 32 = 25
+        assert!(w < 30.0, "visible width at max zoom should be tiny, got {}", w);
+        assert!(h < 25.0, "visible height at max zoom should be tiny, got {}", h);
+    }
+
+    /// pan_by with negative delta moves viewport in negative direction.
+    #[test]
+    fn pan_by_negative_delta() {
+        let mut vp = Viewport::new(800.0, 600.0);
+        vp.pan_by([-30.0, -20.0]);
+        assert!((vp.pan[0] - (-30.0)).abs() < 1e-6);
+        assert!((vp.pan[1] - (-20.0)).abs() < 1e-6);
+        // Canvas origin maps to screen centre + pan
+        let screen = vp.canvas_to_screen([0.0, 0.0]);
+        assert!((screen[0] - 370.0).abs() < 1e-4, "screen.x={}", screen[0]);
+        assert!((screen[1] - 280.0).abs() < 1e-4, "screen.y={}", screen[1]);
+    }
+
+    /// apply_transform at zoom=4 matches canvas_to_screen.
+    #[test]
+    fn apply_transform_matches_canvas_to_screen_at_zoom4() {
+        let mut vp = Viewport::new(1024.0, 768.0);
+        vp.zoom_toward(4.0, [512.0, 384.0]);
+        let pt = [25.0_f32, -10.0];
+        let via_matrix = vp.apply_transform(pt);
+        let direct = vp.canvas_to_screen(pt);
+        assert!((via_matrix[0] - direct[0]).abs() < 1e-3);
+        assert!((via_matrix[1] - direct[1]).abs() < 1e-3);
+    }
+
+    /// screen_to_canvas and canvas_to_screen are inverses at arbitrary pan+zoom.
+    #[test]
+    fn round_trip_at_arbitrary_pan_zoom() {
+        let mut vp = Viewport::new(1280.0, 720.0);
+        vp.zoom_toward(1.5, [640.0, 360.0]);
+        vp.pan_by([77.0, -33.0]);
+        let canvas_pt = [123.4_f32, -56.7];
+        let screen = vp.canvas_to_screen(canvas_pt);
+        let back = vp.screen_to_canvas(screen);
+        assert!((back[0] - canvas_pt[0]).abs() < 1e-3);
+        assert!((back[1] - canvas_pt[1]).abs() < 1e-3);
+    }
+
+    /// Viewport size 1×1 (degenerate): screen centre still maps to canvas origin.
+    #[test]
+    fn degenerate_1x1_viewport() {
+        let vp = Viewport::new(1.0, 1.0);
+        let canvas = vp.screen_to_canvas([0.5, 0.5]);
+        assert!(canvas[0].abs() < 1e-5);
+        assert!(canvas[1].abs() < 1e-5);
+    }
+
+    /// Successive zoom_toward calls compose correctly.
+    #[test]
+    fn zoom_toward_composition() {
+        let mut vp = Viewport::new(800.0, 600.0);
+        let cursor = [400.0_f32, 300.0];
+        vp.zoom_toward(2.0, cursor);
+        vp.zoom_toward(4.0, cursor);
+        assert!((vp.zoom - 4.0).abs() < 1e-5, "final zoom should be 4.0");
+        // Canvas point under cursor should still be the original canvas point.
+        // At default zoom=1, screen centre maps to canvas (0,0).
+        let canvas_under = vp.screen_to_canvas(cursor);
+        assert!(
+            canvas_under[0].abs() < 1e-3,
+            "canvas x under cursor after two zooms: {}",
+            canvas_under[0]
+        );
+        assert!(
+            canvas_under[1].abs() < 1e-3,
+            "canvas y under cursor after two zooms: {}",
+            canvas_under[1]
+        );
+    }
 }

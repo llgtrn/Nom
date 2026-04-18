@@ -192,4 +192,54 @@ mod tests {
         // basic smoke: trait methods callable
         let _ = reader.is_known_kind("test");
     }
+
+    #[test]
+    fn sqlite_dict_stub_is_known_kind_any_string_false() {
+        let reader = SqliteDictReader::new_stub();
+        assert!(!reader.is_known_kind("verb"));
+        assert!(!reader.is_known_kind("noun"));
+        assert!(!reader.is_known_kind("attribute"));
+        assert!(!reader.is_known_kind("metric"));
+    }
+
+    #[test]
+    fn sqlite_dict_stub_list_kinds_returns_empty_vec() {
+        let reader = SqliteDictReader::new_stub();
+        let kinds = reader.list_kinds();
+        assert!(kinds.is_empty());
+        assert_eq!(kinds.len(), 0);
+    }
+
+    #[test]
+    fn sqlite_dict_stub_lookup_entity_various_pairs_none() {
+        let reader = SqliteDictReader::new_stub();
+        assert!(reader.lookup_entity("define", "keyword").is_none());
+        assert!(reader.lookup_entity("render", "action").is_none());
+        assert!(reader.lookup_entity("concept", "noun").is_none());
+    }
+
+    #[test]
+    fn sqlite_dict_stub_clause_shapes_multiple_kinds_empty() {
+        let reader = SqliteDictReader::new_stub();
+        for kind in &["verb", "concept", "metric", "attribute", "constraint", ""] {
+            assert!(reader.clause_shapes_for(kind).is_empty(), "kind={kind}");
+        }
+    }
+
+    #[test]
+    fn sqlite_dict_stub_trait_box_dyn_callable() {
+        let reader = SqliteDictReader::new_stub();
+        let boxed: Box<dyn DictReader> = Box::new(reader);
+        assert!(!boxed.is_known_kind("test"));
+        assert!(boxed.list_kinds().is_empty());
+        assert!(boxed.clause_shapes_for("verb").is_empty());
+        assert!(boxed.lookup_entity("w", "k").is_none());
+    }
+
+    #[test]
+    fn sqlite_dict_stub_is_known_kind_unicode() {
+        let reader = SqliteDictReader::new_stub();
+        assert!(!reader.is_known_kind("définir"));
+        assert!(!reader.is_known_kind("概念"));
+    }
 }

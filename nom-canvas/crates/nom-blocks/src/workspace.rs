@@ -251,4 +251,137 @@ mod tests {
         }
         assert_eq!(ws.node_count(), 4);
     }
+
+    /// Removing all blocks leaves workspace empty
+    #[test]
+    fn workspace_remove_all_blocks() {
+        let mut ws = Workspace::new();
+        for i in 0..5u8 {
+            let block = BlockModel::new(
+                format!("b{i}"),
+                NomtuRef::new(format!("e{i}"), "w", "verb"),
+                "affine:paragraph",
+            );
+            ws.insert_block(block);
+        }
+        assert_eq!(ws.block_count(), 5);
+        for i in 0..5u8 {
+            ws.remove_block(&format!("b{i}"));
+        }
+        assert_eq!(ws.block_count(), 0);
+        assert!(ws.doc_tree.is_empty());
+    }
+
+    /// Workspace doc_tree preserves insertion order
+    #[test]
+    fn workspace_doc_tree_preserves_order() {
+        let mut ws = Workspace::new();
+        let ids = ["first", "second", "third"];
+        for id in &ids {
+            ws.insert_block(BlockModel::new(
+                *id,
+                NomtuRef::new(*id, "w", "verb"),
+                "affine:paragraph",
+            ));
+        }
+        assert_eq!(ws.doc_tree[0], "first");
+        assert_eq!(ws.doc_tree[1], "second");
+        assert_eq!(ws.doc_tree[2], "third");
+    }
+
+    /// Connectors can be inserted and removed implicitly via workspace operations
+    #[test]
+    fn workspace_connector_count_increases() {
+        let mut ws = Workspace::new();
+        let dict = crate::stub_dict::StubDictReader::new();
+        for i in 0..3u8 {
+            let conn = Connector::new_with_validation(crate::connector::ConnectorValidation {
+                id: format!("c{i}"),
+                from_node: format!("n{i}"),
+                from_port: "output".into(),
+                to_node: format!("n{}", i + 1),
+                to_port: "input".into(),
+                dict: &dict,
+                from_kind: "verb",
+                to_kind: "concept",
+            });
+            ws.insert_connector(conn);
+        }
+        assert_eq!(ws.connector_count(), 3);
+    }
+
+    /// CanvasObject::Block and Node variants can coexist in a Vec
+    #[test]
+    fn canvas_object_vec_can_hold_block_and_node() {
+        let block = BlockModel::new(
+            "b1",
+            NomtuRef::new("e1", "w", "verb"),
+            "affine:paragraph",
+        );
+        let node = GraphNode::new("n1", NomtuRef::new("e2", "x", "verb"), "verb", [0.0, 0.0]);
+        let objects: Vec<CanvasObject> = vec![CanvasObject::Block(block), CanvasObject::Node(node)];
+        assert_eq!(objects.len(), 2);
+        assert!(matches!(objects[0], CanvasObject::Block(_)));
+        assert!(matches!(objects[1], CanvasObject::Node(_)));
+    }
+
+    /// Workspace handles 100 blocks without issue (stress test)
+    #[test]
+    fn workspace_stress_100_blocks() {
+        let mut ws = Workspace::new();
+        for i in 0..100u32 {
+            let block = BlockModel::new(
+                format!("b{i}"),
+                NomtuRef::new(format!("e{i}"), "w", "verb"),
+                "affine:paragraph",
+            );
+            ws.insert_block(block);
+        }
+        assert_eq!(ws.block_count(), 100);
+        assert_eq!(ws.doc_tree.len(), 100);
+    }
+
+    /// Workspace block retrieval by id returns correct block
+    #[test]
+    fn workspace_get_block_by_id() {
+        let mut ws = Workspace::new();
+        let entity = NomtuRef::new("e99", "target", "concept");
+        ws.insert_block(BlockModel::new("target-id", entity, "affine:note"));
+        let block = ws.blocks.get("target-id").unwrap();
+        assert_eq!(block.entity.word, "target");
+        assert_eq!(block.entity.kind, "concept");
+    }
+
+    /// Default workspace serializes and deserializes to empty state
+    #[test]
+    fn workspace_default_roundtrip() {
+        let ws = Workspace::default();
+        let json = serde_json::to_string(&ws).unwrap();
+        let ws2: Workspace = serde_json::from_str(&json).unwrap();
+        assert_eq!(ws2.block_count(), 0);
+        assert_eq!(ws2.node_count(), 0);
+        assert_eq!(ws2.connector_count(), 0);
+    }
+
+    /// Blocks with different flavours coexist in the workspace
+    #[test]
+    fn workspace_mixed_flavours() {
+        let mut ws = Workspace::new();
+        let flavours = ["affine:paragraph", "affine:note", "affine:heading"];
+        for (i, flavour) in flavours.iter().enumerate() {
+            let block = BlockModel::new(
+                format!("b{i}"),
+                NomtuRef::new(format!("e{i}"), "w", "verb"),
+                *flavour,
+            );
+            ws.insert_block(block);
+        }
+        assert_eq!(ws.block_count(), 3);
+        for (i, flavour) in flavours.iter().enumerate() {
+            assert_eq!(
+                ws.blocks.get(&format!("b{i}")).unwrap().flavour,
+                *flavour
+            );
+        }
+    }
 }

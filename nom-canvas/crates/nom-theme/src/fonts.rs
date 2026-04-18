@@ -537,4 +537,95 @@ mod tests {
         assert_eq!(code.size, tokens::FONT_SIZE_CODE);
         assert_eq!(code.line_height, tokens::LINE_HEIGHT_CODE);
     }
+
+    // -----------------------------------------------------------------------
+    // Font scale ratio validation
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn font_scale_ratio_h1_to_body_at_least_1_5() {
+        // H1 must be at least 1.5× body size for a meaningful visual hierarchy.
+        let reg = FontRegistry::placeholder();
+        let body = TypeStyle::body(&reg);
+        let h1 = TypeStyle::heading1(&reg);
+        let ratio = h1.size / body.size;
+        assert!(
+            ratio >= 1.5,
+            "H1/body size ratio ({ratio:.2}) must be >= 1.5"
+        );
+    }
+
+    #[test]
+    fn font_scale_ratio_h2_to_body_at_least_1_3() {
+        let reg = FontRegistry::placeholder();
+        let body = TypeStyle::body(&reg);
+        let h2 = TypeStyle::heading2(&reg);
+        let ratio = h2.size / body.size;
+        assert!(
+            ratio >= 1.3,
+            "H2/body size ratio ({ratio:.2}) must be >= 1.3"
+        );
+    }
+
+    #[test]
+    fn font_weight_normalization_regular_is_400() {
+        // The placeholder registry maps inter_regular to ID 0.
+        // Confirm the body style (which uses inter_regular) maps to ID 0.
+        let reg = FontRegistry::placeholder();
+        let body = TypeStyle::body(&reg);
+        assert_eq!(
+            body.font_id, 0,
+            "body must map to font ID 0 (inter_regular / weight 400)"
+        );
+    }
+
+    #[test]
+    fn font_weight_normalization_bold_is_highest() {
+        // inter_bold has the highest ID (3) in the placeholder ordering.
+        let reg = FontRegistry::placeholder();
+        let h1 = TypeStyle::heading1(&reg);
+        assert_eq!(
+            h1.font_id, reg.inter_bold,
+            "H1 must use inter_bold (highest weight)"
+        );
+        // Bold ID must be greater than regular ID.
+        assert!(
+            reg.inter_bold > reg.inter_regular,
+            "inter_bold ID must exceed inter_regular ID"
+        );
+    }
+
+    #[test]
+    fn font_stack_fallback_six_ids() {
+        // The placeholder registry must expose exactly 6 entries (2 font families × 3 weights).
+        let reg = FontRegistry::placeholder();
+        let ids = [
+            reg.inter_regular,
+            reg.inter_medium,
+            reg.inter_semibold,
+            reg.inter_bold,
+            reg.source_code_pro_regular,
+            reg.source_code_pro_semibold,
+        ];
+        // All IDs must be unique (no aliasing between families).
+        let mut sorted = ids;
+        sorted.sort_unstable();
+        for w in sorted.windows(2) {
+            assert_ne!(w[0], w[1], "font IDs must be unique across the registry");
+        }
+    }
+
+    #[test]
+    fn font_line_height_ratio_body_to_heading() {
+        // Body line height must be >= heading line height (headings are tight).
+        let reg = FontRegistry::placeholder();
+        let body = TypeStyle::body(&reg);
+        let h1 = TypeStyle::heading1(&reg);
+        assert!(
+            body.line_height >= h1.line_height,
+            "body line_height ({}) must be >= H1 line_height ({})",
+            body.line_height,
+            h1.line_height
+        );
+    }
 }

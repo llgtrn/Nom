@@ -735,4 +735,133 @@ mod tests {
         let d = dist_to_segment([0.0, 0.0], [10.0, 0.0], [20.0, 0.0]);
         assert!((d - 10.0).abs() < 1e-4, "got {}", d);
     }
+
+    /// hit_test_circle: point at centre always hits regardless of radius.
+    #[test]
+    fn hit_test_circle_center_always_hits() {
+        assert!(hit_test_circle([5.0, 5.0], 5.0, 5.0, 1.0));
+        assert!(hit_test_circle([5.0, 5.0], 5.0, 5.0, 100.0));
+        assert!(hit_test_circle([5.0, 5.0], 5.0, 5.0, 0.001));
+    }
+
+    /// hit_test_rect_aabb: point on top edge hits.
+    #[test]
+    fn hit_test_rect_aabb_on_top_edge() {
+        assert!(hit_test_rect_aabb([50.0, 0.0], 0.0, 0.0, 100.0, 80.0));
+    }
+
+    /// hit_test_rect_aabb: point on bottom edge hits.
+    #[test]
+    fn hit_test_rect_aabb_on_bottom_edge() {
+        assert!(hit_test_rect_aabb([50.0, 80.0], 0.0, 0.0, 100.0, 80.0));
+    }
+
+    /// hit_test_rect_aabb: point one pixel below bottom edge misses.
+    #[test]
+    fn hit_test_rect_aabb_just_below_bottom_misses() {
+        assert!(!hit_test_rect_aabb([50.0, 81.0], 0.0, 0.0, 100.0, 80.0));
+    }
+
+    /// hit_test_ellipse: point just outside with threshold=0 misses.
+    #[test]
+    fn hit_test_ellipse_just_outside_misses() {
+        let e = CanvasEllipse {
+            id: 10,
+            bounds: ([0.0, 0.0], [100.0, 60.0]),
+            fill: None,
+            stroke: None,
+            z_index: 0,
+        };
+        // Point at (100, 30): dx/rx = (100-50)/50 = 1, dy/ry = 0 → sum=1 → on boundary, hits
+        // Point at (101, 30): dx/rx > 1 → misses
+        assert!(!hit_test_ellipse([101.0, 30.0], &e, 0.0), "just outside ellipse must miss");
+    }
+
+    /// dist_to_bezier: point at the start of the bezier has near-zero distance.
+    #[test]
+    fn bezier_distance_at_start_point() {
+        let p0 = [0.0_f32, 0.0];
+        let c1 = [30.0, 10.0];
+        let c2 = [70.0, 10.0];
+        let p3 = [100.0, 0.0];
+        let d = dist_to_bezier(p0, p0, c1, c2, p3);
+        assert!(d < 1.0, "distance to start point must be ~0, got {}", d);
+    }
+
+    /// dist_to_bezier: point at the end of the bezier has near-zero distance.
+    #[test]
+    fn bezier_distance_at_end_point() {
+        let p0 = [0.0_f32, 0.0];
+        let c1 = [30.0, 10.0];
+        let c2 = [70.0, 10.0];
+        let p3 = [100.0, 0.0];
+        let d = dist_to_bezier(p3, p0, c1, c2, p3);
+        assert!(d < 1.0, "distance to end point must be ~0, got {}", d);
+    }
+
+    /// hit_test_connector: three-point route falls back to straight-line.
+    #[test]
+    fn connector_three_point_fallback() {
+        let conn = CanvasConnector {
+            id: 60,
+            src_id: 1,
+            dst_id: 2,
+            route: vec![[0.0, 0.0], [50.0, 0.0], [100.0, 0.0]],
+            confidence: 1.0,
+            reason: String::new(),
+            z_index: 0,
+        };
+        // Point near y=0 at x=50 should hit.
+        assert!(hit_test_connector([50.0, 3.0], &conn, HIT_RADIUS));
+        // Point far away should miss.
+        assert!(!hit_test_connector([50.0, 50.0], &conn, HIT_RADIUS));
+    }
+
+    /// Rect with zero size (degenerate): only the origin point itself hits.
+    #[test]
+    fn hit_test_rect_degenerate_zero_size() {
+        let r = CanvasRect {
+            id: 100,
+            bounds: ([10.0, 10.0], [0.0, 0.0]),
+            fill: None,
+            stroke: None,
+            corner_radius: 0.0,
+            rotation: 0.0,
+            z_index: 0,
+        };
+        // With threshold=5, the origin point should hit.
+        assert!(hit_test_rect([10.0, 10.0], &r, HIT_RADIUS));
+        // A point far away should miss.
+        assert!(!hit_test_rect([50.0, 50.0], &r, HIT_RADIUS));
+    }
+
+    /// Connector with one point returns false (not enough points).
+    #[test]
+    fn connector_one_point_returns_false() {
+        let conn = CanvasConnector {
+            id: 70,
+            src_id: 1,
+            dst_id: 2,
+            route: vec![[0.0, 0.0]],
+            confidence: 1.0,
+            reason: String::new(),
+            z_index: 0,
+        };
+        assert!(!hit_test_connector([0.0, 0.0], &conn, HIT_RADIUS));
+    }
+
+    /// Arrow miss: point far from the shaft returns false.
+    #[test]
+    fn arrow_miss_far_from_shaft() {
+        let a = CanvasArrow {
+            id: 21,
+            start: [0.0, 0.0],
+            end: [100.0, 0.0],
+            stroke_width: 1.0,
+            color: [1.0, 1.0, 1.0, 1.0],
+            head_style: ArrowHead::Filled,
+            z_index: 0,
+        };
+        assert!(!hit_test_arrow([50.0, 50.0], &a, HIT_RADIUS));
+    }
 }

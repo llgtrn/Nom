@@ -508,4 +508,120 @@ mod tests {
         let bogus_key = 0xDEAD_C0DE_DEAD_C0DE_u64;
         assert!(state.get_cached_compile(bogus_key).is_none());
     }
+
+    #[test]
+    fn compile_cache_key_max_version() {
+        // u64::MAX grammar version must not panic
+        let k = SharedState::compile_cache_key("source", u64::MAX);
+        let k2 = SharedState::compile_cache_key("source", u64::MAX);
+        assert_eq!(k, k2);
+    }
+
+    #[test]
+    fn compile_cache_key_different_for_whitespace_variants() {
+        let k1 = SharedState::compile_cache_key("hello world", 0);
+        let k2 = SharedState::compile_cache_key("hello  world", 0);
+        assert_ne!(k1, k2);
+    }
+
+    #[test]
+    fn pipeline_output_clone_is_independent() {
+        let output = PipelineOutput {
+            source_hash: 42,
+            grammar_version: 7,
+            output_json: r#"{"x":1}"#.into(),
+        };
+        let cloned = output.clone();
+        assert_eq!(cloned.source_hash, output.source_hash);
+        assert_eq!(cloned.grammar_version, output.grammar_version);
+        assert_eq!(cloned.output_json, output.output_json);
+    }
+
+    #[test]
+    fn grammar_kind_clone_is_independent() {
+        let kind = GrammarKind {
+            name: "verb".into(),
+            description: "action".into(),
+        };
+        let cloned = kind.clone();
+        assert_eq!(cloned.name, kind.name);
+        assert_eq!(cloned.description, kind.description);
+    }
+
+    #[test]
+    fn update_grammar_kinds_clears_previous() {
+        let state = SharedState::new("d.db", "g.db");
+        state.update_grammar_kinds(vec![
+            GrammarKind { name: "a".into(), description: "".into() },
+            GrammarKind { name: "b".into(), description: "".into() },
+            GrammarKind { name: "c".into(), description: "".into() },
+        ]);
+        assert_eq!(state.cached_grammar_kinds().len(), 3);
+        state.update_grammar_kinds(vec![]);
+        assert!(state.cached_grammar_kinds().is_empty());
+        // Version still increments even when clearing
+        assert_eq!(state.grammar_version(), 2);
+    }
+
+    #[test]
+    fn compile_cache_overwrite_same_key() {
+        let state = SharedState::new("d.db", "g.db");
+        let key = SharedState::compile_cache_key("overwrite_src", 0);
+        state.cache_compile_result(
+            key,
+            PipelineOutput { source_hash: key, grammar_version: 0, output_json: "v1".into() },
+        );
+        state.cache_compile_result(
+            key,
+            PipelineOutput { source_hash: key, grammar_version: 0, output_json: "v2".into() },
+        );
+        let retrieved = state.get_cached_compile(key).expect("should be present");
+        assert_eq!(retrieved.output_json, "v2");
+    }
+
+    #[test]
+    fn shared_state_arc_clone_sees_same_cache() {
+        use std::sync::Arc;
+        let state = Arc::new(SharedState::new("d.db", "g.db"));
+        let clone = Arc::clone(&state);
+        let key = SharedState::compile_cache_key("shared_src", 0);
+        state.cache_compile_result(
+            key,
+            PipelineOutput { source_hash: key, grammar_version: 0, output_json: "{}".into() },
+        );
+        assert!(clone.get_cached_compile(key).is_some());
+    }
+
+    #[test]
+    fn grammar_version_not_affected_by_cache_inserts() {
+        let state = SharedState::new("d.db", "g.db");
+        let v0 = state.grammar_version();
+        let key = SharedState::compile_cache_key("src", 0);
+        state.cache_compile_result(
+            key,
+            PipelineOutput { source_hash: key, grammar_version: 0, output_json: "{}".into() },
+        );
+        assert_eq!(state.grammar_version(), v0, "cache insert must not bump grammar version");
+    }
+
+    #[test]
+    fn compile_cache_key_single_byte_sources_differ() {
+        let k_a = SharedState::compile_cache_key("a", 0);
+        let k_b = SharedState::compile_cache_key("b", 0);
+        assert_ne!(k_a, k_b);
+    }
+
+    #[test]
+    fn grammar_kinds_large_batch() {
+        let state = SharedState::new("d.db", "g.db");
+        let kinds: Vec<_> = (0..100)
+            .map(|i| GrammarKind {
+                name: format!("kind_{i:03}"),
+                description: format!("description for kind {i}"),
+            })
+            .collect();
+        state.update_grammar_kinds(kinds);
+        assert_eq!(state.cached_grammar_kinds().len(), 100);
+        assert_eq!(state.grammar_version(), 1);
+    }
 }

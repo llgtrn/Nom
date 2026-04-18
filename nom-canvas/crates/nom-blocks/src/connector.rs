@@ -329,4 +329,126 @@ mod tests {
         assert!(!c.is_valid());
         assert!(c.can_wire_result().2.contains("unknown port: no_such_port"));
     }
+
+    /// validate_with_dict returns valid when both ports have grammar_shape "any"
+    #[test]
+    fn validate_with_dict_any_any_is_valid() {
+        let dict = StubDictReader::new()
+            .with_shapes("a", vec![make_shape("out", "any")])
+            .with_shapes("b", vec![make_shape("in", "any")]);
+        let (valid, confidence, _reason) =
+            Connector::validate_with_dict(&dict, "a", "out", "b", "in");
+        assert!(valid);
+        assert!((confidence - 0.9).abs() < f32::EPSILON);
+    }
+
+    /// validate_with_dict: from_port "any" → to_port specific type is compatible
+    #[test]
+    fn validate_with_dict_any_to_specific_is_valid() {
+        let dict = StubDictReader::new()
+            .with_shapes("a", vec![make_shape("out", "any")])
+            .with_shapes("b", vec![make_shape("in", "integer")]);
+        let (valid, _, _) = Connector::validate_with_dict(&dict, "a", "out", "b", "in");
+        assert!(valid, "any grammar_shape must be compatible with any other");
+    }
+
+    /// validate_with_dict: specific type → "any" is compatible
+    #[test]
+    fn validate_with_dict_specific_to_any_is_valid() {
+        let dict = StubDictReader::new()
+            .with_shapes("a", vec![make_shape("out", "prose")])
+            .with_shapes("b", vec![make_shape("in", "any")]);
+        let (valid, _, _) = Connector::validate_with_dict(&dict, "a", "out", "b", "in");
+        assert!(valid, "specific type to 'any' must be valid");
+    }
+
+    /// validate_with_dict: mismatched types produce low confidence
+    #[test]
+    fn validate_with_dict_mismatch_has_low_confidence() {
+        let dict = StubDictReader::new()
+            .with_shapes("a", vec![make_shape("out", "text")])
+            .with_shapes("b", vec![make_shape("in", "integer")]);
+        let (valid, confidence, reason) =
+            Connector::validate_with_dict(&dict, "a", "out", "b", "in");
+        assert!(!valid);
+        assert_eq!(confidence, 0.3);
+        assert!(reason.contains("type mismatch"));
+    }
+
+    /// validate_with_dict: unknown from_port yields confidence 0.0
+    #[test]
+    fn validate_with_dict_unknown_from_port_zero_confidence() {
+        let dict = StubDictReader::new()
+            .with_shapes("a", vec![make_shape("out", "text")])
+            .with_shapes("b", vec![make_shape("in", "text")]);
+        let (valid, confidence, reason) =
+            Connector::validate_with_dict(&dict, "a", "missing", "b", "in");
+        assert!(!valid);
+        assert_eq!(confidence, 0.0);
+        assert!(reason.contains("missing"));
+    }
+
+    /// auto_route mid-x is average of src and dst x
+    #[test]
+    fn connector_auto_route_midpoint() {
+        let mut c = valid_connector();
+        c.auto_route([0.0, 0.0], [100.0, 0.0]);
+        // route[1] and route[2] should have x = 50.0 (midpoint)
+        assert_eq!(c.route[1][0], 50.0);
+        assert_eq!(c.route[2][0], 50.0);
+    }
+
+    /// Connector id is preserved after construction
+    #[test]
+    fn connector_id_preserved() {
+        let dict = StubDictReader::new();
+        let c = Connector::new_with_validation(ConnectorValidation {
+            id: "my-unique-wire-id".into(),
+            from_node: "n1".into(),
+            from_port: "output".into(),
+            to_node: "n2".into(),
+            to_port: "input".into(),
+            dict: &dict,
+            from_kind: "verb",
+            to_kind: "concept",
+        });
+        assert_eq!(c.id, "my-unique-wire-id");
+    }
+
+    /// Connector route starts empty before auto_route is called
+    #[test]
+    fn connector_route_empty_before_auto_route() {
+        let c = valid_connector();
+        assert!(c.route.is_empty(), "route must be empty before auto_route");
+    }
+
+    /// with_reason appends to existing chain
+    #[test]
+    fn connector_with_reason_chain_order() {
+        let c = valid_connector()
+            .with_reason("first".into())
+            .with_reason("second".into())
+            .with_reason("third".into());
+        assert_eq!(c.reason_chain.len(), 3);
+        assert_eq!(c.reason_chain[0], "first");
+        assert_eq!(c.reason_chain[2], "third");
+    }
+
+    /// can_wire_result confidence matches connector.confidence field
+    #[test]
+    fn connector_confidence_matches_can_wire_confidence() {
+        let c = valid_connector();
+        assert!((c.confidence - c.can_wire_result().1).abs() < f32::EPSILON);
+    }
+
+    /// validate_with_dict with matching text→text returns reason "validated"
+    #[test]
+    fn validate_with_dict_matching_types_reason_validated() {
+        let dict = StubDictReader::new()
+            .with_shapes("a", vec![make_shape("out", "prose")])
+            .with_shapes("b", vec![make_shape("in", "prose")]);
+        let (valid, _conf, reason) = Connector::validate_with_dict(&dict, "a", "out", "b", "in");
+        assert!(valid);
+        assert_eq!(reason, "validated");
+    }
 }

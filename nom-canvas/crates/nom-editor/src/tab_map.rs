@@ -161,4 +161,73 @@ mod tests {
         let col = tm.visual_column("abcd\tx", 5);
         assert_eq!(col, 8);
     }
+
+    #[test]
+    fn tab_map_size_2_expansion() {
+        let tm = TabMap::new(2);
+        let (expanded, _) = tm.expand_tabs("\t");
+        assert_eq!(expanded, "  "); // 2 spaces
+    }
+
+    #[test]
+    fn tab_map_size_2_mid_line() {
+        // "a\t" with size 2: tab at col 1, pads to col 2 (1 space)
+        let tm = TabMap::new(2);
+        let (expanded, _) = tm.expand_tabs("a\t");
+        assert_eq!(expanded, "a "); // 1 space to reach next stop
+    }
+
+    #[test]
+    fn tab_map_no_tabs_offsets_sequential() {
+        let tm = TabMap::new(4);
+        let (_, offsets) = tm.expand_tabs("abc");
+        assert_eq!(offsets, vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn tab_map_empty_line() {
+        let tm = TabMap::new(4);
+        let (expanded, offsets) = tm.expand_tabs("");
+        assert_eq!(expanded, "");
+        assert!(offsets.is_empty());
+    }
+
+    #[test]
+    fn tab_map_visual_col_no_tab() {
+        let tm = TabMap::new(4);
+        assert_eq!(tm.visual_column("hello", 3), 3);
+    }
+
+    #[test]
+    fn tab_map_visual_col_at_start() {
+        let tm = TabMap::new(4);
+        assert_eq!(tm.visual_column("anything", 0), 0);
+    }
+
+    #[test]
+    fn tab_map_mixed_indent_detection_spaces() {
+        // A line with only spaces (no tabs) — visual col matches char col
+        let tm = TabMap::new(4);
+        let line = "    code";
+        // char 4 ('c') is at visual col 4
+        assert_eq!(tm.visual_column(line, 4), 4);
+    }
+
+    #[test]
+    fn tab_map_tab_size_8_mid_line() {
+        // "abcdefg\t" — tab at col 7, size 8, pads to col 8 (1 space)
+        let tm = TabMap::new(8);
+        let (expanded, _) = tm.expand_tabs("abcdefg\t");
+        assert_eq!(expanded, "abcdefg "); // 1 space to reach col 8
+    }
+
+    #[test]
+    fn tab_map_offsets_for_tab_line() {
+        // "\ta" — tab at col 0 produces visual col 0 for tab, then 4 for 'a'
+        let tm = TabMap::new(4);
+        let (_, offsets) = tm.expand_tabs("\ta");
+        assert_eq!(offsets.len(), 2);
+        assert_eq!(offsets[0], 0); // tab itself at visual col 0
+        assert_eq!(offsets[1], 4); // 'a' at visual col 4
+    }
 }

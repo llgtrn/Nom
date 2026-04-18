@@ -637,4 +637,187 @@ mod tests {
             );
         }
     }
+
+    // ------------------------------------------------------------------
+    // GraphViewMode: mode transitions through all three variants
+    // ------------------------------------------------------------------
+    #[test]
+    fn graph_view_mode_all_transitions() {
+        let dag = three_node_dag();
+        let mut state = GraphModeState::new(&dag);
+
+        state.change_mode(GraphViewMode::Canvas);
+        assert_eq!(state.mode, GraphViewMode::Canvas);
+
+        state.change_mode(GraphViewMode::Split);
+        assert_eq!(state.mode, GraphViewMode::Split);
+
+        state.change_mode(GraphViewMode::Graph);
+        assert_eq!(state.mode, GraphViewMode::Graph);
+    }
+
+    // ------------------------------------------------------------------
+    // select then deselect via process_click miss
+    // ------------------------------------------------------------------
+    #[test]
+    fn graph_mode_select_then_deselect() {
+        let dag = three_node_dag();
+        let mut state = GraphModeState::new(&dag);
+        state.layout.insert("a".to_string(), (0.0, 0.0));
+
+        state.select("a".to_string());
+        assert_eq!(state.selected.as_deref(), Some("a"));
+
+        // Miss click clears selection.
+        let event = state.process_click(9999.0, 9999.0, 1.0);
+        assert!(event.is_none());
+        assert!(state.selected.is_none());
+    }
+
+    // ------------------------------------------------------------------
+    // hover with None clears hovered
+    // ------------------------------------------------------------------
+    #[test]
+    fn graph_mode_hover_none_clears() {
+        let dag = three_node_dag();
+        let mut state = GraphModeState::new(&dag);
+        state.hover(Some("b".to_string()));
+        assert_eq!(state.hovered.as_deref(), Some("b"));
+        state.hover(None);
+        assert!(state.hovered.is_none(), "hover(None) must clear hovered");
+    }
+
+    // ------------------------------------------------------------------
+    // confidence: 0.0 at construction
+    // ------------------------------------------------------------------
+    #[test]
+    fn graph_mode_confidence_starts_at_zero() {
+        let dag = three_node_dag();
+        let state = GraphModeState::new(&dag);
+        assert_eq!(state.confidence, 0.0);
+    }
+
+    // ------------------------------------------------------------------
+    // confidence: valid mid-range value stored exactly
+    // ------------------------------------------------------------------
+    #[test]
+    fn graph_mode_confidence_stores_midpoint() {
+        let dag = three_node_dag();
+        let mut state = GraphModeState::new(&dag);
+        state.set_confidence(0.42);
+        assert!((state.confidence - 0.42).abs() < 1e-6);
+    }
+
+    // ------------------------------------------------------------------
+    // animations: map is empty at construction
+    // ------------------------------------------------------------------
+    #[test]
+    fn graph_mode_animations_empty_at_start() {
+        let dag = three_node_dag();
+        let state = GraphModeState::new(&dag);
+        assert!(state.animations.is_empty(), "animations must start empty");
+    }
+
+    // ------------------------------------------------------------------
+    // layout_dag: two-node linear DAG — x positions differ
+    // ------------------------------------------------------------------
+    #[test]
+    fn layout_dag_two_nodes_x_positions_differ() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("src", "verb"));
+        dag.add_node(ExecNode::new("dst", "verb"));
+        dag.add_edge("src", "out", "dst", "in");
+        let layout = layout_dag(&dag);
+        let (x_src, _) = layout["src"];
+        let (x_dst, _) = layout["dst"];
+        assert_ne!(x_src, x_dst, "two nodes in linear chain must have different x positions");
+    }
+
+    // ------------------------------------------------------------------
+    // node_at_point: node exactly on boundary (dist == radius) is found
+    // ------------------------------------------------------------------
+    #[test]
+    fn node_at_point_on_boundary() {
+        let mut layout: GraphLayout = HashMap::new();
+        layout.insert("n".to_string(), (10.0, 0.0));
+        // Distance from (0,0) to (10,0) is 10.0, radius = 10.0.
+        let result = GraphModeState::node_at_point(&layout, 0.0, 0.0, 10.0);
+        assert!(result.is_some(), "node exactly at boundary must be found");
+    }
+
+    // ------------------------------------------------------------------
+    // node_at_point: just beyond boundary returns None
+    // ------------------------------------------------------------------
+    #[test]
+    fn node_at_point_just_outside_boundary() {
+        let mut layout: GraphLayout = HashMap::new();
+        layout.insert("n".to_string(), (11.0, 0.0));
+        // Distance = 11, radius = 10 → miss.
+        let result = GraphModeState::node_at_point(&layout, 0.0, 0.0, 10.0);
+        assert!(result.is_none(), "node just outside radius must not be found");
+    }
+
+    // ------------------------------------------------------------------
+    // process_hover: miss clears hovered
+    // ------------------------------------------------------------------
+    #[test]
+    fn graph_mode_process_hover_miss_clears_hovered() {
+        let dag = three_node_dag();
+        let mut state = GraphModeState::new(&dag);
+        state.hovered = Some("a".to_string());
+
+        let event = state.process_hover(99999.0, 99999.0, 1.0);
+        assert!(event.is_none());
+        assert!(state.hovered.is_none(), "miss must clear hovered");
+    }
+
+    // ------------------------------------------------------------------
+    // layout_dag: parallel (diamond) DAG — root at depth 0, merge at depth 2
+    // ------------------------------------------------------------------
+    #[test]
+    fn layout_dag_diamond_root_and_merge_y_differ() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("root", "verb"));
+        dag.add_node(ExecNode::new("b1", "verb"));
+        dag.add_node(ExecNode::new("b2", "verb"));
+        dag.add_node(ExecNode::new("merge", "verb"));
+        dag.add_edge("root", "out", "b1", "in");
+        dag.add_edge("root", "out", "b2", "in");
+        dag.add_edge("b1", "out", "merge", "in");
+        dag.add_edge("b2", "out", "merge", "in");
+
+        let layout = layout_dag(&dag);
+        let (_, y_root) = layout["root"];
+        let (_, y_merge) = layout["merge"];
+        assert!(y_root < y_merge, "root must have smaller y than merge node");
+    }
+
+    // ------------------------------------------------------------------
+    // GraphEvent equality
+    // ------------------------------------------------------------------
+    #[test]
+    fn graph_event_equality() {
+        let ev1 = GraphEvent::NodeSelected("a".to_string());
+        let ev2 = GraphEvent::NodeSelected("a".to_string());
+        assert_eq!(ev1, ev2);
+
+        let ev3 = GraphEvent::NodeDeselected;
+        let ev4 = GraphEvent::NodeDeselected;
+        assert_eq!(ev3, ev4);
+
+        let ev5 = GraphEvent::LayoutRefreshed;
+        let ev6 = GraphEvent::LayoutRefreshed;
+        assert_eq!(ev5, ev6);
+    }
+
+    // ------------------------------------------------------------------
+    // set_confidence: exactly 1.0 stored without clamping
+    // ------------------------------------------------------------------
+    #[test]
+    fn graph_mode_confidence_exactly_one() {
+        let dag = three_node_dag();
+        let mut state = GraphModeState::new(&dag);
+        state.set_confidence(1.0);
+        assert_eq!(state.confidence, 1.0);
+    }
 }

@@ -633,4 +633,227 @@ mod tests {
         );
         assert_eq!(cache.len(), 0);
     }
+
+    // ------------------------------------------------------------------
+    // LruCache: clear empties all entries and order
+    // ------------------------------------------------------------------
+    #[test]
+    fn lru_cache_clear_empties_all() {
+        let mut cache = LruCache::new(5);
+        for i in 0..5u64 {
+            cache.put(i, CachedValue::String(format!("{i}")));
+        }
+        assert_eq!(cache.len(), 5);
+        cache.clear();
+        assert_eq!(cache.len(), 0, "clear must remove all entries");
+        assert!(cache.get(0).is_none(), "entries must be gone after clear");
+    }
+
+    // ------------------------------------------------------------------
+    // LruCache: put same key twice does not grow len
+    // ------------------------------------------------------------------
+    #[test]
+    fn lru_cache_put_same_key_overwrites() {
+        let mut cache = LruCache::new(5);
+        cache.put(42, CachedValue::String("first".into()));
+        cache.put(42, CachedValue::String("second".into()));
+        assert_eq!(cache.len(), 1, "overwrite must not grow len");
+        match cache.get(42).unwrap() {
+            CachedValue::String(s) => assert_eq!(s, "second"),
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // LruCache: capacity=1 always evicts the sole entry on new put
+    // ------------------------------------------------------------------
+    #[test]
+    fn lru_cache_capacity_one_evicts_on_new_key() {
+        let mut cache = LruCache::new(1);
+        cache.put(1, CachedValue::String("one".into()));
+        assert!(cache.get(1).is_some());
+        cache.put(2, CachedValue::String("two".into()));
+        assert!(cache.get(1).is_none(), "key 1 must be evicted by key 2");
+        assert!(cache.get(2).is_some());
+        assert_eq!(cache.len(), 1);
+    }
+
+    // ------------------------------------------------------------------
+    // LruCache: is_empty reflects empty/non-empty state
+    // ------------------------------------------------------------------
+    #[test]
+    fn lru_cache_is_empty() {
+        let mut cache = LruCache::new(3);
+        assert!(cache.is_empty());
+        cache.put(1, CachedValue::String("x".into()));
+        assert!(!cache.is_empty());
+    }
+
+    // ------------------------------------------------------------------
+    // RamPressureCache: clear empties cache
+    // ------------------------------------------------------------------
+    #[test]
+    fn ram_pressure_cache_clear_empties() {
+        let mut cache = RamPressureCache::new(10);
+        cache.put(1, CachedValue::String("a".into()));
+        cache.put(2, CachedValue::String("b".into()));
+        assert_eq!(cache.len(), 2);
+        cache.clear();
+        assert_eq!(cache.len(), 0);
+        assert!(cache.get(1).is_none());
+    }
+
+    // ------------------------------------------------------------------
+    // RamPressureCache: invalidate removes specific key
+    // ------------------------------------------------------------------
+    #[test]
+    fn ram_pressure_cache_invalidate_specific_key() {
+        let mut cache = RamPressureCache::new(10);
+        cache.put(10, CachedValue::String("ten".into()));
+        cache.put(20, CachedValue::String("twenty".into()));
+        cache.invalidate(10);
+        assert!(cache.get(10).is_none(), "key 10 must be removed");
+        assert!(cache.get(20).is_some(), "key 20 must remain");
+        assert_eq!(cache.len(), 1);
+    }
+
+    // ------------------------------------------------------------------
+    // RamPressureCache: get returns stored value
+    // ------------------------------------------------------------------
+    #[test]
+    fn ram_pressure_cache_get_stored_value() {
+        let mut cache = RamPressureCache::new(8);
+        cache.put(5, CachedValue::Bytes(vec![1, 2, 3]));
+        match cache.get(5).unwrap() {
+            CachedValue::Bytes(b) => assert_eq!(b, vec![1, 2, 3]),
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // NodeCache: LRU capacity respected with multiple evictions
+    // ------------------------------------------------------------------
+    #[test]
+    fn node_cache_lru_evicts_in_order() {
+        let mut cache = NodeCache::new(CacheStrategy::Lru { capacity: 3 });
+        cache.put("a".to_string(), CachedValue::String("1".into()));
+        cache.put("b".to_string(), CachedValue::String("2".into()));
+        cache.put("c".to_string(), CachedValue::String("3".into()));
+        // "a" is oldest, adding "d" must evict "a"
+        cache.put("d".to_string(), CachedValue::String("4".into()));
+        assert!(cache.get(&"a".to_string()).is_none(), "a must be evicted");
+        assert!(cache.get(&"b".to_string()).is_some());
+        assert!(cache.get(&"c".to_string()).is_some());
+        assert!(cache.get(&"d".to_string()).is_some());
+        assert_eq!(cache.len(), 3);
+    }
+
+    // ------------------------------------------------------------------
+    // NodeCache: evict removes entry
+    // ------------------------------------------------------------------
+    #[test]
+    fn node_cache_evict_removes_entry() {
+        let mut cache = NodeCache::new(CacheStrategy::Classic);
+        cache.put("x".to_string(), CachedValue::String("val".into()));
+        assert!(cache.get(&"x".to_string()).is_some());
+        cache.evict(&"x".to_string());
+        assert!(cache.get(&"x".to_string()).is_none(), "evicted key must be gone");
+        assert_eq!(cache.len(), 0);
+    }
+
+    // ------------------------------------------------------------------
+    // NodeCache: is_empty reflects state
+    // ------------------------------------------------------------------
+    #[test]
+    fn node_cache_is_empty_initially() {
+        let cache = NodeCache::new(CacheStrategy::Classic);
+        assert!(cache.is_empty(), "new NodeCache must be empty");
+    }
+
+    // ------------------------------------------------------------------
+    // ChangedFlags: mark_changed then mark_clean cycle
+    // ------------------------------------------------------------------
+    #[test]
+    fn changed_flags_mark_changed_clean_cycle() {
+        let mut flags = ChangedFlags::new();
+        flags.mark_changed("node_a".to_string());
+        assert!(flags.is_changed(&"node_a".to_string()));
+        flags.mark_clean("node_a".to_string());
+        assert!(!flags.is_changed(&"node_a".to_string()));
+        // changed_count must be 0 after marking clean
+        assert_eq!(flags.changed_count(), 0);
+    }
+
+    // ------------------------------------------------------------------
+    // ChangedFlags: unknown node defaults to changed
+    // ------------------------------------------------------------------
+    #[test]
+    fn changed_flags_unknown_node_is_changed() {
+        let flags = ChangedFlags::new();
+        assert!(flags.is_changed(&"never_seen".to_string()), "unknown node must default to changed");
+    }
+
+    // ------------------------------------------------------------------
+    // BasicCache: is_empty reflects state
+    // ------------------------------------------------------------------
+    #[test]
+    fn basic_cache_is_empty_initially() {
+        let cache = BasicCache::new();
+        assert!(cache.is_empty(), "new BasicCache must be empty");
+    }
+
+    // ------------------------------------------------------------------
+    // BasicCache: default() creates empty cache
+    // ------------------------------------------------------------------
+    #[test]
+    fn basic_cache_default_creates_empty() {
+        let cache = BasicCache::default();
+        assert_eq!(cache.len(), 0);
+        assert!(cache.is_empty());
+    }
+
+    // ------------------------------------------------------------------
+    // HierarchicalCache: invalidate removes from both tiers
+    // ------------------------------------------------------------------
+    #[test]
+    fn hierarchical_cache_invalidate_removes_from_both_tiers() {
+        let mut cache = HierarchicalCache::new(10, 100);
+        cache.put(77, CachedValue::String("val".into()));
+        assert!(cache.l1.get(77).is_some());
+        assert!(cache.l2.get(77).is_some());
+        cache.invalidate(77);
+        assert!(cache.l1.get(77).is_none(), "L1 must not hold key after invalidate");
+        assert!(cache.l2.get(77).is_none(), "L2 must not hold key after invalidate");
+    }
+
+    // ------------------------------------------------------------------
+    // HierarchicalCache: clear removes from both tiers
+    // ------------------------------------------------------------------
+    #[test]
+    fn hierarchical_cache_clear_removes_from_both_tiers() {
+        let mut cache = HierarchicalCache::new(10, 100);
+        cache.put(1, CachedValue::String("a".into()));
+        cache.put(2, CachedValue::String("b".into()));
+        cache.clear();
+        assert_eq!(cache.l1.len(), 0, "L1 must be empty after clear");
+        assert_eq!(cache.l2.len(), 0, "L2 must be empty after clear");
+        assert_eq!(cache.len(), 0);
+    }
+
+    // ------------------------------------------------------------------
+    // CacheStrategy: equality checks
+    // ------------------------------------------------------------------
+    #[test]
+    fn cache_strategy_equality() {
+        assert_eq!(CacheStrategy::NoCache, CacheStrategy::NoCache);
+        assert_eq!(CacheStrategy::Classic, CacheStrategy::Classic);
+        assert_eq!(
+            CacheStrategy::Lru { capacity: 4 },
+            CacheStrategy::Lru { capacity: 4 }
+        );
+        assert_ne!(
+            CacheStrategy::Lru { capacity: 4 },
+            CacheStrategy::Lru { capacity: 5 }
+        );
+    }
 }

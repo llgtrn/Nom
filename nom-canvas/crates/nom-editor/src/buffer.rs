@@ -322,4 +322,123 @@ mod tests {
         buf.delete_range(0..0); // no-op, no panic
         assert!(buf.is_empty());
     }
+
+    #[test]
+    fn buffer_multiline_line_count() {
+        let buf = Buffer::new(1, "a\nb\nc\nd");
+        assert_eq!(buf.line_count(), 4);
+    }
+
+    #[test]
+    fn buffer_char_to_line_on_newline_char() {
+        let buf = Buffer::new(1, "abc\ndef");
+        // char index 3 is '\n', which is on line 0
+        assert_eq!(buf.char_to_line(3), 0);
+    }
+
+    #[test]
+    fn buffer_line_to_char_second_line() {
+        let buf = Buffer::new(1, "abc\nxyz");
+        // line 1 starts at char index 4
+        assert_eq!(buf.line_to_char(1), 4);
+    }
+
+    #[test]
+    fn buffer_edit_returns_undo_patch_new_text() {
+        let mut buf = Buffer::new(1, "hello");
+        let undo = buf.edit(0..5, "world");
+        // undo patch's new_text is the original text we replaced
+        assert_eq!(undo.new_text, "hello");
+    }
+
+    #[test]
+    fn buffer_edit_old_range_matches_new_text_len() {
+        let mut buf = Buffer::new(1, "abc");
+        let undo = buf.edit(0..3, "xy");
+        // undo old_range.start should be 0, end = start + len("xy") = 2
+        assert_eq!(undo.old_range.start, 0);
+        assert_eq!(undo.old_range.end, 2);
+    }
+
+    #[test]
+    fn buffer_sequential_inserts_build_content() {
+        let mut buf = Buffer::new(1, "");
+        buf.insert_at(0, "a");
+        buf.insert_at(1, "b");
+        buf.insert_at(2, "c");
+        assert_eq!(buf.text_for_range(0..3).as_ref(), "abc");
+    }
+
+    #[test]
+    fn buffer_version_unchanged_on_noop_delete() {
+        let mut buf = Buffer::new(1, "hello");
+        let v = buf.version;
+        buf.delete_range(3..3); // zero-length, noop
+        assert_eq!(buf.version, v);
+    }
+
+    #[test]
+    fn buffer_multiple_transactions_stack() {
+        let mut buf = Buffer::new(1, "abc");
+        buf.start_transaction();
+        buf.start_transaction();
+        buf.end_transaction();
+        buf.end_transaction();
+        // no panic; both transactions committed without patches
+        assert_eq!(buf.text_for_range(0..3).as_ref(), "abc");
+    }
+
+    #[test]
+    fn buffer_text_for_range_full() {
+        let buf = Buffer::new(1, "hello world");
+        assert_eq!(buf.text_for_range(0..11).as_ref(), "hello world");
+    }
+
+    #[test]
+    fn buffer_text_for_range_partial() {
+        let buf = Buffer::new(1, "hello world");
+        assert_eq!(buf.text_for_range(6..11).as_ref(), "world");
+    }
+
+    #[test]
+    fn buffer_id_is_stored() {
+        let buf = Buffer::new(42, "test");
+        assert_eq!(buf.id, 42);
+    }
+
+    #[test]
+    fn buffer_path_starts_as_none() {
+        let buf = Buffer::new(1, "text");
+        assert!(buf.path.is_none());
+    }
+
+    #[test]
+    fn buffer_edit_empty_replacement_deletes() {
+        let mut buf = Buffer::new(1, "hello world");
+        buf.edit(5..11, "");
+        assert_eq!(buf.text_for_range(0..buf.len()).as_ref(), "hello");
+    }
+
+    #[test]
+    fn buffer_line_ending_crlf_detected() {
+        // CRLF line ending: "\r\n" — buffer stores it as-is
+        let buf = Buffer::new(1, "line1\r\nline2");
+        // rope counts '\n' as line separator, so line count should be 2
+        assert_eq!(buf.line_count(), 2);
+    }
+
+    #[test]
+    fn buffer_unicode_insert() {
+        let mut buf = Buffer::new(1, "");
+        buf.insert_at(0, "nom");
+        assert_eq!(buf.len(), 3);
+    }
+
+    #[test]
+    fn buffer_insert_at_beyond_len_appends() {
+        let mut buf = Buffer::new(1, "abc");
+        buf.insert_at(999, "!");
+        let full = buf.text_for_range(0..buf.len());
+        assert!(full.ends_with('!'));
+    }
 }

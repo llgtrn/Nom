@@ -1055,4 +1055,105 @@ mod tests {
             "Search icon should have exactly 1 handle line"
         );
     }
+
+    // -----------------------------------------------------------------------
+    // Icon name validation and SVG viewBox enforcement tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn icon_name_no_leading_hyphen() {
+        // Names must not start with a hyphen (invalid kebab-case).
+        for icon in Icon::all() {
+            let name = icon.name();
+            assert!(
+                !name.starts_with('-'),
+                "{icon:?}.name() = {name:?} must not start with a hyphen"
+            );
+        }
+    }
+
+    #[test]
+    fn icon_name_no_trailing_hyphen() {
+        for icon in Icon::all() {
+            let name = icon.name();
+            assert!(
+                !name.ends_with('-'),
+                "{icon:?}.name() = {name:?} must not end with a hyphen"
+            );
+        }
+    }
+
+    #[test]
+    fn icon_geometry_lines_have_positive_length() {
+        // Each line segment must have non-zero Manhattan distance (prevents invisible strokes).
+        for icon in Icon::all() {
+            let path = icon_path(*icon);
+            for &(x1, y1, x2, y2) in path.lines {
+                let dx = (x2 - x1).abs();
+                let dy = (y2 - y1).abs();
+                assert!(
+                    dx > 0.0 || dy > 0.0,
+                    "{icon:?} line ({x1},{y1})->({x2},{y2}) has zero length"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn icon_circle_radius_greater_than_zero() {
+        for icon in Icon::all() {
+            let path = icon_path(*icon);
+            for &(_cx, _cy, r) in path.circles {
+                assert!(
+                    r > 0.0,
+                    "{icon:?} has a circle with radius <= 0 ({r})"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn icon_viewbox_center_symmetric_icons_use_midpoint() {
+        // X (close) icon is symmetric around 0.5; both lines must pass through midpoint.
+        let path = icon_path(Icon::X);
+        for &(x1, y1, x2, y2) in path.lines {
+            let mid_x = (x1 + x2) / 2.0;
+            let mid_y = (y1 + y2) / 2.0;
+            assert!(
+                (mid_x - 0.5).abs() < 0.05,
+                "Icon::X line midpoint_x ({mid_x:.3}) must be ~0.5"
+            );
+            assert!(
+                (mid_y - 0.5).abs() < 0.05,
+                "Icon::X line midpoint_y ({mid_y:.3}) must be ~0.5"
+            );
+        }
+    }
+
+    #[test]
+    fn icon_missing_fallback_to_x() {
+        // Icon::X is used as the universal fallback / close icon.
+        // It must always produce valid geometry.
+        let path = icon_path(Icon::X);
+        assert_eq!(
+            path.lines.len(),
+            2,
+            "Icon::X fallback must have 2 crossing lines"
+        );
+        assert!(
+            path.circles.is_empty(),
+            "Icon::X fallback must have no circles"
+        );
+    }
+
+    #[test]
+    fn icon_all_names_min_length_one() {
+        for icon in Icon::all() {
+            let name = icon.name();
+            assert!(
+                name.len() >= 1,
+                "{icon:?}.name() must have at least 1 character"
+            );
+        }
+    }
 }
