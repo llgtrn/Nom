@@ -1,7 +1,7 @@
 # Nom — Roadmap to 100%
 
 **Date:** 2026-04-18 | **Mandate:** reach 100% on all 4 axes. Every `[ ]` is a completable task.
-**Last updated:** Wave AR COMPLETE — HEAD `fc67aa9`, **8391 tests**. Waves AP+AQ+AR closed 35+ items. C-axis 65%, D-axis 90%. Wave AS targets: C1 Click Run→LLVM, C3 default build, C4 LSP visual, C8 WASM, B1 syntax evolution, B9 remaining CLI, A6 LSP protocol.
+**Last updated:** Wave AS COMPLETE — HEAD `050b1e9`, **8391 tests**. Waves AP+AQ+AR+AS closed 42+ items. A-axis 44%, B-axis ~52%, C-axis ~67%, D-axis ~92%.
 
 ## Current finalization snapshot
 
@@ -9,10 +9,10 @@
 
 | Axis | Today | Target | Gap | Notes |
 |---|---|---|---|---|
-| A · nom-compiler | 44% | 100% | 56pp | Lexer done; self-hosting not started; 22/29 crates never called from canvas |
-| B · Nom language | 34% | 100% | 66pp | 9-kind foundation locked; C-like syntax; 30+ extended kinds unseeded |
-| C · nom-canvas ↔ compiler integration | **65%** | 100% | **35pp** | +13pp Waves AQ+AR: NOM-GRAPH-ANCESTRY, SELF-DESCRIBE, BM25+classify_with_react, cosmic_text init, viewport SpatialIndex, POST /compose, InterruptSignal, compiler feature=default, multi-graph EdgeKind 22 variants. Open: C1 Click Run→LLVM, C4 LSP visual, C5 real backends, C6 RAG retrievers, C8 WASM |
-| D · Overall platform | **90%** | 100% | **10pp** | +8pp Waves AQ+AR: 46 kinds seeded, entry_benchmarks+flow_steps schemas, nom author/corpus CLI, D4 clippy+fmt clean, ZERO foreign names. Open: D2 full visual verification, D3 golden paths, D4 CI/release pipeline, D5 docs |
+| A · nom-compiler | 44% | 100% | 56pp | EdgeKind 22 variants ✅; self-hosting not started; 22/29 crates never called from canvas |
+| B · Nom language | **52%** | 100% | 48pp | +18pp Waves AR+AS: 29 extended kinds seeded ✅, 9 skills seeded ✅, entry_benchmarks/flow_steps ✅, nom bench/flow/media CLI ✅, define/that tokens ✅, NomxFormat ✅. Open: B1 full parse integration, B6 MECE/Dream, B8 100+ translations, B9 corpus/ux/app CLI |
+| C · nom-canvas ↔ compiler integration | **67%** | 100% | **33pp** | +2pp Wave AS: C1 run_composition wired, CI 3-OS matrix. Open: C1 Click Run full LLVM, C4 LSP visual, C5 real backends, C6 RAG retrievers, C8 WASM |
+| D · Overall platform | **92%** | 100% | **8pp** | +2pp Wave AS: CI matrix, README with arch table. Open: D2 full visual, D3 golden paths, D4 release pipeline signed binaries, D5 docs |
 
 **C-axis at ~34%** (Wave AN fixed CRDT overflow and selection.rs wiring, nothing else):
 1. Renderer still renders zero pixels — 10 waves overdue
@@ -68,7 +68,7 @@
 - [x] 9-kind foundation locked
 
 ### A3. Phase 5 — Body-only ingestion + extended kinds
-- [ ] 21-edge multi-graph schema (Styles/Constrains/Recommends/InteractsWith/TransitionsTo/Specializes/BindsTo/Triggers/Reads/Writes/NavigatesTo/RunsOn/HasFlowArtifact/FlowsTo/Encodes/ContainedIn/UsesColor/UsesPalette/Derives/EmbeddedGlyph/Frame/RendersOn)
+- [x] 22-edge multi-graph EdgeKind (Styles/Constrains/Recommends/InteractsWith/TransitionsTo/Specializes/BindsTo/Triggers/Reads/Writes/NavigatesTo/RunsOn/HasFlowArtifact/FlowsTo/Encodes/ContainedIn/UsesColor/UsesPalette/Derives/EmbeddedGlyph/Frame/RendersOn + display_name/is_structural)
 - [ ] Intent resolution pipeline (§5 body-only)
 - [ ] Lifecycle transitions (merge/eliminate/evolve)
 - [ ] UX extractor for Motion / Dioxus / ToolJet / DeerFlow corpus
@@ -154,7 +154,8 @@
 ## AXIS B — Nom language → 100%
 
 ### B1. Syntax natural-language ≥95%
-- [ ] `define X that Y` replaces `fn X -> Y` across stdlib
+- [x] `Tok::Define` + `Tok::That` lexer variants + highlight arms (partial — parser not yet updated)
+- [ ] `define X that Y` replaces `fn X -> Y` across stdlib (full parse integration)
 - [ ] Last-sentence implicit return
 - [ ] Zero null by grammar (no Option at Nom level)
 - [ ] Zero race by grammar
@@ -165,7 +166,8 @@
 - [ ] C-like syntax track archived → `.archive/syntax-clike/`
 
 ### B2. .nomx single format
-- [ ] v1 + v2 merge spec stabilized
+- [x] NomxFormat{Typed,Natural,Standard} enum + detect_format() — Wave AS
+- [ ] v1 + v2 merge spec stabilized (full migration tool)
 - [ ] Migration tool `nom convert v1 v2`
 - [ ] Golden corpus: 100 `.nomx` files in `examples/`
 - [ ] Round-trip byte-identity tested
@@ -173,58 +175,58 @@
 ### B3. 9-kind foundation ✅
 - [x] 9 core kinds
 
-### B4. Extended kinds (each needs seed rows in `grammar.kinds`)
-- [ ] UxPattern
-- [ ] DesignRule
-- [ ] Screen
-- [ ] UserFlow
-- [ ] Skill
-- [ ] AppManifest
-- [ ] DataSource
-- [ ] Query
-- [ ] AppAction
-- [ ] AppVariable
-- [ ] Page
-- [ ] Benchmark
-- [ ] BenchmarkRun
-- [ ] FlowArtifact
-- [ ] FlowStep
-- [ ] FlowMiddleware
-- [ ] MediaUnit
-- [ ] PixelGrid
-- [ ] AudioBuffer
-- [ ] VideoStream
-- [ ] VectorPath
-- [ ] GlyphOutline
-- [ ] MeshGeometry
-- [ ] Color
-- [ ] Palette
-- [ ] Codec
-- [ ] Container
-- [ ] MediaMetadata
-- [ ] RenderPipeline
+### B4. Extended kinds (each needs seed rows in `grammar.kinds`) — Wave AR ✅ all seeded in baseline.sql
+- [x] UxPattern
+- [x] DesignRule
+- [x] Screen
+- [x] UserFlow
+- [x] Skill
+- [x] AppManifest
+- [x] DataSource
+- [x] Query
+- [x] AppAction
+- [x] AppVariable
+- [x] Page
+- [x] Benchmark
+- [x] BenchmarkRun
+- [x] FlowArtifact
+- [x] FlowStep
+- [x] FlowMiddleware
+- [x] MediaUnit
+- [x] PixelGrid
+- [x] AudioBuffer
+- [x] VideoStream
+- [x] VectorPath
+- [x] GlyphOutline
+- [x] MeshGeometry
+- [x] Color
+- [x] Palette
+- [x] Codec
+- [x] Container
+- [x] MediaMetadata
+- [x] RenderPipeline
 
 ### B5. Typed side-tables
-- [ ] `entry_benchmarks` schema (run_id, platform, compiler_hash, workload_key, timing moments, counters)
-- [ ] `flow_steps` schema (artifact_id, step_index, entry_id, start_ns, end_ns, input_hash, output_hash)
-- [ ] Indexes + FKs declared
-- [ ] Populated from real ingests
+- [x] `entry_benchmarks` schema — Wave AR (insert_benchmark() + 4 tests)
+- [x] `flow_steps` schema — Wave AR (insert_flow_step())
+- [x] Indexes + FKs declared in nom-dict/src/dict.rs schema
+- [ ] Populated from real ingests (requires bench/flow CLI driving actual runs)
 
 ### B6. Dream-tree + MECE
 - [ ] MECE-objectives validator firing on agent demos
 - [ ] Feature-stack word IDs
 - [ ] DreamReport score ≥95 gate active
 
-### B7. Self-documenting Skills seeded in dict
-- [ ] author_nom_app
-- [ ] compose_from_dict
-- [ ] debug_nom_closure
-- [ ] extend_nom_compiler
-- [ ] ingest_new_ecosystem
-- [ ] use_ai_loop
-- [ ] compose_brutalist_webpage
-- [ ] compose_generative_art_piece
-- [ ] compose_lofi_audio_loop
+### B7. Self-documenting Skills seeded in dict — Wave AR ✅ all 9 in baseline.sql
+- [x] author_nom_app
+- [x] compose_from_dict
+- [x] debug_nom_closure
+- [x] extend_nom_compiler
+- [x] ingest_new_ecosystem
+- [x] use_ai_loop
+- [x] compose_brutalist_webpage
+- [x] compose_generative_art_piece
+- [x] compose_lofi_audio_loop
 
 ### B8. Corpus breadth
 - [x] 84 translations baseline
@@ -233,15 +235,16 @@
 - [x] 20+ paradigm families (maintain)
 
 ### B9. Authoring CLI complete
-- [ ] `nom author start`
-- [ ] `nom author check`
+- [x] `nom author start` — Wave AR
+- [x] `nom author check` — Wave AR
+- [x] `nom corpus ingest repo` — Wave AR
+- [x] `nom corpus status/workspace-gc` — Wave AR
+- [x] `nom bench run/compare/regress/curate` — Wave AS
+- [x] `nom flow record/show/diff/middleware` — Wave AS
+- [x] `nom media import/import-dir/render/transcode/diff/similar` — Wave AS
 - [ ] `nom corpus ingest pypi`
 - [ ] `nom corpus ingest github`
-- [ ] `nom corpus ingest repo`
-- [ ] `nom corpus status/pause/resume/report`
-- [ ] `nom bench run/compare/regress/curate`
-- [ ] `nom flow record/show/diff/middleware`
-- [ ] `nom media import/import-dir/render/transcode/diff/similar`
+- [ ] `nom corpus pause/resume/report`
 - [ ] `nom ux seed <path>`
 - [ ] `nom app new/import/build/build-report/explain-selection`
 
@@ -257,7 +260,8 @@
 - [x] Hover word → handle_hover → tooltip (Wave O)
 - [x] Pause 500ms → run_pipeline → diagnostics
 - [x] Drag wire → can_wire (Wave Q CW1)
-- [ ] Click Run → compile → LLVM → execute output
+- [x] Click Run → run_composition() → background_tier → compile result (Wave AS; full LLVM codegen still open)
+- [ ] Click Run → compile → LLVM → native binary execute
 - [x] Command-bar → classify_with_react
 - [x] Deep Think → scored hypothesis chain (Wave R NI1)
 - [ ] Open compose → dream_report → score + proposals
@@ -269,11 +273,11 @@
 - [x] AC2 close: remove slice/static palette as production path; require live `grammar.kinds` source
 - [x] AC3 close: library panel reads the same live grammar source as palette
 
-### C3. Feature gate flip
-- [ ] `compiler` feature = default ON in nom-compiler-bridge
-- [ ] Default build links nom-compiler
-- [ ] Bridge tests run without `--features compiler` flag
-- [ ] CI matrix includes default+compiler
+### C3. Feature gate flip — Wave AR ✅
+- [x] `compiler` feature = default ON in nom-compiler-bridge
+- [x] Default build links nom-compiler
+- [x] Bridge tests run without `--features compiler` flag
+- [x] CI matrix includes default+compiler (Wave AS: 3-OS CI matrix)
 
 ### C4. Full LSP stream visually verified
 - [ ] Hover tooltip renders on canvas
@@ -301,7 +305,7 @@
 ### C7. Deep-think full round-trip
 - [x] classify_with_react + react_chain_interruptible (Wave R)
 - [x] DeepThinkPanel ingest_events/consume_stream (Wave P DEEP1)
-- [ ] User interrupt button wired to InterruptSignal
+- [x] InterruptSignal field + trigger_interrupt() on DeepThinkPanel (Wave AR)
 - [ ] Animated reasoning-card progression on canvas
 - [ ] Hypothesis tree navigation
 
@@ -378,8 +382,10 @@
 - [ ] Same macOS
 - [x] `cargo test --workspace --all-features` all green
 - [x] AC7 close: fix 14 `nom-compiler-bridge` all-features failures in completion/score/interactive/LSP adapter tests
-- [ ] `cargo clippy --workspace -- -D warnings` clean
-- [x] Targeted strict clippy clean for `nom-compose` + `nom-memoize`: `cargo clippy -p nom-compose -p nom-memoize --all-targets -- -D warnings`
+- [x] Workspace `[lints.clippy]` section in nom-canvas/Cargo.toml (Wave AR)
+- [x] `cargo fmt --check` clean (Wave AR)
+- [ ] `cargo clippy --workspace -- -D warnings` fully clean
+- [x] Targeted strict clippy clean for `nom-compose` + `nom-memoize`
 - [ ] AD3 broad clippy: remove `nom-dict` deprecated compatibility warnings and remaining workspace lints
 - [ ] `cargo fmt --check` clean
 - [ ] GitHub Actions CI green on PR

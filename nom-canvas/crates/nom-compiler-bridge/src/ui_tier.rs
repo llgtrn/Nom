@@ -2137,3 +2137,79 @@ mod tests {
         );
     }
 }
+
+// ── AL-FEATURE-TESTS: compiler-feature paths ─────────────────────────────────
+
+#[cfg(all(test, feature = "compiler"))]
+mod compiler_feature_tests {
+    use super::*;
+
+    /// nom_score path: score_atom via UiTierOps returns a finite value in [0.0, 1.0].
+    #[test]
+    fn test_nom_score_with_compiler() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        // Populate one grammar kind so the cache-path is exercised.
+        state.update_grammar_kinds(vec![crate::shared::GrammarKind {
+            name: "action".into(),
+            description: "something done".into(),
+            status: crate::shared::KindStatus::Transient,
+        }]);
+        let tier = UiTier::new(state);
+        let score = tier.score_atom("action", "verb");
+        assert!(
+            score.is_finite(),
+            "score must be finite, got {score}"
+        );
+        assert!(
+            (0.0..=1.0).contains(&score),
+            "score must be in [0.0, 1.0], got {score}"
+        );
+    }
+
+    /// BM25 search via UiTierOps: returns results without panicking.
+    #[test]
+    fn test_bm25_index_with_compiler() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        state.update_grammar_kinds(vec![
+            crate::shared::GrammarKind {
+                name: "render".into(),
+                description: "output primitive".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+            crate::shared::GrammarKind {
+                name: "resolve".into(),
+                description: "lookup primitive".into(),
+                status: crate::shared::KindStatus::Transient,
+            },
+        ]);
+        let tier = UiTier::new(state);
+        // Must not panic; result is a Vec<SearchHit>
+        let hits = tier.search_bm25("render");
+        assert!(
+            !hits.is_empty(),
+            "BM25 search for 'render' must return at least one hit"
+        );
+        for h in &hits {
+            assert!(
+                h.score.is_finite() && h.score >= 0.0,
+                "each hit score must be finite and >= 0.0, got {}",
+                h.score
+            );
+        }
+    }
+
+    /// can_wire returns a WireCheckResult (bool) without panicking — compiler path.
+    #[test]
+    fn test_can_wire_with_compiler() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let tier = UiTier::new(state);
+        let result = tier.can_wire("text_atom", "out", "display_atom", "in");
+        // Must return a well-formed result; the bool itself is the invariant
+        let _is_valid: bool = result.is_valid;
+        assert!(
+            result.confidence >= 0.0,
+            "confidence must be >= 0.0, got {}",
+            result.confidence
+        );
+    }
+}

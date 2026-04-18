@@ -4,6 +4,12 @@ use nom_blocks::dict_reader::DictReader;
 use nom_gpui::scene::Scene;
 use nom_theme::tokens;
 
+/// Height of the search input box rendered at the top of the palette.
+pub const SEARCH_BOX_HEIGHT: f32 = 32.0;
+
+/// Height of a category group header row.
+const CATEGORY_HEADER_HEIGHT: f32 = 24.0;
+
 /// A single entry in the node palette, populated from grammar.kinds DB rows.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PaletteEntry {
@@ -12,14 +18,46 @@ pub struct PaletteEntry {
     pub description: String,
 }
 
+/// A group of palette entries sharing the same category label.
+#[derive(Debug, Clone)]
+pub struct PaletteGroup {
+    pub category: String,
+    pub entries: Vec<PaletteEntry>,
+}
+
+/// Derive a display category from a kind_name prefix.
+///
+/// Rules:
+///   - starts with "ux_" → "UX"
+///   - starts with "media_" → "Media"
+///   - starts with "benchmark" → "Benchmark"
+///   - otherwise → "General"
+fn category_for_kind(kind_name: &str) -> &'static str {
+    let lower = kind_name.to_lowercase();
+    if lower.starts_with("ux_") || lower.starts_with("ux") {
+        "UX"
+    } else if lower.starts_with("media_") || lower.starts_with("media") {
+        "Media"
+    } else if lower.starts_with("benchmark") {
+        "Benchmark"
+    } else {
+        "General"
+    }
+}
+
 /// DB-driven node palette for Graph mode (spec §8).
 pub struct NodePalette {
     pub entries: Vec<PaletteEntry>,
+    /// Current search query; empty string means show all.
+    pub search_query: String,
 }
 
 impl NodePalette {
     pub fn new() -> Self {
-        Self { entries: vec![] }
+        Self {
+            entries: vec![],
+            search_query: String::new(),
+        }
     }
 
     /// Populate the palette from the dictionary/grammar source of truth.
@@ -33,7 +71,10 @@ impl NodePalette {
                 description: kind.description,
             })
             .collect();
-        Self { entries }
+        Self {
+            entries,
+            search_query: String::new(),
+        }
     }
 
     #[cfg(test)]
@@ -47,6 +88,7 @@ impl NodePalette {
                     description: (*description).to_string(),
                 })
                 .collect(),
+            search_query: String::new(),
         }
     }
 
@@ -65,23 +107,67 @@ impl NodePalette {
             .collect()
     }
 
+    /// Return filtered entries based on the current `search_query`.
+    pub fn filtered_entries(&self) -> Vec<&PaletteEntry> {
+        self.search(&self.search_query)
+    }
+
+    /// Group filtered entries by category. Each group contains entries whose
+    /// `kind_name` maps to the same category string.
+    pub fn grouped_items(&self) -> Vec<PaletteGroup> {
+        let filtered = self.filtered_entries();
+        let mut groups: Vec<PaletteGroup> = Vec::new();
+        for entry in filtered {
+            let cat = category_for_kind(&entry.kind_name);
+            if let Some(group) = groups.iter_mut().find(|g| g.category == cat) {
+                group.entries.push(entry.clone());
+            } else {
+                groups.push(PaletteGroup {
+                    category: cat.to_string(),
+                    entries: vec![entry.clone()],
+                });
+            }
+        }
+        groups
+    }
+
     /// Total number of loaded entries.
     pub fn entry_count(&self) -> usize {
         self.entries.len()
     }
 
-    /// Paint one stacked row per palette entry into the GPU scene.
+    /// Paint the palette into the GPU scene.
     ///
-    /// Each row is 24 px tall with a `tokens::BG` fill and a 1px
-    /// `tokens::EDGE_LOW` border on the bottom edge.
+    /// Layout (top → bottom):
+    ///   1. Search box: 32px high, `tokens::BG2` background,
+    ///      1px `tokens::BORDER` border.
+    ///   2. For each category group: a 24px-high category header row
+    ///      (`tokens::BG2` background), then one 24px row per
+    ///      entry (`tokens::BG` background + 1px `tokens::EDGE_LOW` bottom
+    ///      border strip).
     pub fn paint_scene(&self, width: f32, scene: &mut Scene) {
-        for (i, _entry) in self.entries.iter().enumerate() {
-            let y = i as f32 * 24.0;
-            // Row background.
-            scene.push_quad(fill_quad(0.0, y, width, 24.0, tokens::BG));
-            // Bottom border using EDGE_LOW.
-            // Render as a 1px-tall filled strip at the bottom of the row.
-            scene.push_quad(fill_quad(0.0, y + 23.0, width, 1.0, tokens::EDGE_LOW));
+        let mut y = 0.0_f32;
+
+        // ── Search box ──────────────────────────────────────────────────────
+        // Background
+        scene.push_quad(fill_quad(0.0, y, width, SEARCH_BOX_HEIGHT, tokens::BG2));
+        // 1px bottom border
+        scene.push_quad(fill_quad(0.0, y + SEARCH_BOX_HEIGHT - 1.0, width, 1.0, tokens::BORDER));
+        y += SEARCH_BOX_HEIGHT;
+
+        // ── Category groups + entry rows ────────────────────────────────────
+        let groups = self.grouped_items();
+        for group in &groups {
+            // Category header row
+            scene.push_quad(fill_quad(0.0, y, width, CATEGORY_HEADER_HEIGHT, tokens::BG2));
+            y += CATEGORY_HEADER_HEIGHT;
+
+            // Entry rows
+            for _entry in &group.entries {
+                scene.push_quad(fill_quad(0.0, y, width, 24.0, tokens::BG));
+                scene.push_quad(fill_quad(0.0, y + 23.0, width, 1.0, tokens::EDGE_LOW));
+                y += 24.0;
+            }
         }
     }
 }
@@ -159,19 +245,18 @@ mod tests {
         let mut scene = Scene::new();
         palette.paint_scene(248.0, &mut scene);
 
-        // 2 quads per entry (bg + bottom border strip).
-        assert_eq!(scene.quads.len(), SAMPLE_KINDS.len() * 2);
+        // Layout: 2 (search box) + 1 (category header for "General") + 2 * 3 (entries) = 9
+        let groups = palette.grouped_items();
+        let n_headers = groups.len();
+        let expected_quads = 2 + n_headers + SAMPLE_KINDS.len() * 2;
+        assert_eq!(scene.quads.len(), expected_quads);
 
-        // First row background starts at y=0.
-        let first_bg = &scene.quads[0];
-        assert_eq!(first_bg.bounds.origin.y, Pixels(0.0));
-        assert_eq!(first_bg.bounds.size.width, Pixels(248.0));
-        assert_eq!(first_bg.bounds.size.height, Pixels(24.0));
-        assert!(first_bg.background.is_some());
-
-        // Second row background starts at y=24.
-        let second_bg = &scene.quads[2];
-        assert_eq!(second_bg.bounds.origin.y, Pixels(24.0));
+        // First quad is the search box background at y=0 with height=32.
+        let search_bg = &scene.quads[0];
+        assert_eq!(search_bg.bounds.origin.y, Pixels(0.0));
+        assert_eq!(search_bg.bounds.size.width, Pixels(248.0));
+        assert_eq!(search_bg.bounds.size.height, Pixels(32.0));
+        assert!(search_bg.background.is_some());
     }
 
     #[test]
@@ -331,7 +416,8 @@ mod tests {
         let palette = NodePalette::load_from_kinds(&[]);
         let mut scene = nom_gpui::scene::Scene::new();
         palette.paint_scene(200.0, &mut scene);
-        assert_eq!(scene.quads.len(), 0);
+        // Empty palette: only the search box (2 quads: bg + border), no groups.
+        assert_eq!(scene.quads.len(), 2);
     }
 
     #[test]
@@ -340,8 +426,8 @@ mod tests {
         let palette = NodePalette::load_from_kinds(kinds);
         let mut scene = nom_gpui::scene::Scene::new();
         palette.paint_scene(100.0, &mut scene);
-        // 1 entry → 2 quads (bg + border)
-        assert_eq!(scene.quads.len(), 2);
+        // 1 entry (General category): 2 (search box) + 1 (header) + 2 (entry) = 5
+        assert_eq!(scene.quads.len(), 5);
     }
 
     #[test]
@@ -370,6 +456,42 @@ mod tests {
         assert_ne!(a, b);
     }
 
+    // ── AL-PALETTE-SEARCH-UI additions ────────────────────────────────────────
+
+    #[test]
+    fn test_search_filters_kinds() {
+        let kinds: &[(&str, &str, &str)] = &[
+            ("ux_button", "UX Button", "a button kind"),
+            ("ux_input", "UX Input", "an input kind"),
+            ("media_video", "Video Block", "a video media kind"),
+        ];
+        let mut palette = NodePalette::load_from_kinds(kinds);
+        palette.search_query = "ux".to_string();
+        let results = palette.filtered_entries();
+        assert_eq!(results.len(), 2, "search 'ux' must match only ux_ kinds");
+        assert!(results.iter().all(|e| e.kind_name.to_lowercase().contains("ux")));
+    }
+
+    #[test]
+    fn test_category_groups() {
+        let kinds: &[(&str, &str, &str)] = &[
+            ("ux_button", "UX Button", "a button"),
+            ("ux_input", "UX Input", "an input"),
+            ("media_video", "Video Block", "a video block"),
+        ];
+        let palette = NodePalette::load_from_kinds(kinds);
+        let groups = palette.grouped_items();
+        assert_eq!(groups.len(), 2, "must produce exactly 2 category groups");
+        let cats: Vec<&str> = groups.iter().map(|g| g.category.as_str()).collect();
+        assert!(cats.contains(&"UX"), "must have UX group");
+        assert!(cats.contains(&"Media"), "must have Media group");
+    }
+
+    #[test]
+    fn test_search_box_height_is_32px() {
+        assert_eq!(SEARCH_BOX_HEIGHT, 32.0);
+    }
+
     // ── 50-entry paint scene ──────────────────────────────────────────────────
 
     fn make_50_kinds() -> Vec<(String, String, String)> {
@@ -389,8 +511,9 @@ mod tests {
         assert_eq!(palette.entry_count(), 50);
         let mut scene = nom_gpui::scene::Scene::new();
         palette.paint_scene(248.0, &mut scene);
-        // 2 quads per entry (bg + border)
-        assert_eq!(scene.quads.len(), 100);
+        // All "KindN" entries land in "General" category:
+        // 2 (search box) + 1 (General header) + 50 * 2 (entry rows) = 103
+        assert_eq!(scene.quads.len(), 103);
     }
 
     #[test]
@@ -403,14 +526,17 @@ mod tests {
         let palette = NodePalette::load_from_kinds(&kinds);
         let mut scene = nom_gpui::scene::Scene::new();
         palette.paint_scene(300.0, &mut scene);
-        // Row bg quads are at even indices (0, 2, 4, ...)
-        // Row i bg quad origin y = i * 24.0
-        let bg_quads: Vec<_> = scene.quads.iter().step_by(2).collect();
-        assert_eq!(bg_quads.len(), 50);
-        for (i, q) in bg_quads.iter().enumerate() {
+        // Layout: [0]=search_bg, [1]=search_border, [2]=General_header,
+        //         [3]=entry0_bg, [4]=entry0_border, [5]=entry1_bg, ...
+        // Entry bg quads start at index 3, step 2.
+        let entry_bg_quads: Vec<_> = scene.quads.iter().skip(3).step_by(2).collect();
+        assert_eq!(entry_bg_quads.len(), 50);
+        // Entry rows start at y = SEARCH_BOX_HEIGHT + CATEGORY_HEADER_HEIGHT = 32 + 24 = 56
+        for (i, q) in entry_bg_quads.iter().enumerate() {
+            let expected_y = 32.0 + 24.0 + i as f32 * 24.0;
             assert_eq!(
                 q.bounds.origin.y,
-                Pixels(i as f32 * 24.0),
+                Pixels(expected_y),
                 "row {i} y mismatch"
             );
         }
@@ -427,12 +553,13 @@ mod tests {
         let mut scene = nom_gpui::scene::Scene::new();
         let paint_width = 320.0_f32;
         palette.paint_scene(paint_width, &mut scene);
-        // Every bg quad should match paint_width
-        for (i, q) in scene.quads.iter().step_by(2).enumerate() {
+        // Every quad (search box bg, search border, header, entry bg, entry border)
+        // must span the full paint_width.
+        for (i, q) in scene.quads.iter().enumerate() {
             assert_eq!(
                 q.bounds.size.width,
                 Pixels(paint_width),
-                "width mismatch at entry {i}"
+                "width mismatch at quad {i}"
             );
         }
     }

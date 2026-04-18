@@ -1,9 +1,13 @@
 #![deny(unsafe_code)]
 pub mod backends;
 pub mod cancel;
+pub mod context;
 pub mod credential_store;
 pub mod deep_think;
 pub mod dispatch;
+pub mod flow_graph;
+pub mod glue;
+pub mod hybrid;
 pub mod plan;
 pub mod progress;
 pub mod provider_router;
@@ -43,7 +47,9 @@ pub use backends::{
 };
 pub use credential_store::{Credential, CredentialStore};
 pub use deep_think::{DeepThinkConfig, DeepThinkStep, DeepThinkStream};
-pub use dispatch::{Backend, BackendRegistry, ComposeContext, NoopBackend, UnifiedDispatcher};
+pub use context::{ComposeContext, ComposeResult, ComposeTier};
+pub use dispatch::{Backend, BackendRegistry, NoopBackend, UnifiedDispatcher};
+pub use dispatch::ComposeContext as DispatchComposeContext;
 pub use plan::{CompositionPlan, PlanStep};
 pub use progress::{ComposeEvent, LogProgressSink, ProgressSink};
 pub use provider_router::{FallbackLevel, ProviderRouter, VendorEntry};
@@ -51,6 +57,9 @@ pub use semantic::{SemanticColumn, SemanticDataType, SemanticModel, SemanticRegi
 pub use store::{ArtifactStore, InMemoryStore};
 pub use task_queue::{ComposeTask, TaskQueue, TaskState};
 pub use vendor_trait::{CostEstimate, MediaVendor, StubVendor, VendorCapability};
+pub use flow_graph::{FlowEdge, FlowGraph, FlowNode, FlowNodeKind};
+pub use glue::{AiGlueOrchestrator, GlueBlueprint, ReActLlmFn, StubLlmFn};
+pub use hybrid::HybridResolver;
 
 #[cfg(test)]
 mod integration_tests {

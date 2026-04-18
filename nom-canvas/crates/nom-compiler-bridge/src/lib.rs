@@ -2,6 +2,8 @@
 pub mod adapters;
 pub mod background_tier;
 pub mod benchmarks;
+#[cfg(feature = "compiler")]
+pub mod dictwriter;
 pub mod interactive_tier;
 pub mod shared;
 pub mod sqlite_dict;
@@ -9,6 +11,8 @@ pub mod ui_tier;
 
 pub use adapters::lsp::CompilerLspProvider;
 pub use background_tier::BackgroundTierOps;
+#[cfg(feature = "compiler")]
+pub use dictwriter::DictWriter;
 pub use interactive_tier::InteractiveTierOps;
 pub use shared::{GrammarKind, KindStatus, PipelineOutput, SharedState};
 pub use sqlite_dict::SqliteDictReader;

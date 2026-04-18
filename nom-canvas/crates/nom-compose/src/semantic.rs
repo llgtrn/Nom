@@ -90,6 +90,25 @@ impl SemanticModel {
     }
 }
 
+/// Diff summary comparing two artifact byte payloads.
+#[derive(Debug, PartialEq, Eq)]
+pub struct ArtifactDiff {
+    /// Bytes added (positive = new is larger, negative = new is smaller).
+    pub added_bytes: i64,
+    /// True when the two payloads are byte-identical.
+    pub identical: bool,
+}
+
+/// Compare two artifact byte slices and return a structured diff summary.
+pub fn artifact_diff(a: &[u8], b: &[u8]) -> ArtifactDiff {
+    let identical = a == b;
+    let added_bytes = b.len() as i64 - a.len() as i64;
+    ArtifactDiff {
+        added_bytes,
+        identical,
+    }
+}
+
 /// Registry of semantic models.
 #[derive(Debug, Default)]
 pub struct SemanticRegistry {
@@ -618,94 +637,45 @@ mod tests {
         );
     }
 
-    // ── Wave AK artifact-diff tests ──────────────────────────────────────────
-    //
-    // Minimal inline diff helper: compares two byte slices and returns a
-    // structured diff summary.  No external crate required.
-
-    #[derive(Debug, PartialEq, Eq)]
-    struct ArtifactDiff {
-        /// Bytes added (new is larger by this amount).
-        added_bytes: i64,
-        /// True when the two payloads are byte-identical.
-        identical: bool,
-    }
-
-    fn artifact_diff(a: &[u8], b: &[u8]) -> ArtifactDiff {
-        let identical = a == b;
-        let added_bytes = b.len() as i64 - a.len() as i64;
-        ArtifactDiff {
-            added_bytes,
-            identical,
-        }
-    }
+    // ── AL-TEST-FRAUD: real SQL injection edge-case tests ────────────────────
 
     #[test]
-    fn artifact_diff_identical_payloads_empty_diff() {
-        let payload = b"hello world".to_vec();
-        let diff = artifact_diff(&payload, &payload);
-        assert!(diff.identical, "identical payloads must produce empty diff");
-        assert_eq!(diff.added_bytes, 0);
-    }
-
-    #[test]
-    fn artifact_diff_size_differs_reports_size_diff() {
-        let a = vec![0u8; 100];
-        let b = vec![0u8; 200];
-        let diff = artifact_diff(&a, &b);
+    fn test_safe_identifier_rejects_semicolon() {
         assert!(
-            !diff.identical,
-            "different-size payloads must not be identical"
+            !crate::backends::data_query::is_safe_identifier("foo;DROP TABLE--"),
+            "semicolon in identifier must be rejected"
         );
-        assert_ne!(diff.added_bytes, 0, "size diff must be non-zero");
     }
 
     #[test]
-    fn artifact_diff_larger_new_reports_added_bytes() {
-        let a = vec![0u8; 50];
-        let b = vec![0u8; 80];
-        let diff = artifact_diff(&a, &b);
-        assert_eq!(
-            diff.added_bytes, 30,
-            "added_bytes must be 30 when new is 30 bytes larger"
+    fn test_safe_identifier_rejects_quote() {
+        assert!(
+            !crate::backends::data_query::is_safe_identifier("foo'bar"),
+            "single quote in identifier must be rejected"
         );
-        assert!(!diff.identical);
     }
 
     #[test]
-    fn artifact_diff_smaller_new_reports_negative_added_bytes() {
-        let a = vec![0u8; 80];
-        let b = vec![0u8; 50];
-        let diff = artifact_diff(&a, &b);
-        assert_eq!(
-            diff.added_bytes, -30,
-            "added_bytes must be -30 when new is 30 bytes smaller"
+    fn test_safe_identifier_rejects_dash_dash() {
+        assert!(
+            !crate::backends::data_query::is_safe_identifier("--comment"),
+            "double-dash comment prefix must be rejected"
         );
-        assert!(!diff.identical);
     }
 
     #[test]
-    fn artifact_diff_same_content_hash_null_diff() {
-        // Same content bytes = null diff regardless of how they were produced.
-        let content = b"NOM-ARTIFACT-v1".to_vec();
-        let hash_a = {
-            let mut h: u64 = 14695981039346656037;
-            for &b in &content {
-                h ^= b as u64;
-                h = h.wrapping_mul(1099511628211);
-            }
-            h
-        };
-        let hash_b = {
-            let mut h: u64 = 14695981039346656037;
-            for &b in &content {
-                h ^= b as u64;
-                h = h.wrapping_mul(1099511628211);
-            }
-            h
-        };
-        assert_eq!(hash_a, hash_b, "same content must produce same hash");
-        let diff = artifact_diff(&content, &content);
-        assert!(diff.identical, "same-hash content must yield a null diff");
+    fn test_safe_identifier_allows_snake_case() {
+        assert!(
+            crate::backends::data_query::is_safe_identifier("my_kind_name"),
+            "snake_case identifier must be allowed"
+        );
+    }
+
+    #[test]
+    fn test_safe_identifier_allows_alphanumeric() {
+        assert!(
+            crate::backends::data_query::is_safe_identifier("KindName123"),
+            "alphanumeric identifier must be allowed"
+        );
     }
 }
