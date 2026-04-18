@@ -1,0 +1,7 @@
+define graph_connect that
+  define source_hash that "a1b2c3"
+  define target_hash that "d4e5f6"
+  define edge_kind that "renders_on"
+  define weight that 1
+  source_hash + " --[" + edge_kind + " w=" + weight + "]--> " + target_hash
+graph_connect

@@ -1,0 +1,7 @@
+define export_pdf that
+  define composition_name that "annual_report_layout"
+  define page_count that 24
+  define dpi that 300
+  define output_path that "dist/annual_report.pdf"
+  "exported " + composition_name + " pages=" + page_count + " dpi=" + dpi + " to " + output_path
+export_pdf

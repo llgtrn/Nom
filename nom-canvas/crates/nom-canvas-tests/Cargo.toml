@@ -11,6 +11,12 @@ path = "tests/golden_paths.rs"
 nom-compiler-bridge = { path = "../nom-compiler-bridge", default-features = false }
 nom-compose = { path = "../nom-compose" }
 nom-intent = { path = "../nom-intent" }
+nom-editor = { path = "../nom-editor" }
+nom-blocks = { path = "../nom-blocks" }
+nom-graph = { path = "../nom-graph" }
+nom-panels = { path = "../nom-panels" }
+nom-theme = { path = "../nom-theme" }
+nom-cli = { path = "../nom-cli" }
 
 [lints]
 workspace = true

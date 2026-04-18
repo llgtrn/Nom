@@ -45,7 +45,11 @@ impl HybridResolver {
         // Tier 3: AiGlueOrchestrator
         let blueprint = self.glue_orchestrator.generate_blueprint(ctx)?;
         let artifact = self.glue_orchestrator.execute_blueprint(&blueprint)?;
-        Ok(ComposeResult::new(artifact, ComposeTier::AiLeading, blueprint.confidence))
+        Ok(ComposeResult::new(
+            artifact,
+            ComposeTier::AiLeading,
+            blueprint.confidence,
+        ))
     }
 }
 
@@ -58,7 +62,9 @@ mod tests {
 
     fn make_resolver_empty() -> HybridResolver {
         let dispatcher = Arc::new(UnifiedDispatcher::new());
-        let llm = StubLlmFn { response: "ai-glue-code".to_string() };
+        let llm = StubLlmFn {
+            response: "ai-glue-code".to_string(),
+        };
         let glue = AiGlueOrchestrator::new(Box::new(llm));
         HybridResolver::new(dispatcher, glue)
     }
@@ -83,7 +89,9 @@ mod tests {
             Ok(format!("video-dispatch:{}", ctx.entity_id))
         });
         let dispatcher = Arc::new(dispatcher);
-        let llm = StubLlmFn { response: "fallback".to_string() };
+        let llm = StubLlmFn {
+            response: "fallback".to_string(),
+        };
         let glue = AiGlueOrchestrator::new(Box::new(llm));
         let resolver = HybridResolver::new(dispatcher, glue);
 
@@ -101,9 +109,14 @@ mod tests {
     #[test]
     fn test_hybrid_resolver_provider_tier() {
         let mut dispatcher = UnifiedDispatcher::new();
-        dispatcher.register("provider_audio", |_| Ok("provider-audio-result".to_string()));
+        dispatcher.register(
+            "provider_audio",
+            |_| Ok("provider-audio-result".to_string()),
+        );
         let dispatcher = Arc::new(dispatcher);
-        let llm = StubLlmFn { response: "fallback".to_string() };
+        let llm = StubLlmFn {
+            response: "fallback".to_string(),
+        };
         let glue = AiGlueOrchestrator::new(Box::new(llm));
         let resolver = HybridResolver::new(dispatcher, glue);
 

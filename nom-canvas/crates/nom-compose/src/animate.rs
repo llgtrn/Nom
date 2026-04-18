@@ -74,8 +74,7 @@ pub fn spring(frame: u32, fps: u32, config: SpringConfig, from: f32, to: f32) ->
         // Underdamped
         let omega_d = omega * (1.0 - zeta * zeta).sqrt();
         let envelope = (-zeta * omega * t).exp();
-        let oscillation =
-            (omega_d * t).cos() + (zeta * omega / omega_d) * (omega_d * t).sin();
+        let oscillation = (omega_d * t).cos() + (zeta * omega / omega_d) * (omega_d * t).sin();
         to - (to - from) * envelope * oscillation
     } else {
         // Critically or overdamped
@@ -105,7 +104,10 @@ mod tests {
             ExtrapolateMode::Clamp,
             ExtrapolateMode::Clamp,
         );
-        assert!((result - 50.0).abs() < 1e-4, "midpoint must be 50, got {result}");
+        assert!(
+            (result - 50.0).abs() < 1e-4,
+            "midpoint must be 50, got {result}"
+        );
     }
 
     #[test]
@@ -119,7 +121,10 @@ mod tests {
             ExtrapolateMode::Clamp,
             ExtrapolateMode::Clamp,
         );
-        assert!((result - 0.0).abs() < 1e-4, "clamped below must give out_lo=0, got {result}");
+        assert!(
+            (result - 0.0).abs() < 1e-4,
+            "clamped below must give out_lo=0, got {result}"
+        );
     }
 
     #[test]

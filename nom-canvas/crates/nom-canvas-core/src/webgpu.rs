@@ -126,8 +126,8 @@ mod tests {
 
     #[test]
     fn with_power_overrides_preference() {
-        let cfg = WebGpuConfig::new("c", 100, 100)
-            .with_power(WebGpuPowerPreference::HighPerformance);
+        let cfg =
+            WebGpuConfig::new("c", 100, 100).with_power(WebGpuPowerPreference::HighPerformance);
         assert_eq!(cfg.power_preference, WebGpuPowerPreference::HighPerformance);
     }
 
@@ -175,17 +175,26 @@ mod tests {
     fn renderer_frosted_pass_disabled_by_default() {
         let cfg = WebGpuConfig::new("canvas", 800, 600);
         let r = WebGpuRenderer::new(cfg);
-        assert!(r.frosted_pass.is_none(), "frosted_pass must be None by default");
+        assert!(
+            r.frosted_pass.is_none(),
+            "frosted_pass must be None by default"
+        );
     }
 
     #[test]
     fn renderer_enable_frosted_pass() {
         let cfg = WebGpuConfig::new("canvas", 800, 600);
-        let r = WebGpuRenderer::new(cfg)
-            .enable_frosted_pass(FrostedPassConfig::new(8.0, 0.75));
-        assert!(r.frosted_pass.is_some(), "frosted_pass must be Some after enable_frosted_pass");
+        let r = WebGpuRenderer::new(cfg).enable_frosted_pass(FrostedPassConfig::new(8.0, 0.75));
+        assert!(
+            r.frosted_pass.is_some(),
+            "frosted_pass must be Some after enable_frosted_pass"
+        );
         let pass = r.frosted_pass.as_ref().unwrap();
-        assert_eq!(pass.state, FrostedPassState::Disabled, "pass starts Disabled until activated");
+        assert_eq!(
+            pass.state,
+            FrostedPassState::Disabled,
+            "pass starts Disabled until activated"
+        );
         assert_eq!(pass.frame_count, 0);
     }
 
@@ -204,22 +213,30 @@ mod tests {
         r.begin_frame();
 
         let pass = r.frosted_pass.as_ref().unwrap();
-        assert_eq!(pass.frame_count, 3, "frosted pass must tick once per begin_frame while Active");
+        assert_eq!(
+            pass.frame_count, 3,
+            "frosted pass must tick once per begin_frame while Active"
+        );
         assert_eq!(r.frame_count, 3, "renderer frame_count must also be 3");
     }
 
     #[test]
     fn renderer_frosted_pass_inactive_no_tick() {
         let cfg = WebGpuConfig::new("canvas", 800, 600);
-        let r = WebGpuRenderer::new(cfg)
-            .enable_frosted_pass(FrostedPassConfig::new(8.0, 0.75));
+        let r = WebGpuRenderer::new(cfg).enable_frosted_pass(FrostedPassConfig::new(8.0, 0.75));
         // Pass is Disabled (not yet activated); ticking the renderer must not increment pass frame_count.
         let mut r = r;
         r.begin_frame();
         r.begin_frame();
 
         let pass = r.frosted_pass.as_ref().unwrap();
-        assert_eq!(pass.frame_count, 0, "Disabled pass must not accumulate frame_count");
-        assert_eq!(r.frame_count, 2, "renderer frame_count must advance regardless");
+        assert_eq!(
+            pass.frame_count, 0,
+            "Disabled pass must not accumulate frame_count"
+        );
+        assert_eq!(
+            r.frame_count, 2,
+            "renderer frame_count must advance regardless"
+        );
     }
 }

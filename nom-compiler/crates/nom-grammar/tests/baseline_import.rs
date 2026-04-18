@@ -25,7 +25,10 @@ fn baseline_sql_imports_into_fresh_db() {
 
     // Concrete canonical numbers — drift catches regressions.
     // 9 original + 28 B4 extended (screen already existed) + 9 B7 skills + 14 AH-DB-KINDS = 60.
-    assert_eq!(counts.kinds, 60, "60 kinds after B4 extended + B7 skill entries + AH-DB-KINDS");
+    assert_eq!(
+        counts.kinds, 60,
+        "60 kinds after B4 extended + B7 skill entries + AH-DB-KINDS"
+    );
     assert_eq!(
         counts.quality_names, 20,
         "10 founding + 10 corpus-driven qualities"

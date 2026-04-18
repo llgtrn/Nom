@@ -138,10 +138,8 @@ mod tests {
 
     #[test]
     fn config_batch_size_minimum_one() {
-        let cfg = DataLoaderConfig::new(DataSourceKind::InMemory {
-            name: "t".into(),
-        })
-        .with_batch_size(0);
+        let cfg =
+            DataLoaderConfig::new(DataSourceKind::InMemory { name: "t".into() }).with_batch_size(0);
 
         assert_eq!(cfg.batch_size, 1, "batch_size must be at least 1");
     }

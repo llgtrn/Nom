@@ -1,0 +1,11 @@
+define pixel_value that
+  define underlying that "u8"
+  "alias pixel_value = " + underlying
+
+define color_channel that
+  define alias_of that pixel_value
+  "color_channel wraps " + alias_of
+
+define type_alias that
+  color_channel
+type_alias

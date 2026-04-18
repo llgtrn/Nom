@@ -19,31 +19,50 @@ pub struct LspResponse {
 
 impl LspResponse {
     pub fn ok(id: Option<i64>, result: serde_json::Value) -> Self {
-        Self { jsonrpc: "2.0".into(), id, result: Some(result), error: None }
+        Self {
+            jsonrpc: "2.0".into(),
+            id,
+            result: Some(result),
+            error: None,
+        }
     }
     pub fn error(id: Option<i64>, msg: impl Into<String>) -> Self {
-        Self { jsonrpc: "2.0".into(), id, result: None, error: Some(msg.into()) }
+        Self {
+            jsonrpc: "2.0".into(),
+            id,
+            result: None,
+            error: Some(msg.into()),
+        }
     }
 }
 
 /// Dispatch an LSP request to the appropriate handler
 pub fn dispatch_lsp_request(req: &LspRequest) -> LspResponse {
     match req.method.as_str() {
-        "initialize" => LspResponse::ok(req.id, serde_json::json!({
-            "capabilities": {
-                "hoverProvider": true,
-                "completionProvider": { "triggerCharacters": ["."] },
-                "definitionProvider": true,
-                "referencesProvider": true,
-                "renameProvider": true
-            }
-        })),
-        "textDocument/hover" => LspResponse::ok(req.id, serde_json::json!({
-            "contents": { "kind": "markdown", "value": "**Nom kind**" }
-        })),
-        "textDocument/completion" => LspResponse::ok(req.id, serde_json::json!({
-            "items": []
-        })),
+        "initialize" => LspResponse::ok(
+            req.id,
+            serde_json::json!({
+                "capabilities": {
+                    "hoverProvider": true,
+                    "completionProvider": { "triggerCharacters": ["."] },
+                    "definitionProvider": true,
+                    "referencesProvider": true,
+                    "renameProvider": true
+                }
+            }),
+        ),
+        "textDocument/hover" => LspResponse::ok(
+            req.id,
+            serde_json::json!({
+                "contents": { "kind": "markdown", "value": "**Nom kind**" }
+            }),
+        ),
+        "textDocument/completion" => LspResponse::ok(
+            req.id,
+            serde_json::json!({
+                "items": []
+            }),
+        ),
         "textDocument/definition" => LspResponse::ok(req.id, serde_json::json!(null)),
         "textDocument/references" => LspResponse::ok(req.id, serde_json::json!([])),
         "workspace/symbol" => LspResponse::ok(req.id, serde_json::json!([])),
@@ -73,7 +92,9 @@ mod tests {
         assert!(resp.error.is_none());
         let result = resp.result.unwrap();
         assert!(result["capabilities"]["hoverProvider"].as_bool().unwrap());
-        assert!(result["capabilities"]["definitionProvider"].as_bool().unwrap());
+        assert!(result["capabilities"]["definitionProvider"]
+            .as_bool()
+            .unwrap());
     }
 
     #[test]
@@ -183,9 +204,7 @@ mod tests {
 
     #[test]
     fn lsp_loop_reset_clears_state() {
-        let lp = LspServerLoop::new()
-            .start()
-            .record_error("oops");
+        let lp = LspServerLoop::new().start().record_error("oops");
         // before reset: Error state, 1 error
         assert_eq!(lp.state, LspLoopState::Error);
         let lp = lp.reset();
@@ -207,8 +226,12 @@ mod tests {
     #[test]
     fn authoring_emit_and_event_count() {
         let proto = AuthoringProtocol::new()
-            .emit(AuthoringEvent::FileChanged { path: "main.nom".into() })
-            .emit(AuthoringEvent::ParseStarted { path: "main.nom".into() });
+            .emit(AuthoringEvent::FileChanged {
+                path: "main.nom".into(),
+            })
+            .emit(AuthoringEvent::ParseStarted {
+                path: "main.nom".into(),
+            });
         assert_eq!(proto.event_count(), 2);
     }
 
@@ -234,8 +257,14 @@ mod tests {
     #[test]
     fn authoring_has_errors() {
         let proto = AuthoringProtocol::new()
-            .emit(AuthoringEvent::ParseCompleted { path: "x.nom".into(), error_count: 2 })
-            .emit(AuthoringEvent::ParseCompleted { path: "y.nom".into(), error_count: 0 });
+            .emit(AuthoringEvent::ParseCompleted {
+                path: "x.nom".into(),
+                error_count: 2,
+            })
+            .emit(AuthoringEvent::ParseCompleted {
+                path: "y.nom".into(),
+                error_count: 0,
+            });
         assert!(proto.has_errors("x.nom"));
         assert!(!proto.has_errors("y.nom"));
     }
@@ -295,7 +324,9 @@ impl LspTransport {
         if self.buffer.len() < total {
             return None;
         }
-        let message = std::str::from_utf8(&self.buffer[header_end..total]).ok()?.to_string();
+        let message = std::str::from_utf8(&self.buffer[header_end..total])
+            .ok()?
+            .to_string();
         self.buffer.drain(..total);
         Some(message)
     }
@@ -312,12 +343,27 @@ impl Default for LspTransport {
 /// Events emitted during the edit-compile cycle.
 #[derive(Debug, Clone, PartialEq)]
 pub enum AuthoringEvent {
-    FileChanged { path: String },
-    ParseStarted { path: String },
-    ParseCompleted { path: String, error_count: u32 },
-    TypeCheckStarted { path: String },
-    TypeCheckCompleted { path: String, error_count: u32 },
-    DiagnosticsReady { path: String, diagnostics: Vec<String> },
+    FileChanged {
+        path: String,
+    },
+    ParseStarted {
+        path: String,
+    },
+    ParseCompleted {
+        path: String,
+        error_count: u32,
+    },
+    TypeCheckStarted {
+        path: String,
+    },
+    TypeCheckCompleted {
+        path: String,
+        error_count: u32,
+    },
+    DiagnosticsReady {
+        path: String,
+        diagnostics: Vec<String>,
+    },
 }
 
 /// Accumulates authoring events for a single edit-compile cycle.
@@ -329,7 +375,10 @@ pub struct AuthoringProtocol {
 
 impl AuthoringProtocol {
     pub fn new() -> Self {
-        Self { events: Vec::new(), current_file: None }
+        Self {
+            events: Vec::new(),
+            current_file: None,
+        }
     }
 
     /// Append an event and return `self` for builder-style chaining.
@@ -356,10 +405,14 @@ impl AuthoringProtocol {
     /// has `error_count > 0`.
     pub fn has_errors(&self, path: &str) -> bool {
         self.events.iter().any(|e| match e {
-            AuthoringEvent::ParseCompleted { path: p, error_count }
-            | AuthoringEvent::TypeCheckCompleted { path: p, error_count } => {
-                p == path && *error_count > 0
+            AuthoringEvent::ParseCompleted {
+                path: p,
+                error_count,
             }
+            | AuthoringEvent::TypeCheckCompleted {
+                path: p,
+                error_count,
+            } => p == path && *error_count > 0,
             _ => false,
         })
     }

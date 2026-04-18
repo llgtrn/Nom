@@ -1,0 +1,8 @@
+define render_frame that
+  define pipeline that "scene_pipeline_v2"
+  define frame_index that 240
+  define width that 3840
+  define height that 2160
+  define output_hash that "f0a192"
+  "rendered frame " + frame_index + " via " + pipeline + " " + width + "x" + height + " hash=" + output_hash
+render_frame

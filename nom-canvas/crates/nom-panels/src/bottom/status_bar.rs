@@ -18,7 +18,10 @@ pub struct StatusItem {
 
 impl StatusItem {
     pub fn new(label: impl Into<String>, kind: StatusKind) -> Self {
-        Self { label: label.into(), kind }
+        Self {
+            label: label.into(),
+            kind,
+        }
     }
 }
 

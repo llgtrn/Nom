@@ -155,10 +155,16 @@ mod tests {
         assert_eq!(cfg.tint_g, 60);
         assert_eq!(cfg.tint_b, 90);
         assert_eq!(cfg.tint_a, 200);
-        assert!(cfg.is_transparent(), "background_opacity 0.0 must be transparent");
+        assert!(
+            cfg.is_transparent(),
+            "background_opacity 0.0 must be transparent"
+        );
 
         let opaque = FrostedPassConfig::new(8.0, 0.5);
-        assert!(!opaque.is_transparent(), "background_opacity 0.5 must not be transparent");
+        assert!(
+            !opaque.is_transparent(),
+            "background_opacity 0.5 must not be transparent"
+        );
     }
 
     #[test]
@@ -198,13 +204,19 @@ mod tests {
         let cfg = FrostedPassConfig::new(12.0, 0.85);
         let pass = FrostedRenderPass::new(cfg).enable().activate();
         let pass = pass.tick().tick().tick();
-        assert_eq!(pass.frame_count, 3, "three ticks while Active must yield frame_count = 3");
+        assert_eq!(
+            pass.frame_count, 3,
+            "three ticks while Active must yield frame_count = 3"
+        );
 
         // Ticking while not Active must not increment.
         let cfg2 = FrostedPassConfig::new(12.0, 0.85);
         let pending = FrostedRenderPass::new(cfg2).enable();
         let pending = pending.tick();
-        assert_eq!(pending.frame_count, 0, "tick while Pending must not increment frame_count");
+        assert_eq!(
+            pending.frame_count, 0,
+            "tick while Pending must not increment frame_count"
+        );
     }
 
     #[test]

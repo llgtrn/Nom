@@ -1,0 +1,10 @@
+define double_value that
+  define item that 5
+  item * 2
+
+define map_list that
+  define items that "1 2 3 4 5"
+  define transform that "double_value"
+  define result that "mapped " + items + " via " + transform
+  result
+map_list

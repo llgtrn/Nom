@@ -36,9 +36,9 @@ impl CodeExecBackend {
         sink.emit(ComposeEvent::Progress {
             percent: 0.5,
             stage: "executing".into(),
-                rendered_frames: None,
-                encoded_frames: None,
-                elapsed_ms: None,
+            rendered_frames: None,
+            encoded_frames: None,
+            elapsed_ms: None,
         });
         let artifact_hash = store.write(stdout.as_bytes());
         let byte_size = store.byte_size(&artifact_hash).unwrap_or(0);

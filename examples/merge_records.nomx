@@ -1,0 +1,13 @@
+define record_alpha that
+  define color that "cyan"
+  define weight that 1
+  "alpha color=" + color + " weight=" + weight
+
+define record_beta that
+  define size that 64
+  define format that "vector_path"
+  "beta size=" + size + " format=" + format
+
+define merge_records that
+  record_alpha + " merged_with " + record_beta
+merge_records

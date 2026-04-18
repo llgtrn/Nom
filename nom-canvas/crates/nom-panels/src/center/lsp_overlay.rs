@@ -270,12 +270,15 @@ mod tests {
     // 1. diagnostic_new + is_error
     #[test]
     fn test_diagnostic_new_is_error() {
-        let d = DiagnosticSquiggle::new(1, 0, 1, 5, "undefined variable", DiagnosticSeverity::Error);
+        let d =
+            DiagnosticSquiggle::new(1, 0, 1, 5, "undefined variable", DiagnosticSeverity::Error);
         assert_eq!(d.start_line, 1);
         assert_eq!(d.end_col, 5);
         assert_eq!(d.message, "undefined variable");
         assert!(d.is_error());
-        assert!(!DiagnosticSquiggle::new(0, 0, 0, 1, "warn", DiagnosticSeverity::Warning).is_error());
+        assert!(
+            !DiagnosticSquiggle::new(0, 0, 0, 1, "warn", DiagnosticSeverity::Warning).is_error()
+        );
     }
 
     // 2. diagnostic_spans_multiple_lines
@@ -295,7 +298,10 @@ mod tests {
         assert_eq!(t.anchor_col, 4);
         assert_eq!(t.max_width, 400);
         assert!(!t.visible);
-        assert_eq!(t.content_lines(), vec!["line one", "line two", "line three"]);
+        assert_eq!(
+            t.content_lines(),
+            vec!["line one", "line two", "line three"]
+        );
     }
 
     // 4. hover_show_hide
@@ -380,9 +386,30 @@ mod tests {
     #[test]
     fn test_lsp_overlay_push_diagnostic_error_count() {
         let overlay = LspOverlay::new()
-            .push_diagnostic(DiagnosticSquiggle::new(0, 0, 0, 1, "e1", DiagnosticSeverity::Error))
-            .push_diagnostic(DiagnosticSquiggle::new(1, 0, 1, 1, "w1", DiagnosticSeverity::Warning))
-            .push_diagnostic(DiagnosticSquiggle::new(2, 0, 2, 1, "e2", DiagnosticSeverity::Error));
+            .push_diagnostic(DiagnosticSquiggle::new(
+                0,
+                0,
+                0,
+                1,
+                "e1",
+                DiagnosticSeverity::Error,
+            ))
+            .push_diagnostic(DiagnosticSquiggle::new(
+                1,
+                0,
+                1,
+                1,
+                "w1",
+                DiagnosticSeverity::Warning,
+            ))
+            .push_diagnostic(DiagnosticSquiggle::new(
+                2,
+                0,
+                2,
+                1,
+                "e2",
+                DiagnosticSeverity::Error,
+            ));
         assert_eq!(overlay.error_count(), 2);
         assert_eq!(overlay.warning_count(), 1);
         assert_eq!(overlay.diagnostics.len(), 3);

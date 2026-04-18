@@ -40,7 +40,10 @@ mod tests {
     fn test_cancel_signal_after_cancel() {
         let (signal, cancel) = make_cancel_signal();
         cancel();
-        assert!(signal.is_cancelled(), "signal must be cancelled after cancel()");
+        assert!(
+            signal.is_cancelled(),
+            "signal must be cancelled after cancel()"
+        );
     }
 
     #[test]

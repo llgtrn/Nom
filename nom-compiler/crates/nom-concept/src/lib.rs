@@ -33,13 +33,16 @@ pub use strict::{
 pub mod stages;
 pub use lex::{Spanned, Tok};
 pub use stages::{
-    ConceptNode, DefineThatExpr, NomxFormat, StageFailure, StageId, TokenStream,
-    define_that_to_concept_node, detect_format, migrate_typed_to_natural, parse_concept_source,
-    parse_define_that, stage1_tokenize,
+    BlockExpr, ConceptNode, DefineThatExpr, FullParser, NomxFormat, StageFailure, StageId,
+    TokenStream, define_that_to_concept_node, detect_format, migrate_typed_to_natural,
+    parse_concept_source, parse_define_that, stage1_tokenize,
 };
 
 pub mod ir;
 pub use ir::{IrFunction, IrInstr, IrModule, IrType, IrValue};
+
+pub mod codegen;
+pub use codegen::{AstToIr, IrPrinter, NomAst, NomDef};
 
 pub mod flow_edge;
 pub use flow_edge::{
@@ -50,9 +53,7 @@ pub mod exhaustiveness;
 pub use exhaustiveness::{ExhaustivenessWarning, check_exhaustiveness};
 
 pub mod dream;
-pub use dream::{
-    DreamScore, MeceCategory, MeceValidator, MeceViolation, ViolationKind,
-};
+pub use dream::{DreamScore, MeceCategory, MeceValidator, MeceViolation, ViolationKind};
 
 pub mod bootstrap;
 pub use bootstrap::{BootstrapProof, BootstrapStage, StageBuild};

@@ -2156,10 +2156,7 @@ mod compiler_feature_tests {
         }]);
         let tier = UiTier::new(state);
         let score = tier.score_atom("action", "verb");
-        assert!(
-            score.is_finite(),
-            "score must be finite, got {score}"
-        );
+        assert!(score.is_finite(), "score must be finite, got {score}");
         assert!(
             (0.0..=1.0).contains(&score),
             "score must be in [0.0, 1.0], got {score}"

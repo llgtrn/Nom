@@ -1,0 +1,7 @@
+define embed_query that
+  define query that "fast audio encoding on mobile"
+  define embedding_dim that 768
+  define model_tag that "embedding_model_v2"
+  define first_dims that "0.12 -0.44 0.87 ..."
+  "embedded " + query + " dims=" + embedding_dim + " via " + model_tag + " vec=[" + first_dims + "]"
+embed_query

@@ -3,6 +3,9 @@
 pub mod skill_router;
 pub use skill_router::{SkillDefinition, SkillRouter};
 
+pub mod retrievers;
+pub use retrievers::{BM25Document, BM25Retriever, CosineSimilarityRetriever, VectorDocument};
+
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
@@ -364,10 +367,7 @@ impl IntentResolver {
     /// purpose clause is absent.
     pub fn validate_and_resolve(&self, input: &str) -> Result<(String, String), String> {
         let purpose = extract_purpose_clause(input)?;
-        let kind = self
-            .resolve(input)
-            .best_kind
-            .unwrap_or_default();
+        let kind = self.resolve(input).best_kind.unwrap_or_default();
         Ok((kind, purpose))
     }
 }
@@ -5382,8 +5382,8 @@ mod tests {
     #[test]
     fn test_validate_and_resolve_returns_kind_and_purpose() {
         let resolver = IntentResolver::new(vec!["screen".to_string(), "query".to_string()]);
-        let result = resolver
-            .validate_and_resolve("build a screen intended to display the dashboard");
+        let result =
+            resolver.validate_and_resolve("build a screen intended to display the dashboard");
         assert!(result.is_ok());
         let (kind, purpose) = result.unwrap();
         assert_eq!(kind, "screen");

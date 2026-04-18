@@ -43,8 +43,7 @@ impl SkillRouter {
         self.skills
             .iter()
             .filter(|s| {
-                s.name.to_lowercase().contains(&q)
-                    || s.description.to_lowercase().contains(&q)
+                s.name.to_lowercase().contains(&q) || s.description.to_lowercase().contains(&q)
             })
             .collect()
     }
@@ -83,8 +82,16 @@ mod tests {
     #[test]
     fn skill_router_register_and_find_by_id() {
         let mut router = SkillRouter::new();
-        router.register(make_skill("compose.text", "Compose Text", "generates prose"));
-        router.register(make_skill("analyze.code", "Analyze Code", "inspects source"));
+        router.register(make_skill(
+            "compose.text",
+            "Compose Text",
+            "generates prose",
+        ));
+        router.register(make_skill(
+            "analyze.code",
+            "Analyze Code",
+            "inspects source",
+        ));
 
         let found = router.find_by_id("compose.text");
         assert!(found.is_some());
@@ -97,7 +104,11 @@ mod tests {
     #[test]
     fn skill_router_find_by_query_matches_name_and_description() {
         let mut router = SkillRouter::new();
-        router.register(make_skill("s1", "Build Graph", "constructs a dependency graph"));
+        router.register(make_skill(
+            "s1",
+            "Build Graph",
+            "constructs a dependency graph",
+        ));
         router.register(make_skill("s2", "Render Canvas", "draws nodes onto canvas"));
         router.register(make_skill("s3", "Export Image", "saves canvas as an image"));
 

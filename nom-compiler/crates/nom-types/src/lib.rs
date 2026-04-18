@@ -888,7 +888,10 @@ impl EdgeType {
     /// Returns `true` for structural edges — those that define containment
     /// or specialization hierarchy in the multi-graph.
     pub const fn is_structural(&self) -> bool {
-        matches!(self, Self::Specializes | Self::ContainedIn | Self::Implements | Self::Frame)
+        matches!(
+            self,
+            Self::Specializes | Self::ContainedIn | Self::Implements | Self::Frame
+        )
     }
 }
 

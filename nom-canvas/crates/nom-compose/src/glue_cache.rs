@@ -63,8 +63,7 @@ impl GlueCache {
         let mut guard = self.entries.lock().unwrap();
         if let Some(entry) = guard.get_mut(hash) {
             entry.use_count += 1;
-            if entry.use_count >= self.promotion_threshold
-                && entry.status == GlueStatus::Transient
+            if entry.use_count >= self.promotion_threshold && entry.status == GlueStatus::Transient
             {
                 entry.status = GlueStatus::Partial;
             }
@@ -86,7 +85,11 @@ impl GlueCache {
 
     /// Return the current status for the given hash, or None.
     pub fn status(&self, hash: &str) -> Option<GlueStatus> {
-        self.entries.lock().unwrap().get(hash).map(|e| e.status.clone())
+        self.entries
+            .lock()
+            .unwrap()
+            .get(hash)
+            .map(|e| e.status.clone())
     }
 
     /// Return all entries with Partial status (ready for DB promotion).
@@ -108,7 +111,11 @@ mod tests {
     #[test]
     fn test_glue_cache_insert_and_get() {
         let cache = GlueCache::new(3);
-        cache.insert("hash_a".to_string(), "video_compose".to_string(), "source_a".to_string());
+        cache.insert(
+            "hash_a".to_string(),
+            "video_compose".to_string(),
+            "source_a".to_string(),
+        );
 
         let entry = cache.get("hash_a").expect("entry must exist after insert");
         assert_eq!(entry.hash, "hash_a");
@@ -117,13 +124,20 @@ mod tests {
         assert_eq!(entry.status, GlueStatus::Transient);
         assert_eq!(entry.use_count, 0);
 
-        assert!(cache.get("missing").is_none(), "unknown hash must return None");
+        assert!(
+            cache.get("missing").is_none(),
+            "unknown hash must return None"
+        );
     }
 
     #[test]
     fn test_glue_cache_transient_to_partial_on_threshold() {
         let cache = GlueCache::new(3);
-        cache.insert("hash_b".to_string(), "audio_compose".to_string(), "src_b".to_string());
+        cache.insert(
+            "hash_b".to_string(),
+            "audio_compose".to_string(),
+            "src_b".to_string(),
+        );
 
         // Two uses — still Transient
         cache.record_use("hash_b");
@@ -154,7 +168,11 @@ mod tests {
     #[test]
     fn test_glue_cache_promote_to_complete() {
         let cache = GlueCache::new(2);
-        cache.insert("hash_c".to_string(), "picture_compose".to_string(), "src_c".to_string());
+        cache.insert(
+            "hash_c".to_string(),
+            "picture_compose".to_string(),
+            "src_c".to_string(),
+        );
 
         cache.record_use("hash_c");
         cache.record_use("hash_c");
@@ -171,9 +189,21 @@ mod tests {
     #[test]
     fn test_glue_cache_pending_promotion_returns_partial() {
         let cache = GlueCache::new(2);
-        cache.insert("hash_d".to_string(), "workflow_compose".to_string(), "src_d".to_string());
-        cache.insert("hash_e".to_string(), "document_compose".to_string(), "src_e".to_string());
-        cache.insert("hash_f".to_string(), "web_app_compose".to_string(), "src_f".to_string());
+        cache.insert(
+            "hash_d".to_string(),
+            "workflow_compose".to_string(),
+            "src_d".to_string(),
+        );
+        cache.insert(
+            "hash_e".to_string(),
+            "document_compose".to_string(),
+            "src_e".to_string(),
+        );
+        cache.insert(
+            "hash_f".to_string(),
+            "web_app_compose".to_string(),
+            "src_f".to_string(),
+        );
 
         // Promote hash_d and hash_e to Partial
         cache.record_use("hash_d");

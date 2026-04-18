@@ -85,9 +85,7 @@ mod tests {
 
     #[test]
     fn chat_panel_draft_lifecycle() {
-        let panel = ChatPanel::new()
-            .set_draft("draft text")
-            .clear_draft();
+        let panel = ChatPanel::new().set_draft("draft text").clear_draft();
         assert!(panel.input_draft.is_empty());
 
         let panel2 = ChatPanel::new().set_draft("keep this");

@@ -140,7 +140,11 @@ pub fn highlight_nom_source(source: &str) -> Vec<SyntaxSpan> {
             if i < len {
                 i += 1; // consume closing quote
             }
-            spans.push(SyntaxSpan { start, end: i, class: TokenClass::Literal });
+            spans.push(SyntaxSpan {
+                start,
+                end: i,
+                class: TokenClass::Literal,
+            });
             continue;
         }
 
@@ -156,7 +160,11 @@ pub fn highlight_nom_source(source: &str) -> Vec<SyntaxSpan> {
             } else {
                 TokenClass::Identifier
             };
-            spans.push(SyntaxSpan { start, end: i, class });
+            spans.push(SyntaxSpan {
+                start,
+                end: i,
+                class,
+            });
             continue;
         }
 
@@ -166,19 +174,31 @@ pub fn highlight_nom_source(source: &str) -> Vec<SyntaxSpan> {
             while i < len && bytes[i].is_ascii_whitespace() {
                 i += 1;
             }
-            spans.push(SyntaxSpan { start, end: i, class: TokenClass::Whitespace });
+            spans.push(SyntaxSpan {
+                start,
+                end: i,
+                class: TokenClass::Whitespace,
+            });
             continue;
         }
 
         // Operator
         if matches!(b, b'+' | b'-' | b'*' | b'/' | b'=') {
-            spans.push(SyntaxSpan { start: i, end: i + 1, class: TokenClass::Operator });
+            spans.push(SyntaxSpan {
+                start: i,
+                end: i + 1,
+                class: TokenClass::Operator,
+            });
             i += 1;
             continue;
         }
 
         // Unknown single byte
-        spans.push(SyntaxSpan { start: i, end: i + 1, class: TokenClass::Unknown });
+        spans.push(SyntaxSpan {
+            start: i,
+            end: i + 1,
+            class: TokenClass::Unknown,
+        });
         i += 1;
     }
 
@@ -327,9 +347,19 @@ mod tests {
             .iter()
             .filter(|s| s.class == TokenClass::Keyword)
             .collect();
-        assert_eq!(kw_spans.len(), 2, "expected keyword spans for 'define' and 'that'");
-        assert_eq!(&"define greet that"[kw_spans[0].start..kw_spans[0].end], "define");
-        assert_eq!(&"define greet that"[kw_spans[1].start..kw_spans[1].end], "that");
+        assert_eq!(
+            kw_spans.len(),
+            2,
+            "expected keyword spans for 'define' and 'that'"
+        );
+        assert_eq!(
+            &"define greet that"[kw_spans[0].start..kw_spans[0].end],
+            "define"
+        );
+        assert_eq!(
+            &"define greet that"[kw_spans[1].start..kw_spans[1].end],
+            "that"
+        );
     }
 
     #[test]

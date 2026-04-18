@@ -1,0 +1,12 @@
+define sum_pair that
+  define accumulator that 0
+  define item that 5
+  accumulator + item
+
+define reduce_list that
+  define items that "10 20 30 40"
+  define initial that 0
+  define reducer that "sum_pair"
+  define result that 100
+  "reduced " + items + " with " + reducer + " = " + result
+reduce_list

@@ -23,8 +23,7 @@ pub use cursor::{Anchor, Bias, CursorSet, Selection};
 pub use display_map::{FoldState, LineDisplayMap, LineFoldRegion};
 pub use find_replace::FindState;
 pub use highlight::{
-    highlight_nom_source, HighlightSpan, Highlighter, SpanColor, SyntaxSpan, TokenClass,
-    TokenRole,
+    highlight_nom_source, HighlightSpan, Highlighter, SpanColor, SyntaxSpan, TokenClass, TokenRole,
 };
 pub use hints::{HintKind, InlayHint, InlayHintProvider};
 pub use input::{ActionRegistry, ImeState, KeyAction, KeyBinding, KeyCode};

@@ -1,0 +1,7 @@
+define create_entry that
+  define word that "render_pipeline"
+  define kind that "render_pipeline"
+  define lifecycle that "partial"
+  define hash that "b7e21d"
+  "created entry " + word + " kind=" + kind + " state=" + lifecycle + " hash=" + hash
+create_entry

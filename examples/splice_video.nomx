@@ -1,0 +1,8 @@
+define splice_video that
+  define clip_a that "intro_segment"
+  define clip_b that "main_content"
+  define transition that "crossfade"
+  define transition_frames that 12
+  define output that "spliced_sequence"
+  clip_a + " + " + clip_b + " via " + transition + " over " + transition_frames + " frames -> " + output
+splice_video

@@ -1,11 +1,9 @@
 #![deny(unsafe_code)]
 pub mod animate;
 pub mod backends;
-pub mod cancellation;
-pub mod streaming;
-pub mod composition;
-pub mod timeline;
 pub mod cancel;
+pub mod cancellation;
+pub mod composition;
 pub mod context;
 pub mod credential_store;
 pub mod deep_think;
@@ -21,7 +19,9 @@ pub mod progress;
 pub mod provider_router;
 pub mod semantic;
 pub mod store;
+pub mod streaming;
 pub mod task_queue;
+pub mod timeline;
 pub mod vendor_trait;
 
 pub use backends::{
@@ -57,36 +57,41 @@ pub use backends::{
     web_screen::WebScreenBackend,
     workflow::WorkflowBackend,
 };
-pub use cancellation::{CancelSignal, make_cancel_signal};
+pub use cancellation::{make_cancel_signal, CancelSignal};
+pub use context::{
+    get_video_config, pop_video_config, push_video_config, ComposeContext, ComposeResult,
+    ComposeTier, VideoConfigContext,
+};
 pub use credential_store::{Credential, CredentialStore};
 pub use deep_think::{DeepThinkConfig, DeepThinkStep, DeepThinkStream};
-pub use context::{
-    ComposeContext, ComposeResult, ComposeTier,
-    VideoConfigContext, push_video_config, pop_video_config, get_video_config,
-};
 pub mod codec_validation;
+pub use animate::{interpolate, spring, ExtrapolateMode, SpringConfig};
 pub use codec_validation::{
-    VideoCodec as ValidationCodec, PixelFormat as ValidationPixelFormat, validate_codec_pixel_format,
+    validate_codec_pixel_format, PixelFormat as ValidationPixelFormat,
+    VideoCodec as ValidationCodec,
 };
-pub use dispatch::{Backend, BackendRegistry, NoopBackend, UnifiedDispatcher};
+pub use composition::{CompositionConfig, CompositionRegistry, VideoCodec};
 pub use dispatch::ComposeContext as DispatchComposeContext;
+pub use dispatch::{Backend, BackendRegistry, NoopBackend, UnifiedDispatcher};
+pub use flow_graph::{FlowEdge, FlowGraph, FlowNode, FlowNodeKind};
+pub use glue::{AiGlueOrchestrator, GlueBlueprint, ReActLlmFn, StubLlmFn};
+pub use glue_cache::{CachedGlue, GlueCache, GlueStatus};
+pub use hybrid::HybridResolver;
+pub use middleware::{LatencyMiddleware, LoggingMiddleware, MiddlewareRegistry, StepMiddleware};
+pub use orchestrator::ComposeOrchestrator;
 pub use plan::{CompositionPlan, PlanStep};
 pub use progress::{ComposeEvent, LogProgressSink, ProgressSink};
 pub use provider_router::{FallbackLevel, ProviderRouter, VendorEntry};
 pub use semantic::{SemanticColumn, SemanticDataType, SemanticModel, SemanticRegistry};
 pub use store::{ArtifactStore, InMemoryStore};
+pub use streaming::{StreamToken, SwitchableStream};
 pub use task_queue::{ComposeTask, TaskQueue, TaskState};
+pub use timeline::{current_frame_in_sequence, is_frame_active, SequenceContext};
 pub use vendor_trait::{CostEstimate, MediaVendor, StubVendor, VendorCapability};
-pub use flow_graph::{FlowEdge, FlowGraph, FlowNode, FlowNodeKind};
-pub use glue::{AiGlueOrchestrator, GlueBlueprint, ReActLlmFn, StubLlmFn};
-pub use streaming::{SwitchableStream, StreamToken};
-pub use glue_cache::{CachedGlue, GlueCache, GlueStatus};
-pub use hybrid::HybridResolver;
-pub use orchestrator::ComposeOrchestrator;
-pub use composition::{CompositionConfig, CompositionRegistry, VideoCodec};
-pub use timeline::{SequenceContext, current_frame_in_sequence, is_frame_active};
-pub use animate::{ExtrapolateMode, SpringConfig, interpolate, spring};
-pub use middleware::{StepMiddleware, MiddlewareRegistry, LoggingMiddleware, LatencyMiddleware};
+pub mod pipeline;
+pub use pipeline::{ComponentOutput, ComponentPipeline, DocumentRetriever, TextSplitter};
+pub mod video;
+pub use video::{FrameCapture, PipelineStage, TwoStagePipeline};
 
 #[cfg(test)]
 mod integration_tests {
@@ -318,9 +323,9 @@ mod integration_tests {
         sink.emit(ComposeEvent::Progress {
             percent: 0.3,
             stage: "pre-cancel".into(),
-                rendered_frames: None,
-                encoded_frames: None,
-                elapsed_ms: None,
+            rendered_frames: None,
+            encoded_frames: None,
+            elapsed_ms: None,
         });
 
         flag.set();

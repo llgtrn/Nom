@@ -1,0 +1,10 @@
+define describe_shape that
+  define variant that "circle"
+  define param that 5
+  "shape " + variant + " param=" + param
+
+define pattern_variant that
+  define shape_a that describe_shape
+  define shape_b that "rect w=10 h=4"
+  "matched variants: " + shape_a + " | " + shape_b
+pattern_variant

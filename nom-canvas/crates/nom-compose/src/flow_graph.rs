@@ -2,7 +2,6 @@
 
 use std::collections::{HashMap, VecDeque};
 
-
 /// Kind of node in the flow graph.
 #[derive(Debug, Clone, PartialEq)]
 pub enum FlowNodeKind {
@@ -173,7 +172,10 @@ mod tests {
                 label: "edge".to_string(),
             })
             .unwrap_err();
-        assert!(err2.contains("ghost"), "error must name the missing from_id");
+        assert!(
+            err2.contains("ghost"),
+            "error must name the missing from_id"
+        );
     }
 
     #[test]
@@ -184,8 +186,18 @@ mod tests {
         g.add_node(make_node("n2", FlowNodeKind::Transform, "transform"));
         g.add_node(make_node("n3", FlowNodeKind::Output, "export"));
 
-        g.add_edge(FlowEdge { from_id: "n1".to_string(), to_id: "n2".to_string(), label: "a".to_string() }).unwrap();
-        g.add_edge(FlowEdge { from_id: "n2".to_string(), to_id: "n3".to_string(), label: "b".to_string() }).unwrap();
+        g.add_edge(FlowEdge {
+            from_id: "n1".to_string(),
+            to_id: "n2".to_string(),
+            label: "a".to_string(),
+        })
+        .unwrap();
+        g.add_edge(FlowEdge {
+            from_id: "n2".to_string(),
+            to_id: "n3".to_string(),
+            label: "b".to_string(),
+        })
+        .unwrap();
 
         let order = g.topological_order();
         assert_eq!(order.len(), 3);

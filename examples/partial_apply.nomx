@@ -1,0 +1,11 @@
+define multiply_by that
+  define factor that 3
+  define value that 7
+  factor * value
+
+define partial_apply that
+  define base_fn that "multiply_by"
+  define fixed_arg that 3
+  define deferred_arg that "x"
+  "partial " + base_fn + " with " + fixed_arg + " awaiting " + deferred_arg
+partial_apply

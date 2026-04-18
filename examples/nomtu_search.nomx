@@ -1,0 +1,7 @@
+define nomtu_search that
+  define query that "image resize"
+  define top_k that 5
+  define first_match that "resize_image_layer"
+  define match_score that 0.97
+  "search " + query + " top=" + top_k + " best=" + first_match + " score=" + match_score
+nomtu_search

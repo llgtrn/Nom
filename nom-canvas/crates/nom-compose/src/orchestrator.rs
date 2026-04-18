@@ -24,7 +24,10 @@ impl ComposeOrchestrator {
         &self,
         requests: Vec<ComposeContext>,
     ) -> Vec<Result<ComposeResult, String>> {
-        requests.iter().map(|ctx| self.resolver.resolve(ctx)).collect()
+        requests
+            .iter()
+            .map(|ctx| self.resolver.resolve(ctx))
+            .collect()
     }
 
     /// Run a single compose request.
@@ -42,7 +45,9 @@ mod tests {
 
     fn make_orchestrator_empty() -> ComposeOrchestrator {
         let dispatcher = Arc::new(UnifiedDispatcher::new());
-        let llm = StubLlmFn { response: "glue-code".to_string() };
+        let llm = StubLlmFn {
+            response: "glue-code".to_string(),
+        };
         let glue = AiGlueOrchestrator::new(Box::new(llm));
         let resolver = Arc::new(crate::hybrid::HybridResolver::new(dispatcher, glue));
         ComposeOrchestrator::new(resolver)
@@ -52,7 +57,9 @@ mod tests {
         let mut dispatcher = UnifiedDispatcher::new();
         dispatcher.register("video", |ctx| Ok(format!("video:{}", ctx.entity_id)));
         let dispatcher = Arc::new(dispatcher);
-        let llm = StubLlmFn { response: "fallback".to_string() };
+        let llm = StubLlmFn {
+            response: "fallback".to_string(),
+        };
         let glue = AiGlueOrchestrator::new(Box::new(llm));
         let resolver = Arc::new(crate::hybrid::HybridResolver::new(dispatcher, glue));
         ComposeOrchestrator::new(resolver)

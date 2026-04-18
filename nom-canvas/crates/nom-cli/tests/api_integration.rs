@@ -97,9 +97,12 @@ fn compose_request_stream_flag_variants() {
     assert_eq!(req2.stream, Some(false));
 
     let no_stream_field = json!({"kind": "audio", "input": "beat"});
-    let req3: ComposeRequest =
-        serde_json::from_value(no_stream_field).expect("deserialise without stream field must succeed");
-    assert_eq!(req3.stream, None, "absent stream field must deserialise to None");
+    let req3: ComposeRequest = serde_json::from_value(no_stream_field)
+        .expect("deserialise without stream field must succeed");
+    assert_eq!(
+        req3.stream, None,
+        "absent stream field must deserialise to None"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -179,8 +182,17 @@ mod serve_tests {
             .await
             .unwrap();
         let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-        assert!(body.get("promoted").is_some(), "response must have 'promoted' field");
-        assert!(body.get("glue_hash").is_some(), "response must have 'glue_hash' field");
-        assert!(body.get("status").is_some(), "response must have 'status' field");
+        assert!(
+            body.get("promoted").is_some(),
+            "response must have 'promoted' field"
+        );
+        assert!(
+            body.get("glue_hash").is_some(),
+            "response must have 'glue_hash' field"
+        );
+        assert!(
+            body.get("status").is_some(),
+            "response must have 'status' field"
+        );
     }
 }

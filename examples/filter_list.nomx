@@ -1,0 +1,10 @@
+define is_even that
+  define value that 4
+  value mod 2 == 0
+
+define filter_list that
+  define items that "1 2 3 4 5 6"
+  define condition that "is_even"
+  define kept_count that 3
+  "filtered " + items + " by " + condition + " kept " + kept_count
+filter_list

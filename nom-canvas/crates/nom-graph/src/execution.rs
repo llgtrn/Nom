@@ -230,9 +230,9 @@ impl ExecutionEngine {
                     .filter(|e| &e.dst_node == node_id)
                     .filter_map(|e| {
                         results.get(&e.src_node).and_then(|o| {
-                            o.outputs.get("out").map(|b| {
-                                String::from_utf8_lossy(b).into_owned()
-                            })
+                            o.outputs
+                                .get("out")
+                                .map(|b| String::from_utf8_lossy(b).into_owned())
                         })
                     })
                     .collect();
@@ -592,5 +592,97 @@ mod tests {
         let plan = engine.plan_execution(&dag).unwrap();
         let _results = engine.execute(&dag, &plan);
         // No panic means the registry dispatch path is exercised successfully.
+    }
+
+    // ── wave ABB-10: deeper execution tests ──────────────────────────────────
+
+    /// Build a 2-node plan with PassThroughHandler, execute returns non-empty result.
+    #[test]
+    fn execution_engine_run_with_pass_through() {
+        let reg = NodeHandlerRegistry::new().register(Box::new(PassThroughHandler {
+            kind_name: "default".to_string(),
+        }));
+        let mut engine = ExecutionEngine::new(BasicCache::new()).with_registry(reg);
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("src", "default"));
+        dag.add_node(ExecNode::new("dst", "default"));
+        dag.add_edge("src", "out", "dst", "in");
+        let plan = engine.plan_execution(&dag).unwrap();
+        assert_eq!(plan.len(), 2, "both nodes must be in the plan");
+        let results = engine.execute(&dag, &plan);
+        assert!(
+            !results.is_empty(),
+            "execute must return at least one result"
+        );
+    }
+
+    /// Result map from execute() has an entry for each node in the plan.
+    #[test]
+    fn execution_engine_run_returns_map() {
+        let reg = NodeHandlerRegistry::with_defaults();
+        let mut engine = ExecutionEngine::new(BasicCache::new()).with_registry(reg);
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("n1", "concat"));
+        dag.add_node(ExecNode::new("n2", "concat"));
+        let plan = engine.plan_execution(&dag).unwrap();
+        assert_eq!(plan.len(), 2);
+        let results = engine.execute(&dag, &plan);
+        assert!(results.contains_key("n1"), "result map must contain n1");
+        assert!(results.contains_key("n2"), "result map must contain n2");
+    }
+
+    /// find() returns None for an unknown kind on an empty registry.
+    #[test]
+    fn registry_default_handles_unknown() {
+        let reg = NodeHandlerRegistry::new();
+        assert!(
+            reg.find("completely_unknown_kind").is_none(),
+            "empty registry must return None for unknown kind"
+        );
+    }
+
+    /// ConcatHandler joins two inputs without separator (concatenation, no space).
+    #[test]
+    fn execution_with_concat_handler() {
+        let handler = ConcatHandler;
+        let result = handler
+            .execute(&["hello ".to_string(), "world".to_string()])
+            .unwrap();
+        assert_eq!(
+            result, "hello world",
+            "concat handler must join inputs without extra separator"
+        );
+    }
+
+    /// collect_ancestors returns all nodes in an ancestry chain transitively.
+    #[test]
+    fn collect_ancestors_transitive() {
+        // Chain: x -> y -> z
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("x", "verb"));
+        dag.add_node(ExecNode::new("y", "verb"));
+        dag.add_node(ExecNode::new("z", "verb"));
+        dag.add_edge("x", "out", "y", "in");
+        dag.add_edge("y", "out", "z", "in");
+
+        let mut visited = HashSet::new();
+        let ancestors = collect_ancestors(&dag, &"z".to_string(), &mut visited);
+        assert!(
+            ancestors.contains(&"x".to_string()),
+            "x must be a transitive ancestor of z"
+        );
+        assert!(
+            ancestors.contains(&"y".to_string()),
+            "y must be a direct ancestor of z"
+        );
+        assert!(
+            ancestors.contains(&"z".to_string()),
+            "z itself must be included"
+        );
+        assert_eq!(
+            ancestors.len(),
+            3,
+            "ancestry chain must have exactly 3 nodes"
+        );
     }
 }

@@ -1,0 +1,13 @@
+define fetch_user that
+  define user_id that "u_42"
+  "user:" + user_id
+
+define fetch_preferences that
+  define user that "user:u_42"
+  "prefs_for " + user
+
+define monadic_chain that
+  define step_one that fetch_user
+  define step_two that fetch_preferences
+  step_one + " then " + step_two
+monadic_chain

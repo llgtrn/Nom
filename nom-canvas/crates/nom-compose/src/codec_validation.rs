@@ -1,10 +1,20 @@
 #![deny(unsafe_code)]
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum VideoCodec { H264, Vp9, ProRes, Hevc }
+pub enum VideoCodec {
+    H264,
+    Vp9,
+    ProRes,
+    Hevc,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum PixelFormat { Yuv420, Yuv422, Yuv444, Rgba }
+pub enum PixelFormat {
+    Yuv420,
+    Yuv422,
+    Yuv444,
+    Rgba,
+}
 
 /// Validate codec + pixel format combination and dimensions.
 /// Returns Ok(()) if valid, Err with description if not.
@@ -42,7 +52,10 @@ mod tests {
     #[test]
     fn test_h264_yuv420_valid() {
         let result = validate_codec_pixel_format(VideoCodec::H264, PixelFormat::Yuv420, 1920, 1080);
-        assert!(result.is_ok(), "H264 + Yuv420 with even dimensions must be valid");
+        assert!(
+            result.is_ok(),
+            "H264 + Yuv420 with even dimensions must be valid"
+        );
     }
 
     /// Yuv420 with odd width must fail.
@@ -72,7 +85,8 @@ mod tests {
     /// ProRes + Yuv420 must fail regardless of dimensions.
     #[test]
     fn test_prores_yuv420_fails() {
-        let result = validate_codec_pixel_format(VideoCodec::ProRes, PixelFormat::Yuv420, 1920, 1080);
+        let result =
+            validate_codec_pixel_format(VideoCodec::ProRes, PixelFormat::Yuv420, 1920, 1080);
         assert!(result.is_err(), "ProRes + Yuv420 must fail");
         let msg = result.unwrap_err();
         assert!(

@@ -389,27 +389,52 @@ pub struct BezierCurve {
 impl BezierCurve {
     /// `ease` — standard browser default.
     pub fn ease() -> Self {
-        BezierCurve { x1: 0.25, y1: 0.1, x2: 0.25, y2: 1.0 }
+        BezierCurve {
+            x1: 0.25,
+            y1: 0.1,
+            x2: 0.25,
+            y2: 1.0,
+        }
     }
 
     /// `ease-in` — slow start.
     pub fn ease_in() -> Self {
-        BezierCurve { x1: 0.42, y1: 0.0, x2: 1.0, y2: 1.0 }
+        BezierCurve {
+            x1: 0.42,
+            y1: 0.0,
+            x2: 1.0,
+            y2: 1.0,
+        }
     }
 
     /// `ease-out` — slow end.
     pub fn ease_out() -> Self {
-        BezierCurve { x1: 0.0, y1: 0.0, x2: 0.58, y2: 1.0 }
+        BezierCurve {
+            x1: 0.0,
+            y1: 0.0,
+            x2: 0.58,
+            y2: 1.0,
+        }
     }
 
     /// `ease-in-out` — slow start and end.
     pub fn ease_in_out() -> Self {
-        BezierCurve { x1: 0.42, y1: 0.0, x2: 0.58, y2: 1.0 }
+        BezierCurve {
+            x1: 0.42,
+            y1: 0.0,
+            x2: 0.58,
+            y2: 1.0,
+        }
     }
 
     /// `linear` — constant rate.
     pub fn linear() -> Self {
-        BezierCurve { x1: 0.0, y1: 0.0, x2: 1.0, y2: 1.0 }
+        BezierCurve {
+            x1: 0.0,
+            y1: 0.0,
+            x2: 1.0,
+            y2: 1.0,
+        }
     }
 
     /// Approximate the Y output at normalized time `t` using Newton's method
@@ -426,12 +451,11 @@ impl BezierCurve {
             let s2 = s * s;
             let s3 = s2 * s;
             let one_s = 1.0 - s;
-            let x = 3.0 * one_s * one_s * s * self.x1
-                + 3.0 * one_s * s2 * self.x2
-                + s3;
-            let dx = 3.0 * (one_s * one_s * self.x1
-                + 2.0 * one_s * s * (self.x2 - self.x1)
-                + s2 * (1.0 - self.x2));
+            let x = 3.0 * one_s * one_s * s * self.x1 + 3.0 * one_s * s2 * self.x2 + s3;
+            let dx = 3.0
+                * (one_s * one_s * self.x1
+                    + 2.0 * one_s * s * (self.x2 - self.x1)
+                    + s2 * (1.0 - self.x2));
             if dx.abs() < 1e-6 {
                 break;
             }
@@ -442,9 +466,7 @@ impl BezierCurve {
         let s2 = s * s;
         let s3 = s2 * s;
         let one_s = 1.0 - s;
-        3.0 * one_s * one_s * s * self.y1
-            + 3.0 * one_s * s2 * self.y2
-            + s3
+        3.0 * one_s * one_s * s * self.y1 + 3.0 * one_s * s2 * self.y2 + s3
     }
 }
 

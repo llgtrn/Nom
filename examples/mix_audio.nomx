@@ -1,0 +1,8 @@
+define mix_audio that
+  define track_a that "voice_lead"
+  define track_b that "ambient_loop"
+  define gain_a that 0.8
+  define gain_b that 0.4
+  define output that "mixed_master"
+  "mix " + track_a + "*" + gain_a + " + " + track_b + "*" + gain_b + " -> " + output
+mix_audio

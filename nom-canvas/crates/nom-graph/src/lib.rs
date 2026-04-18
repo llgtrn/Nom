@@ -20,6 +20,6 @@ pub use execution::{
 pub use graph_mode::{GraphLayout, GraphModeState, GraphViewMode};
 pub use graph_rag::{cosine_sim, node_vec, GraphRagRetriever, QueryVec, RetrievedNode};
 pub use node::{ExecNode, IsChanged, NodeId, NodeState, Port, PortDirection};
-pub use nom_graph::{NomGraph, NomtuRef};
 pub use node_output::{NodeEvent, NodeOutputPort, NodeOutputType, TypedNode};
+pub use nom_graph::{NomGraph, NomtuRef};
 pub use sandbox::{eval_expr, sanitize, BinOpKind, EvalContext, Expr, SandboxError, SandboxValue};

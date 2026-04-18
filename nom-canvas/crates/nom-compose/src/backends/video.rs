@@ -1177,7 +1177,13 @@ mod tests {
     fn test_video_render_config_default_concurrency() {
         let cfg = VideoRenderConfig::default();
         assert_eq!(cfg.concurrency, 4, "default concurrency must be 4");
-        assert_eq!(cfg.ffmpeg_path, "ffmpeg", "default ffmpeg path must be 'ffmpeg'");
-        assert!(cfg.on_progress.is_none(), "default on_progress must be None");
+        assert_eq!(
+            cfg.ffmpeg_path, "ffmpeg",
+            "default ffmpeg path must be 'ffmpeg'"
+        );
+        assert!(
+            cfg.on_progress.is_none(),
+            "default on_progress must be None"
+        );
     }
 }

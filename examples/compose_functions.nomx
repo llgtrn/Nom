@@ -1,0 +1,14 @@
+define add_one that
+  define x that 0
+  x + 1
+
+define double that
+  define x that 0
+  x * 2
+
+define compose_functions that
+  define input that 3
+  define step_one that "add_one"
+  define step_two that "double"
+  "compose " + step_one + " then " + step_two + " on " + input
+compose_functions

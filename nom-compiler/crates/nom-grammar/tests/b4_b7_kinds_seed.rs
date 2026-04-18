@@ -83,7 +83,10 @@ fn b4_all_29_extended_kind_names_present_after_import() {
 fn b4_extended_kinds_count_is_29() {
     let (_dir, conn) = baseline_conn();
     let names = kind_names(&conn);
-    let found: Vec<&&str> = B4_KINDS.iter().filter(|k| names.contains(&k.to_string())).collect();
+    let found: Vec<&&str> = B4_KINDS
+        .iter()
+        .filter(|k| names.contains(&k.to_string()))
+        .collect();
     assert_eq!(
         found.len(),
         29,
@@ -126,7 +129,10 @@ fn b7_all_9_skill_entries_present_after_import() {
 fn b7_skill_entries_count_is_9() {
     let (_dir, conn) = baseline_conn();
     let names = kind_names(&conn);
-    let found: Vec<&&str> = B7_SKILLS.iter().filter(|k| names.contains(&k.to_string())).collect();
+    let found: Vec<&&str> = B7_SKILLS
+        .iter()
+        .filter(|k| names.contains(&k.to_string()))
+        .collect();
     assert_eq!(
         found.len(),
         9,
@@ -155,7 +161,14 @@ const AH_DB_KINDS: &[&str] = &[
 ];
 
 const AH_DB_BANNED: &[&str] = &[
-    "affine", "comfy", "dify", "n8n", "bolt", "langchain", "openai", "gemini",
+    "affine",
+    "comfy",
+    "dify",
+    "n8n",
+    "bolt",
+    "langchain",
+    "openai",
+    "gemini",
 ];
 
 #[test]

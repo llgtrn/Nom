@@ -1,0 +1,7 @@
+define classify_intent that
+  define utterance that "show me all red images from last week"
+  define predicted_kind that "query"
+  define confidence that 0.94
+  define top_nomtu that "filter_by_time_and_color"
+  "classified: " + utterance + " -> " + predicted_kind + " conf=" + confidence + " nomtu=" + top_nomtu
+classify_intent

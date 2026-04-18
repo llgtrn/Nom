@@ -1,0 +1,8 @@
+define run_benchmark that
+  define entry_hash that "c9d3a7"
+  define workload_key that "encode_4k_frame"
+  define platform that "linux_x86_64"
+  define duration_ns that 8340000
+  define custom_counter that "frames_encoded=1"
+  entry_hash + " " + workload_key + " on " + platform + " in " + duration_ns + "ns " + custom_counter
+run_benchmark

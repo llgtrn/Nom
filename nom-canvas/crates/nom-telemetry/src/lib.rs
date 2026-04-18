@@ -7529,7 +7529,10 @@ impl TraceCollector {
     }
 
     pub fn root_spans(&self) -> Vec<&TraceSpan> {
-        self.spans.iter().filter(|s| s.parent_id.is_none()).collect()
+        self.spans
+            .iter()
+            .filter(|s| s.parent_id.is_none())
+            .collect()
     }
 
     pub fn span_count(&self) -> usize {
@@ -7572,7 +7575,10 @@ mod trace_tests {
             .with_attribute("model", "fast");
         assert_eq!(span.attributes.len(), 2);
         assert_eq!(span.attributes[0], ("top_k".to_string(), "10".to_string()));
-        assert_eq!(span.attributes[1], ("model".to_string(), "fast".to_string()));
+        assert_eq!(
+            span.attributes[1],
+            ("model".to_string(), "fast".to_string())
+        );
     }
 
     #[test]

@@ -1,0 +1,7 @@
+define resize_image that
+  define source_layer that "background_4k"
+  define target_width that 1280
+  define target_height that 720
+  define filter that "lanczos"
+  "resize " + source_layer + " to " + target_width + "x" + target_height + " filter=" + filter
+resize_image

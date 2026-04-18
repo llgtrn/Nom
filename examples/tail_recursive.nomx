@@ -1,0 +1,13 @@
+define count_down that
+  define n that 10
+  define accumulator that 0
+  count_down_step n accumulator
+
+define count_down_step that
+  "tail call at step"
+count_down_step 10 0
+
+define tail_recursive that
+  define start that 100
+  count_down start
+tail_recursive

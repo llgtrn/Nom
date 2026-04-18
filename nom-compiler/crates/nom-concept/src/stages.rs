@@ -3100,7 +3100,10 @@ pub fn parse_define_that(tokens: &[Tok]) -> Result<DefineThatExpr, String> {
                 .map(|t| format!("{t:?}"))
                 .collect::<Vec<_>>()
                 .join(" ");
-            Ok(DefineThatExpr { name: name.clone(), body })
+            Ok(DefineThatExpr {
+                name: name.clone(),
+                body,
+            })
         }
         _ => Err("expected: define <name> that <body>".into()),
     }
@@ -3120,7 +3123,10 @@ pub struct ConceptNode {
 impl ConceptNode {
     /// Construct a new node from string slices.
     pub fn new(name: &str, body: &str) -> Self {
-        Self { name: name.to_string(), body: body.to_string() }
+        Self {
+            name: name.to_string(),
+            body: body.to_string(),
+        }
     }
 
     /// Returns `true` when the body contains no non-whitespace characters.
@@ -3134,7 +3140,10 @@ impl ConceptNode {
 /// The mapping is direct: `expr.name` → `node.name`,
 /// `expr.body` → `node.body`.
 pub fn define_that_to_concept_node(expr: &DefineThatExpr) -> ConceptNode {
-    ConceptNode { name: expr.name.clone(), body: expr.body.clone() }
+    ConceptNode {
+        name: expr.name.clone(),
+        body: expr.body.clone(),
+    }
 }
 
 /// Parse a multi-line source string into a `Vec<ConceptNode>`.
@@ -3170,12 +3179,11 @@ pub fn parse_concept_source(input: &str) -> Vec<ConceptNode> {
         if let Ok(expr) = parse_define_that(&toks) {
             // Re-derive the body as readable text.
             // Skip the first three tokens (Define, Word(name), That).
-            let body_text = toks[3..]
-                .iter()
-                .map(tok_text)
-                .collect::<Vec<_>>()
-                .join(" ");
-            nodes.push(ConceptNode { name: expr.name, body: body_text });
+            let body_text = toks[3..].iter().map(tok_text).collect::<Vec<_>>().join(" ");
+            nodes.push(ConceptNode {
+                name: expr.name,
+                body: body_text,
+            });
         }
     }
     nodes
@@ -3194,6 +3202,138 @@ pub fn migrate_typed_to_natural(source: &str) -> String {
         .replace("fn ", "define ")
         .replace(" -> ", " that ")
         .replace("->", " that ")
+}
+
+// ── B1 (extended): BlockExpr — implicit last-expression return ────────────────
+
+/// A parsed block of source lines with an implicit return extracted from the
+/// last non-empty, non-comment line.
+///
+/// This supports the B1 axis rule: the final expression in a `define-that`
+/// body is the return value of that definition. No explicit `return` keyword
+/// is needed.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BlockExpr {
+    /// All non-empty, non-comment lines in the block (including the last one).
+    pub statements: Vec<String>,
+    /// The last non-empty, non-comment line, promoted to the implicit return.
+    pub implicit_return: Option<String>,
+}
+
+impl BlockExpr {
+    /// Parse a source string into a `BlockExpr`.
+    ///
+    /// Lines are trimmed. Empty lines and lines starting with `//` are
+    /// discarded. The last surviving line becomes `implicit_return`; all
+    /// surviving lines (including it) are stored in `statements`.
+    pub fn parse(source: &str) -> Self {
+        let stmts: Vec<String> = source
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty() && !l.starts_with("//"))
+            .map(str::to_string)
+            .collect();
+        let implicit_return = stmts.last().cloned();
+        Self {
+            statements: stmts,
+            implicit_return,
+        }
+    }
+
+    /// Returns `true` when there is an implicit return value.
+    pub fn has_return(&self) -> bool {
+        self.implicit_return.is_some()
+    }
+
+    /// Borrows the implicit return value if present.
+    pub fn return_value(&self) -> Option<&str> {
+        self.implicit_return.as_deref()
+    }
+
+    /// Number of surviving (non-empty, non-comment) statements.
+    pub fn statement_count(&self) -> usize {
+        self.statements.len()
+    }
+}
+
+// ── B1 (extended): FullParser — multi-block .nomx file parser ────────────────
+
+/// Parses a `.nomx` file containing one or more `define-that` blocks
+/// separated by blank lines into a sequence of `ConceptNode`s.
+pub struct FullParser;
+
+impl FullParser {
+    /// Parse a full `.nomx` source string into a `Vec<ConceptNode>`.
+    ///
+    /// The source is split on runs of blank lines. Each resulting chunk is
+    /// passed to `parse_block`; `None` results are silently discarded.
+    pub fn parse_file(source: &str) -> Vec<ConceptNode> {
+        let mut nodes = Vec::new();
+        let mut current: Vec<&str> = Vec::new();
+
+        for line in source.lines() {
+            if line.trim().is_empty() {
+                if !current.is_empty() {
+                    let block = current.join("\n");
+                    if let Some(node) = Self::parse_block(&block) {
+                        nodes.push(node);
+                    }
+                    current.clear();
+                }
+            } else {
+                current.push(line);
+            }
+        }
+        // Flush the final block (no trailing blank line required).
+        if !current.is_empty() {
+            let block = current.join("\n");
+            if let Some(node) = Self::parse_block(&block) {
+                nodes.push(node);
+            }
+        }
+        nodes
+    }
+
+    /// Parse a single block of text into a `ConceptNode`.
+    ///
+    /// Returns `Some` when the first `define … that` line is found; the body
+    /// is the last non-empty, non-comment line of the block (implicit return).
+    /// Returns `None` when the block contains no `define-that` line.
+    pub fn parse_block(block: &str) -> Option<ConceptNode> {
+        // Find the first line that tokenizes as a define-that expression.
+        for line in block.lines() {
+            let toks: Vec<Tok> = crate::lex::collect_all_tokens(line)
+                .into_iter()
+                .map(|s| s.tok)
+                .collect();
+            if let Ok(expr) = parse_define_that(&toks) {
+                // Body = implicit return of the block (last non-empty line).
+                let body = BlockExpr::parse(block)
+                    .return_value()
+                    .unwrap_or(&expr.body)
+                    .to_string();
+                return Some(ConceptNode {
+                    name: expr.name,
+                    body,
+                });
+            }
+        }
+        None
+    }
+
+    /// Count the number of `define` keywords in a source string.
+    ///
+    /// This is a fast pre-pass used to size allocation buffers before
+    /// calling `parse_file`.
+    pub fn count_definitions(source: &str) -> usize {
+        source
+            .lines()
+            .filter(|l| {
+                let trimmed = l.trim_start();
+                trimmed.starts_with("define ") || trimmed == "define"
+            })
+            .count()
+    }
 }
 
 #[cfg(test)]
@@ -4441,7 +4581,10 @@ the concept c_two is
         assert!(empty.is_empty_body(), "empty body must return true");
 
         let blank = super::ConceptNode::new("noop", "   ");
-        assert!(blank.is_empty_body(), "whitespace-only body must return true");
+        assert!(
+            blank.is_empty_body(),
+            "whitespace-only body must return true"
+        );
     }
 
     /// b1_parse_concept_source_single: one define-that line produces one ConceptNode.
@@ -4468,7 +4611,12 @@ the concept c_two is
     fn test_b1_parse_concept_source_mixed() {
         let src = "define greet that say hello\nthe function foo intent is bar.\nsome random text\ndefine quit that exit program";
         let nodes = super::parse_concept_source(src);
-        assert_eq!(nodes.len(), 2, "expected 2 nodes from 2 define-that lines, got: {:?}", nodes);
+        assert_eq!(
+            nodes.len(),
+            2,
+            "expected 2 nodes from 2 define-that lines, got: {:?}",
+            nodes
+        );
         assert_eq!(nodes[0].name, "greet");
         assert_eq!(nodes[1].name, "quit");
     }
@@ -4478,5 +4626,77 @@ the concept c_two is
     fn test_b1_parse_concept_source_empty() {
         let nodes = super::parse_concept_source("");
         assert!(nodes.is_empty(), "empty input must yield zero nodes");
+    }
+
+    // ── ABB-9: BlockExpr + FullParser tests ───────────────────────────────────
+
+    /// abb9_01: a single-line block has that line as its implicit return.
+    #[test]
+    fn block_expr_single_statement_is_return() {
+        let b = BlockExpr::parse("result");
+        assert_eq!(b.statement_count(), 1);
+        assert!(b.has_return());
+        assert_eq!(b.return_value(), Some("result"));
+    }
+
+    /// abb9_02: the last non-empty, non-comment line is the implicit return.
+    #[test]
+    fn block_expr_multi_last_is_return() {
+        let src = "first line\nsecond line\nthird line";
+        let b = BlockExpr::parse(src);
+        assert_eq!(b.statement_count(), 3);
+        assert_eq!(b.return_value(), Some("third line"));
+    }
+
+    /// abb9_03: a block with only blank lines and comments has no return.
+    #[test]
+    fn block_expr_empty_has_no_return() {
+        let src = "\n// a comment\n\n   \n";
+        let b = BlockExpr::parse(src);
+        assert!(!b.has_return());
+        assert_eq!(b.return_value(), None);
+        assert_eq!(b.statement_count(), 0);
+    }
+
+    /// abb9_04: statement_count excludes blank lines and comment lines.
+    #[test]
+    fn block_expr_statement_count() {
+        let src = "// comment\nline one\n\nline two\n// another comment\nline three";
+        let b = BlockExpr::parse(src);
+        assert_eq!(b.statement_count(), 3);
+    }
+
+    /// abb9_05: count_definitions on source with no define keyword returns 0.
+    #[test]
+    fn full_parser_count_definitions_zero() {
+        assert_eq!(FullParser::count_definitions(""), 0);
+        assert_eq!(FullParser::count_definitions("hello world\nfoo bar"), 0);
+    }
+
+    /// abb9_06: count_definitions correctly counts two define lines.
+    #[test]
+    fn full_parser_count_definitions_two() {
+        let src = "define greet that say hello\nsome other text\ndefine farewell that say goodbye";
+        assert_eq!(FullParser::count_definitions(src), 2);
+    }
+
+    /// abb9_07: parse_block returns a ConceptNode for a valid define-that block.
+    #[test]
+    fn full_parser_parse_block_valid() {
+        let block = "define greet that say hello";
+        let node = FullParser::parse_block(block);
+        assert!(node.is_some());
+        let n = node.unwrap();
+        assert_eq!(n.name, "greet");
+    }
+
+    /// abb9_08: parse_file extracts multiple ConceptNodes from a multi-block source.
+    #[test]
+    fn full_parser_parse_file_multi_block() {
+        let src = "define greet that say hello\n\ndefine farewell that say goodbye";
+        let nodes = FullParser::parse_file(src);
+        assert_eq!(nodes.len(), 2, "expected 2 nodes, got {:?}", nodes);
+        assert_eq!(nodes[0].name, "greet");
+        assert_eq!(nodes[1].name, "farewell");
     }
 }

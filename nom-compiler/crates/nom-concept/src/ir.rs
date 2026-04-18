@@ -35,7 +35,10 @@ impl IrType {
 
     /// `true` for `Unit`, `Bool`, `Int`, `Float`.
     pub fn is_primitive(&self) -> bool {
-        matches!(self, IrType::Unit | IrType::Bool | IrType::Int(_) | IrType::Float(_))
+        matches!(
+            self,
+            IrType::Unit | IrType::Bool | IrType::Int(_) | IrType::Float(_)
+        )
     }
 
     /// Bit width for `Int` and `Float`; `None` for all other variants.
@@ -92,11 +95,19 @@ pub enum IrInstr {
     /// `dest = value` — assign a constant into a named slot.
     Assign { dest: String, value: IrValue },
     /// Call a named function, optionally capturing the result.
-    Call { func: String, args: Vec<IrValue>, dest: Option<String> },
+    Call {
+        func: String,
+        args: Vec<IrValue>,
+        dest: Option<String>,
+    },
     /// Return a value from the current function.
     Return(IrValue),
     /// Conditional branch: jump to `then_label` if `cond` is truthy, else `else_label`.
-    BranchIf { cond: String, then_label: String, else_label: String },
+    BranchIf {
+        cond: String,
+        then_label: String,
+        else_label: String,
+    },
     /// A branch target label.
     Label(String),
     /// No-operation placeholder.
@@ -160,7 +171,10 @@ pub struct IrModule {
 impl IrModule {
     /// Create an empty module with the given name.
     pub fn new(name: &str) -> Self {
-        Self { name: name.to_owned(), functions: Vec::new() }
+        Self {
+            name: name.to_owned(),
+            functions: Vec::new(),
+        }
     }
 
     /// Builder-style helper: append a function.
@@ -239,8 +253,7 @@ mod tests {
 
     #[test]
     fn ir_function_has_return() {
-        let without = IrFunction::new("noop", IrType::Unit)
-            .push_instr(IrInstr::Nop);
+        let without = IrFunction::new("noop", IrType::Unit).push_instr(IrInstr::Nop);
         assert!(!without.has_return());
 
         let with_ret = IrFunction::new("answer", IrType::Int(64))

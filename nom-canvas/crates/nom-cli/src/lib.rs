@@ -11,7 +11,7 @@ pub mod flow;
 pub mod media;
 pub mod ux;
 
-pub use convert::{ConvertDirection, ConvertOptions, ConvertResult, convert_source};
+pub use convert::{convert_source, ConvertDirection, ConvertOptions, ConvertResult};
 pub use demo::{DemoKind, DemoResult, DemoRunner};
 
 /// Commands understood by the nom-canvas CLI.

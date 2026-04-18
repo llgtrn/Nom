@@ -1,7 +1,7 @@
 # Nom — Roadmap to 100%
 
 **Date:** 2026-04-19 | **Mandate:** reach 100% on all 4 axes. Every `[ ]` is a completable task.
-**Last updated:** Wave ABA COMPLETE — HEAD `6a41b2b`, **8891 tests**, 0 clippy warnings. Waves AX+AY+AZ+ABA closed 40+ items. A-axis ~55%, B-axis ~73%, C-axis ~83%, D-axis ~98%.
+**Last updated:** Wave ABB-5 — **8891 tests**, 0 clippy warnings, fmt clean. D5 README+user-manual+CONTRIBUTING ticked. A-axis ~55%, B-axis ~73%, C-axis ~83%, D-axis ~98%.
 
 ## Current finalization snapshot
 
@@ -410,12 +410,13 @@
 - [ ] Installer: MSI (Windows), AppImage (Linux), DMG (macOS)
 
 ### D5. Documentation
-- [ ] README with install + quickstart
-- [ ] User manual (`docs/user-guide/`)
+- [x] README with install + quickstart (Wave ABB-5: full structure, workspace map, wave history)
+- [x] User manual (`docs/user-manual.md` — Wave AY)
 - [ ] API reference (`cargo doc --no-deps`)
 - [ ] Architecture deep-dive (spec extension)
 - [ ] Video walkthrough / screencast
-- [ ] `CONTRIBUTING.md` + `CODE_OF_CONDUCT.md`
+- [x] `CONTRIBUTING.md` (Wave AY)
+- [ ] `CODE_OF_CONDUCT.md`
 - [ ] Migration guide (v1 → v2)
 
 ### D6. Spec §16 non-negotiables

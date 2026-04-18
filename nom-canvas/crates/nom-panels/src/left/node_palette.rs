@@ -161,14 +161,26 @@ impl NodePalette {
         // Background
         scene.push_quad(fill_quad(0.0, y, width, SEARCH_BOX_HEIGHT, tokens::BG2));
         // 1px bottom border
-        scene.push_quad(fill_quad(0.0, y + SEARCH_BOX_HEIGHT - 1.0, width, 1.0, tokens::BORDER));
+        scene.push_quad(fill_quad(
+            0.0,
+            y + SEARCH_BOX_HEIGHT - 1.0,
+            width,
+            1.0,
+            tokens::BORDER,
+        ));
         y += SEARCH_BOX_HEIGHT;
 
         // ── Category groups + entry rows ────────────────────────────────────
         let groups = self.grouped_items();
         for group in &groups {
             // Category header row
-            scene.push_quad(fill_quad(0.0, y, width, CATEGORY_HEADER_HEIGHT, tokens::BG2));
+            scene.push_quad(fill_quad(
+                0.0,
+                y,
+                width,
+                CATEGORY_HEADER_HEIGHT,
+                tokens::BG2,
+            ));
             y += CATEGORY_HEADER_HEIGHT;
 
             // Entry rows
@@ -478,7 +490,9 @@ mod tests {
         palette.search_query = "ux".to_string();
         let results = palette.filtered_entries();
         assert_eq!(results.len(), 2, "search 'ux' must match only ux_ kinds");
-        assert!(results.iter().all(|e| e.kind_name.to_lowercase().contains("ux")));
+        assert!(results
+            .iter()
+            .all(|e| e.kind_name.to_lowercase().contains("ux")));
     }
 
     #[test]
@@ -543,11 +557,7 @@ mod tests {
         // Entry rows start at y = SEARCH_BOX_HEIGHT + CATEGORY_HEADER_HEIGHT = 32 + 24 = 56
         for (i, q) in entry_bg_quads.iter().enumerate() {
             let expected_y = 32.0 + 24.0 + i as f32 * 24.0;
-            assert_eq!(
-                q.bounds.origin.y,
-                Pixels(expected_y),
-                "row {i} y mismatch"
-            );
+            assert_eq!(q.bounds.origin.y, Pixels(expected_y), "row {i} y mismatch");
         }
     }
 

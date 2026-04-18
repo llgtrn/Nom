@@ -123,7 +123,10 @@ mod tests {
         let ctx = ComposeContext::new("video", "my-scene");
         let blueprint = orchestrator.generate_blueprint(&ctx).unwrap();
         assert_eq!(blueprint.kind, "video");
-        assert_eq!(blueprint.nomx_source, "define compose_video that renders frames");
+        assert_eq!(
+            blueprint.nomx_source,
+            "define compose_video that renders frames"
+        );
         assert_eq!(blueprint.llm_name, "stub");
     }
 
@@ -135,7 +138,10 @@ mod tests {
         let orchestrator = AiGlueOrchestrator::new(Box::new(llm));
         let ctx = ComposeContext::new("audio", "track-1");
         let blueprint = orchestrator.generate_blueprint(&ctx).unwrap();
-        assert!(!blueprint.nomx_source.is_empty(), "nomx_source must not be empty");
+        assert!(
+            !blueprint.nomx_source.is_empty(),
+            "nomx_source must not be empty"
+        );
         assert_eq!(blueprint.nomx_source, "nomx-code-here");
         assert!(
             blueprint.confidence > 0.0 && blueprint.confidence <= 1.0,
@@ -146,13 +152,26 @@ mod tests {
     #[test]
     fn test_all_four_adapters_implement_trait() {
         let adapters: Vec<Box<dyn ReActLlmFn>> = vec![
-            Box::new(StubLlmFn { response: "stub".to_string() }),
-            Box::new(NomCliLlmFn { nom_binary: "nom".to_string() }),
-            Box::new(McpLlmFn { tool_name: "nom_tool".to_string() }),
-            Box::new(RealLlmFn { endpoint: "http://localhost:8080".to_string() }),
+            Box::new(StubLlmFn {
+                response: "stub".to_string(),
+            }),
+            Box::new(NomCliLlmFn {
+                nom_binary: "nom".to_string(),
+            }),
+            Box::new(McpLlmFn {
+                tool_name: "nom_tool".to_string(),
+            }),
+            Box::new(RealLlmFn {
+                endpoint: "http://localhost:8080".to_string(),
+            }),
         ];
         let expected_names = ["stub", "nom_cli", "mcp", "real_llm"];
-        let expected_responses = ["stub", "nom_cli_response", "mcp_response", "real_llm_response"];
+        let expected_responses = [
+            "stub",
+            "nom_cli_response",
+            "mcp_response",
+            "real_llm_response",
+        ];
         for (i, adapter) in adapters.iter().enumerate() {
             assert_eq!(adapter.name(), expected_names[i]);
             let result = adapter.complete("test prompt").unwrap();
@@ -162,7 +181,9 @@ mod tests {
 
     #[test]
     fn test_execute_blueprint_returns_artifact_kind() {
-        let llm = StubLlmFn { response: "code".to_string() };
+        let llm = StubLlmFn {
+            response: "code".to_string(),
+        };
         let orchestrator = AiGlueOrchestrator::new(Box::new(llm));
         let blueprint = GlueBlueprint {
             kind: "image".to_string(),

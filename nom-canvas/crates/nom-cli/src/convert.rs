@@ -96,9 +96,7 @@ pub fn convert_source(source: &str, direction: ConvertDirection) -> String {
             .replace("fn ", "define ")
             .replace(" -> ", " that ")
             .replace("->", " that "),
-        ConvertDirection::V2ToV1 => source
-            .replace("define ", "fn ")
-            .replace(" that ", " -> "),
+        ConvertDirection::V2ToV1 => source.replace("define ", "fn ").replace(" that ", " -> "),
         ConvertDirection::AutoDetect => {
             if source.contains("fn ") {
                 convert_source(source, ConvertDirection::V1ToV2)

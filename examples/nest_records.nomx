@@ -1,0 +1,10 @@
+define inner_record that
+  define value that 42
+  define label that "depth_measure"
+  label + "=" + value
+
+define nest_records that
+  define outer_name that "container"
+  define inner that inner_record
+  outer_name + " contains { " + inner + " }"
+nest_records

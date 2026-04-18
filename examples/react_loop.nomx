@@ -1,0 +1,17 @@
+define observe_state that
+  "observation: dict has 4200 entries"
+
+define think_next_action that
+  define observation that "observation: dict has 4200 entries"
+  "action: promote_partial_entries batch_size=50"
+
+define act_on_decision that
+  define action that "promote_partial_entries batch_size=50"
+  "executed " + action + " result=ok"
+
+define react_loop that
+  define obs that observe_state
+  define thought that think_next_action
+  define outcome that act_on_decision
+  obs + " | " + thought + " | " + outcome
+react_loop

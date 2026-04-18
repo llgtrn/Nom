@@ -19,7 +19,10 @@ mod tests {
 
     #[test]
     fn test_ux_seed_command() {
-        UxCommand::Seed { path: "src/".into() }.run();
+        UxCommand::Seed {
+            path: "src/".into(),
+        }
+        .run();
     }
 
     #[test]

@@ -85,12 +85,21 @@ pub struct VideoConfigContext {
 
 impl VideoConfigContext {
     pub fn new(width: u32, height: u32, fps: u32, duration_frames: u32) -> Self {
-        Self { width, height, fps, duration_frames }
+        Self {
+            width,
+            height,
+            fps,
+            duration_frames,
+        }
     }
 
-    pub fn default_hd() -> Self { Self::new(1920, 1080, 30, 90) }
+    pub fn default_hd() -> Self {
+        Self::new(1920, 1080, 30, 90)
+    }
 
-    pub fn duration_secs(&self) -> f32 { self.duration_frames as f32 / self.fps as f32 }
+    pub fn duration_secs(&self) -> f32 {
+        self.duration_frames as f32 / self.fps as f32
+    }
 }
 
 // Thread-local video config stack for nested backends
@@ -109,7 +118,9 @@ pub fn pop_video_config() -> Option<VideoConfigContext> {
 
 pub fn get_video_config() -> Result<VideoConfigContext, String> {
     VIDEO_CONFIG_STACK.with(|s| {
-        s.borrow().last().cloned()
+        s.borrow()
+            .last()
+            .cloned()
             .ok_or_else(|| "get_video_config() called outside a composition context".into())
     })
 }

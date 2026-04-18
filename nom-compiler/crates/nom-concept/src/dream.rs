@@ -304,8 +304,16 @@ mod tests {
     #[test]
     fn mece_validator_overlap_detected() {
         let validator = MeceValidator::new()
-            .add_category(MeceCategory::new("a", "Alpha").push_item("foo").push_item("bar"))
-            .add_category(MeceCategory::new("b", "Beta").push_item("foo").push_item("baz"));
+            .add_category(
+                MeceCategory::new("a", "Alpha")
+                    .push_item("foo")
+                    .push_item("bar"),
+            )
+            .add_category(
+                MeceCategory::new("b", "Beta")
+                    .push_item("foo")
+                    .push_item("baz"),
+            );
 
         let violations = validator.validate();
         let overlaps: Vec<&MeceViolation> = violations
@@ -313,7 +321,11 @@ mod tests {
             .filter(|v| v.kind == ViolationKind::Overlap)
             .collect();
 
-        assert_eq!(overlaps.len(), 1, "expected exactly one overlap: {violations:?}");
+        assert_eq!(
+            overlaps.len(),
+            1,
+            "expected exactly one overlap: {violations:?}"
+        );
         assert_eq!(overlaps[0].item, "foo");
     }
 
@@ -331,7 +343,11 @@ mod tests {
             .filter(|v| v.kind == ViolationKind::Empty)
             .collect();
 
-        assert_eq!(empties.len(), 1, "expected exactly one empty violation: {violations:?}");
+        assert_eq!(
+            empties.len(),
+            1,
+            "expected exactly one empty violation: {violations:?}"
+        );
         assert_eq!(empties[0].item, "b");
     }
 

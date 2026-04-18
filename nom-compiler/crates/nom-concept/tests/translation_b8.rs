@@ -80,8 +80,7 @@ fn test_natural_gradual_typing() {
 
 #[test]
 fn test_natural_duck_typing() {
-    let source =
-        "@nomx natural\ndefine invoke_method that calls any value exposing the required capability regardless of declared origin";
+    let source = "@nomx natural\ndefine invoke_method that calls any value exposing the required capability regardless of declared origin";
     assert_natural(source);
 }
 
@@ -113,8 +112,7 @@ fn test_natural_refinement_types() {
 
 #[test]
 fn test_natural_dependent_types() {
-    let source =
-        "@nomx natural\ndefine size_safe_access that takes an index proven smaller than the collection length";
+    let source = "@nomx natural\ndefine size_safe_access that takes an index proven smaller than the collection length";
     assert_natural(source);
 }
 
@@ -122,8 +120,7 @@ fn test_natural_dependent_types() {
 
 #[test]
 fn test_natural_linear_types() {
-    let source =
-        "@nomx natural\ndefine consume_once that takes ownership and ensures the value is used exactly one time";
+    let source = "@nomx natural\ndefine consume_once that takes ownership and ensures the value is used exactly one time";
     assert_natural(source);
 }
 
@@ -131,8 +128,7 @@ fn test_natural_linear_types() {
 
 #[test]
 fn test_natural_effect_handlers() {
-    let source =
-        "@nomx natural\ndefine handle_output that intercepts print effects and redirects them to a buffer";
+    let source = "@nomx natural\ndefine handle_output that intercepts print effects and redirects them to a buffer";
     assert_natural(source);
 }
 
@@ -140,8 +136,7 @@ fn test_natural_effect_handlers() {
 
 #[test]
 fn test_natural_row_polymorphism() {
-    let source =
-        "@nomx natural\ndefine extend_record that adds a field to any record regardless of other fields present";
+    let source = "@nomx natural\ndefine extend_record that adds a field to any record regardless of other fields present";
     assert_natural(source);
 }
 
@@ -149,7 +144,6 @@ fn test_natural_row_polymorphism() {
 
 #[test]
 fn test_natural_capability_based_security() {
-    let source =
-        "@nomx natural\ndefine grant_capability that passes an unforgeable token authorising a specific operation";
+    let source = "@nomx natural\ndefine grant_capability that passes an unforgeable token authorising a specific operation";
     assert_natural(source);
 }

@@ -1,0 +1,8 @@
+define generate_response that
+  define prompt that "explain what a render pipeline does"
+  define max_tokens that 256
+  define temperature that 0.7
+  define model_tag that "language_model_v1"
+  define response_preview that "a render pipeline transforms scene data into pixel output"
+  "generated via " + model_tag + " tokens=" + max_tokens + " temp=" + temperature + ": " + response_preview
+generate_response

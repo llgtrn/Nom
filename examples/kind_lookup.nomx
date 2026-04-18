@@ -1,0 +1,6 @@
+define kind_lookup that
+  define name that "audio_buffer"
+  define found_hash that "a3f9c2"
+  define description that "raw PCM audio data"
+  "kind " + name + " hash=" + found_hash + " desc=" + description
+kind_lookup

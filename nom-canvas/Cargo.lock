@@ -1340,9 +1340,15 @@ dependencies = [
 name = "nom-canvas-tests"
 version = "0.1.0"
 dependencies = [
+ "nom-blocks",
+ "nom-cli",
  "nom-compiler-bridge",
  "nom-compose",
+ "nom-editor",
+ "nom-graph",
  "nom-intent",
+ "nom-panels",
+ "nom-theme",
 ]
 
 [[package]]

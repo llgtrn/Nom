@@ -1,0 +1,7 @@
+define build_record that
+  define name that "corpus_entry"
+  define kind that "audio_buffer"
+  define size_bytes that 4096
+  define created_at that "2026-04-19"
+  name + " kind=" + kind + " size=" + size_bytes + " at=" + created_at
+build_record

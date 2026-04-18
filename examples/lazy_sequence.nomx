@@ -1,0 +1,12 @@
+define next_value that
+  define state that 0
+  define step that 1
+  state + step
+
+define lazy_sequence that
+  define seed that 0
+  define step that 1
+  define take_count that 10
+  define generator that "next_value"
+  "lazy seq from " + seed + " step " + step + " take " + take_count + " via " + generator
+lazy_sequence

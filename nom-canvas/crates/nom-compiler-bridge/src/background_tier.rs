@@ -154,10 +154,7 @@ impl BackgroundTierOps {
             return Err("composition input is empty".into());
         }
         match self.compile_sync(input) {
-            Ok(output) => Ok(format!(
-                "Output: {}",
-                output.output_json
-            )),
+            Ok(output) => Ok(format!("Output: {}", output.output_json)),
             Err(e) => Err(format!("Compile error: {}", e)),
         }
     }
@@ -2383,7 +2380,10 @@ mod tests {
         let shared = std::sync::Arc::new(SharedState::new("test.db", "test.grammar"));
         let ops = BackgroundTierOps::new(shared);
         let result = ops.run_composition("define greeting that yields hello");
-        assert!(result.is_ok(), "run_composition must succeed on valid input");
+        assert!(
+            result.is_ok(),
+            "run_composition must succeed on valid input"
+        );
         let text = result.unwrap();
         assert!(
             text.starts_with("Output:"),

@@ -165,9 +165,18 @@ impl BootstrapProof {
     /// Return `(s1_hash, s2_hash, s3_hash)` when all three stages built
     /// successfully, `None` otherwise.
     pub fn proof_tuple(&self) -> Option<(String, String, String)> {
-        let s1 = self.stages[1].binary_hash.as_deref().filter(|h| !h.is_empty())?;
-        let s2 = self.stages[2].binary_hash.as_deref().filter(|h| !h.is_empty())?;
-        let s3 = self.stages[3].binary_hash.as_deref().filter(|h| !h.is_empty())?;
+        let s1 = self.stages[1]
+            .binary_hash
+            .as_deref()
+            .filter(|h| !h.is_empty())?;
+        let s2 = self.stages[2]
+            .binary_hash
+            .as_deref()
+            .filter(|h| !h.is_empty())?;
+        let s3 = self.stages[3]
+            .binary_hash
+            .as_deref()
+            .filter(|h| !h.is_empty())?;
 
         if self.stages[1].is_successful()
             && self.stages[2].is_successful()
@@ -209,8 +218,7 @@ mod tests {
 
     #[test]
     fn stage_build_new_and_mark_built() {
-        let build = StageBuild::new(BootstrapStage::Stage1)
-            .mark_built("abc123", "src456");
+        let build = StageBuild::new(BootstrapStage::Stage1).mark_built("abc123", "src456");
         assert!(build.built);
         assert_eq!(build.binary_hash.as_deref(), Some("abc123"));
         assert_eq!(build.compiler_hash.as_deref(), Some("src456"));
@@ -238,12 +246,8 @@ mod tests {
     #[test]
     fn bootstrap_proof_record_stage_and_stages_complete() {
         let proof = BootstrapProof::new()
-            .record_stage(
-                StageBuild::new(BootstrapStage::Stage0).mark_built("h0", "c0"),
-            )
-            .record_stage(
-                StageBuild::new(BootstrapStage::Stage1).mark_built("h1", "c1"),
-            );
+            .record_stage(StageBuild::new(BootstrapStage::Stage0).mark_built("h0", "c0"))
+            .record_stage(StageBuild::new(BootstrapStage::Stage1).mark_built("h1", "c1"));
         assert_eq!(proof.stages_complete(), 2);
         assert_eq!(proof.stages[0].binary_hash.as_deref(), Some("h0"));
         assert_eq!(proof.stages[1].binary_hash.as_deref(), Some("h1"));

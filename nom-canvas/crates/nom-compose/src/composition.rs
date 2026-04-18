@@ -80,9 +80,17 @@ mod tests {
     fn test_registry_register_and_get() {
         let registry = CompositionRegistry::new();
         registry
-            .register("scene-a", Box::new(|| CompositionConfig { fps: 24, ..Default::default() }))
+            .register(
+                "scene-a",
+                Box::new(|| CompositionConfig {
+                    fps: 24,
+                    ..Default::default()
+                }),
+            )
             .unwrap();
-        let cfg = registry.get_config("scene-a").expect("must find registered id");
+        let cfg = registry
+            .get_config("scene-a")
+            .expect("must find registered id");
         assert_eq!(cfg.fps, 24);
     }
 

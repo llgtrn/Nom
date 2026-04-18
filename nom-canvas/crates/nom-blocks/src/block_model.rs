@@ -240,16 +240,8 @@ mod tests {
     #[test]
     fn block_model_id_unique() {
         let dict = StubDictReader::new();
-        let b1 = BlockModel::insert(
-            NomtuRef::new("e1", "fetch", "verb"),
-            "nom:paragraph",
-            &dict,
-        );
-        let b2 = BlockModel::insert(
-            NomtuRef::new("e2", "store", "verb"),
-            "nom:paragraph",
-            &dict,
-        );
+        let b1 = BlockModel::insert(NomtuRef::new("e1", "fetch", "verb"), "nom:paragraph", &dict);
+        let b2 = BlockModel::insert(NomtuRef::new("e2", "store", "verb"), "nom:paragraph", &dict);
         assert_ne!(b1.id, b2.id, "insert() must generate unique IDs");
     }
 
@@ -327,16 +319,8 @@ mod tests {
     #[test]
     fn block_model_new_assigns_unique_ids() {
         let dict = StubDictReader::new();
-        let b1 = BlockModel::insert(
-            NomtuRef::new("e1", "fetch", "verb"),
-            "nom:paragraph",
-            &dict,
-        );
-        let b2 = BlockModel::insert(
-            NomtuRef::new("e2", "store", "verb"),
-            "nom:paragraph",
-            &dict,
-        );
+        let b1 = BlockModel::insert(NomtuRef::new("e1", "fetch", "verb"), "nom:paragraph", &dict);
+        let b2 = BlockModel::insert(NomtuRef::new("e2", "store", "verb"), "nom:paragraph", &dict);
         assert_ne!(b1.id, b2.id, "each insert() must produce a unique id");
     }
 
@@ -549,11 +533,7 @@ mod tests {
     /// BlockModel parent None is preserved through serde_json round-trip.
     #[test]
     fn block_model_parent_none_round_trip() {
-        let block = BlockModel::new(
-            "b-no-parent",
-            NomtuRef::new("e1", "w", "verb"),
-            "nom:note",
-        );
+        let block = BlockModel::new("b-no-parent", NomtuRef::new("e1", "w", "verb"), "nom:note");
         let json = serde_json::to_string(&block).expect("serialize");
         let restored: BlockModel = serde_json::from_str(&json).expect("deserialize");
         assert!(restored.parent.is_none());

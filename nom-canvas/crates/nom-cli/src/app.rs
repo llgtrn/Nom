@@ -25,12 +25,18 @@ mod tests {
 
     #[test]
     fn test_app_new() {
-        AppCommand::New { name: "myapp".into() }.run();
+        AppCommand::New {
+            name: "myapp".into(),
+        }
+        .run();
     }
 
     #[test]
     fn test_app_build() {
-        AppCommand::Build { name: "myapp".into() }.run();
+        AppCommand::Build {
+            name: "myapp".into(),
+        }
+        .run();
     }
 
     #[test]

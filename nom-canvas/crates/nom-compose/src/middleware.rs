@@ -116,7 +116,11 @@ mod tests {
     fn test_middleware_registry_register_and_len() {
         let mut reg = MiddlewareRegistry::new();
         reg.register(Box::new(LoggingMiddleware));
-        assert_eq!(reg.len(), 1, "registry must have one middleware after register");
+        assert_eq!(
+            reg.len(),
+            1,
+            "registry must have one middleware after register"
+        );
         assert!(!reg.is_empty());
         reg.register(Box::new(LatencyMiddleware::new()));
         assert_eq!(reg.len(), 2, "registry must have two middlewares");
@@ -128,7 +132,10 @@ mod tests {
         reg.register(Box::new(LoggingMiddleware));
         let ctx = ComposeContext::new("render", "input-data");
         let result = reg.run_before(&ctx);
-        assert!(result.is_ok(), "run_before must return Ok when no middleware errors");
+        assert!(
+            result.is_ok(),
+            "run_before must return Ok when no middleware errors"
+        );
     }
 
     #[test]
@@ -146,6 +153,10 @@ mod tests {
     #[test]
     fn test_logging_middleware_name() {
         let m = LoggingMiddleware;
-        assert_eq!(m.name(), "logging", "LoggingMiddleware name must be 'logging'");
+        assert_eq!(
+            m.name(),
+            "logging",
+            "LoggingMiddleware name must be 'logging'"
+        );
     }
 }

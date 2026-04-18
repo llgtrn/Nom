@@ -54,8 +54,12 @@ mod tests {
     #[test]
     fn push_actions_into_slots() {
         let hp = HeaderPanel::new("Root")
-            .push_left(HeaderAction::Icon { name: "back".to_string() })
-            .push_right(HeaderAction::Button { label: "Share".to_string() })
+            .push_left(HeaderAction::Icon {
+                name: "back".to_string(),
+            })
+            .push_right(HeaderAction::Button {
+                label: "Share".to_string(),
+            })
             .push_right(HeaderAction::Separator);
         assert_eq!(hp.left.len(), 1);
         assert_eq!(hp.right.len(), 2);

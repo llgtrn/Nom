@@ -74,6 +74,9 @@ mod tests {
     fn test_sequence_frame_before_start_inactive() {
         let ctx = SequenceContext::new(10, 30);
         // absolute frame 5 is before the sequence start of 10
-        assert!(!is_frame_active(5, &ctx), "frame before sequence start must be inactive");
+        assert!(
+            !is_frame_active(5, &ctx),
+            "frame before sequence start must be inactive"
+        );
     }
 }

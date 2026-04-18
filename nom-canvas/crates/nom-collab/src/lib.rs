@@ -12889,7 +12889,10 @@ mod vector_clock_tests {
 
     #[test]
     fn merge_takes_element_wise_max() {
-        let a = VectorClock::new().increment("x").increment("x").increment("y");
+        let a = VectorClock::new()
+            .increment("x")
+            .increment("x")
+            .increment("y");
         // a: x=2, y=1
         let b = VectorClock::new().increment("x").increment("z");
         // b: x=1, z=1

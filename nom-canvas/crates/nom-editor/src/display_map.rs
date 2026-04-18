@@ -334,7 +334,7 @@ mod tests {
             r
         });
         assert_eq!(map.visible_line_count(20), 16); // 20 - 4
-        // No collapsed folds — all lines visible
+                                                    // No collapsed folds — all lines visible
         let map2 = LineDisplayMap::new().add_fold(LineFoldRegion::new(0, 5, "..."));
         assert_eq!(map2.visible_line_count(20), 20);
     }

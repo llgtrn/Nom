@@ -1285,4 +1285,130 @@ mod tests {
         ));
         assert_eq!(ws.block_count(), ws.doc_tree.len());
     }
+
+    // ── wave ABB-10: deeper workspace tests ──────────────────────────────────
+
+    /// Add 3 blocks, remove 1 by ID, block_count() returns 2.
+    #[test]
+    fn workspace_remove_and_recount() {
+        let mut ws = Workspace::new();
+        for i in 0..3u8 {
+            ws.insert_block(BlockModel::new(
+                format!("rc-b{i}"),
+                NomtuRef::new(format!("rc-e{i}"), "w", "verb"),
+                "nom:paragraph",
+            ));
+        }
+        assert_eq!(ws.block_count(), 3);
+        ws.remove_block("rc-b1");
+        assert_eq!(
+            ws.block_count(),
+            2,
+            "block count must drop to 2 after removal"
+        );
+    }
+
+    /// Add a block with a specific entity, find by that entity via blocks.values().
+    #[test]
+    fn workspace_find_by_entity() {
+        let mut ws = Workspace::new();
+        let entity = NomtuRef::new("find-entity-id", "locate", "concept");
+        ws.insert_block(BlockModel::new("find-block", entity.clone(), "nom:note"));
+        let found = ws.blocks.values().find(|b| b.entity == entity);
+        assert!(found.is_some(), "block must be findable by entity");
+        assert_eq!(found.unwrap().id, "find-block");
+    }
+
+    /// Connector carries both source and target node IDs after construction.
+    #[test]
+    fn connector_validation_two_way() {
+        let dict = crate::stub_dict::StubDictReader::new();
+        let conn = Connector::new_with_validation(crate::connector::ConnectorValidation {
+            id: "two-way-wire".into(),
+            from_node: "node-alpha".into(),
+            from_port: "output".into(),
+            to_node: "node-beta".into(),
+            to_port: "input".into(),
+            dict: &dict,
+            from_kind: "verb",
+            to_kind: "concept",
+        });
+        assert_eq!(conn.src.0, "node-alpha", "source node must be preserved");
+        assert_eq!(
+            conn.dst.0, "node-beta",
+            "destination node must be preserved"
+        );
+    }
+
+    /// insert_block_dedup with the same block ID twice stores only one entry.
+    #[test]
+    fn workspace_dedup_guard_works() {
+        let mut ws = Workspace::new();
+        let first = ws.insert_block_dedup(BlockModel::new(
+            "dedup-id",
+            NomtuRef::new("dedup-e1", "alpha", "verb"),
+            "nom:paragraph",
+        ));
+        let second = ws.insert_block_dedup(BlockModel::new(
+            "dedup-id",
+            NomtuRef::new("dedup-e2", "beta", "concept"),
+            "nom:note",
+        ));
+        assert!(first, "first insert must succeed");
+        assert!(!second, "second insert with same id must be rejected");
+        assert_eq!(
+            ws.block_count(),
+            1,
+            "workspace must store exactly one block"
+        );
+        assert_eq!(ws.doc_tree.len(), 1, "doc_tree must have exactly one entry");
+    }
+
+    /// A block with no parent and no children has empty ancestors list.
+    #[test]
+    fn workspace_collect_ancestors_empty() {
+        let mut ws = Workspace::new();
+        let block = BlockModel::new(
+            "orphan",
+            NomtuRef::new("orphan-entity", "solo", "verb"),
+            "nom:paragraph",
+        );
+        ws.insert_block(block);
+        let b = ws.blocks.get("orphan").unwrap();
+        // Collect ancestors by walking .parent chain — a block with parent == None has zero ancestors.
+        let mut ancestors: Vec<String> = Vec::new();
+        let mut cursor = b.parent.clone();
+        while let Some(parent_id) = cursor {
+            ancestors.push(parent_id.clone());
+            cursor = ws.blocks.get(&parent_id).and_then(|p| p.parent.clone());
+        }
+        assert!(ancestors.is_empty(), "orphan block must have no ancestors");
+    }
+
+    /// Workspace serializes to JSON and deserializes back preserving block IDs.
+    #[test]
+    fn workspace_serialization_roundtrip() {
+        let mut ws = Workspace::new();
+        ws.insert_block(BlockModel::new(
+            "rt-b1",
+            NomtuRef::new("rt-e1", "serialize", "verb"),
+            "nom:paragraph",
+        ));
+        ws.insert_block(BlockModel::new(
+            "rt-b2",
+            NomtuRef::new("rt-e2", "persist", "concept"),
+            "nom:note",
+        ));
+        let json = serde_json::to_string(&ws).expect("workspace must serialize");
+        let ws2: Workspace = serde_json::from_str(&json).expect("workspace must deserialize");
+        assert_eq!(ws2.block_count(), 2, "block count must be preserved");
+        assert!(
+            ws2.blocks.contains_key("rt-b1"),
+            "rt-b1 must survive roundtrip"
+        );
+        assert!(
+            ws2.blocks.contains_key("rt-b2"),
+            "rt-b2 must survive roundtrip"
+        );
+    }
 }

@@ -1,0 +1,7 @@
+define tool_dispatch that
+  define tool_name that "nomtu_search"
+  define args that "query=resize_image top_k=3"
+  define result_count that 3
+  define first_result that "resize_image_layer"
+  "dispatched " + tool_name + "(" + args + ") -> " + result_count + " results first=" + first_result
+tool_dispatch

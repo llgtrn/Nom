@@ -35,12 +35,18 @@ impl DemoRunner {
 
     pub fn run(&self) -> DemoResult {
         let steps: &[&str] = match self.kind {
-            DemoKind::NomxHighlight => {
-                &["parse_source", "lex_tokens", "classify_kinds", "render_highlights"]
-            }
-            DemoKind::DragNodeCanvas => {
-                &["create_block", "insert_db", "assign_entity_ref", "render_node"]
-            }
+            DemoKind::NomxHighlight => &[
+                "parse_source",
+                "lex_tokens",
+                "classify_kinds",
+                "render_highlights",
+            ],
+            DemoKind::DragNodeCanvas => &[
+                "create_block",
+                "insert_db",
+                "assign_entity_ref",
+                "render_node",
+            ],
             DemoKind::WireCompose => &[
                 "create_connector",
                 "validate_wire",

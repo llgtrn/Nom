@@ -1,0 +1,11 @@
+define original_record that
+  define title that "first_draft"
+  define score that 72
+  title + " score=" + score
+
+define update_field that
+  define base that original_record
+  define field that "score"
+  define new_value that 91
+  "updated " + field + " to " + new_value + " in " + base
+update_field

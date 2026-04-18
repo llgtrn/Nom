@@ -1,5 +1,6 @@
 #![deny(unsafe_code)]
 pub mod bottom;
+pub mod center;
 pub mod command_palette;
 pub mod dock;
 pub mod entity_ref;
@@ -9,12 +10,14 @@ pub mod right;
 pub mod shell;
 pub mod statusbar;
 pub mod toolbar;
-pub mod center;
 pub mod top;
 
 pub use bottom::{
     run_composition_command, Diagnostic, DiagnosticSeverity, DiagnosticsPanel, StatusItem,
     StatusKind, TerminalLine, TerminalLineKind, TerminalPanel,
+};
+pub use center::{
+    CenterLayout, EditorView, SplitDirection as CenterSplitDirection, Tab, TabKind, TabManager,
 };
 pub use command_palette::{CommandPalette, CommandPaletteItem};
 pub use dock::{
@@ -25,16 +28,12 @@ pub use left::{
     FileNode, FileNodeKind, FileTreePanel, LibraryKind, LibraryPanel, NodePalette, PaletteEntry,
     QuickSearchPanel, SearchResult, SearchResultKind,
 };
-pub use center::{
-    CenterLayout, Tab, TabKind, TabManager,
-    SplitDirection as CenterSplitDirection,
-};
 pub use pane::{Member, Pane, PaneAxis, PaneGroup, PaneTab, SplitDirection};
 pub use right::{
     AiReviewCard, AnimatedReasoningCard, CardState, ChatMessage, ChatPanel, ChatPanelMessage,
-    ChatPanelRole, ChatRole, ChatSidebarPanel, DeepThinkPanel, HypothesisNode, HypothesisTree,
-    HypothesisTreeNav, IntentPreviewCard, PropertiesPanel, PropertyEntry, PropertyRow,
-    PropertyValue, ReasoningStep, ThinkingStep, ToolCard,
+    ChatPanelRole, ChatRole, ChatSidebarPanel, DeepThinkPanel, DeepThinkRenderer, HypothesisNode,
+    HypothesisTree, HypothesisTreeNav, IntentPreviewCard, PropertiesPanel, PropertyEntry,
+    PropertyRow, PropertyValue, ReasoningStep, ThinkingStep, ToolCard,
 };
 pub use shell::{Shell, ShellLayout, ShellMode};
 pub use statusbar::{StatusBar, StatusSlot};

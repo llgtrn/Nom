@@ -1,0 +1,7 @@
+define promote_entry that
+  define hash that "b7e21d"
+  define from_state that "partial"
+  define to_state that "complete"
+  define word that "render_pipeline"
+  "promoted " + word + " " + from_state + " -> " + to_state + " hash=" + hash
+promote_entry

@@ -1,7 +1,7 @@
 #![deny(unsafe_code)]
 
-use crate::glue::AiGlueOrchestrator;
 use crate::context::ComposeContext;
+use crate::glue::AiGlueOrchestrator;
 use std::sync::Arc;
 
 /// A token emitted during streaming generation
@@ -72,11 +72,13 @@ impl SwitchableStream {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::glue::{AiGlueOrchestrator, StubLlmFn};
     use crate::context::ComposeContext;
+    use crate::glue::{AiGlueOrchestrator, StubLlmFn};
 
     fn make_stream(response: &str) -> SwitchableStream {
-        let llm = StubLlmFn { response: response.to_string() };
+        let llm = StubLlmFn {
+            response: response.to_string(),
+        };
         let orchestrator = Arc::new(AiGlueOrchestrator::new(Box::new(llm)));
         SwitchableStream::new(orchestrator)
     }
