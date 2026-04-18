@@ -40,6 +40,9 @@ pub use postproc::{DeduplicateFilter, PostDoc, PostPipeline, ScoreThresholdFilte
 pub mod haystack_pipeline;
 pub use haystack_pipeline::{ComponentPipeline, ComponentType, HaystackComponent, PipelineRanker, RankedResult};
 
+pub mod graphify_chart;
+pub use graphify_chart::{ChartAxis, ChartSeries, ChartSpec, ChartType, GraphifyComposer};
+
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,

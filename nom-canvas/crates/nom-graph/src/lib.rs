@@ -38,3 +38,5 @@ pub mod content_address;
 pub use content_address::{ContentAddressStore, ContentHash, CrossAppStore, ShareEntry};
 pub mod hypothesis_tree;
 pub use hypothesis_tree::{BeliefPropagator, HypothesisTree, HypothesisNodeState, ReasoningNode};
+pub mod wasm_bridge;
+pub use wasm_bridge::{WasmBridge, WasmFeatureGate, WasmModule, WasmTarget};

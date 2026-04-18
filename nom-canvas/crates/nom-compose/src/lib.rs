@@ -136,6 +136,8 @@ pub use ad_creative::AdCreativeSpec as AdCreativeSpecComposer;
 pub use ad_creative::AdFormat as AdFormatComposer;
 pub mod mobile_compose;
 pub use mobile_compose::{MobileAppSpec, MobileComponent, MobileComposer, MobilePlatform, MobileScreen};
+pub mod mesh_compose;
+pub use mesh_compose::{Mesh, MeshComposer, MeshFace, MeshVertex};
 
 #[cfg(test)]
 mod integration_tests {

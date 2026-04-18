@@ -414,13 +414,21 @@
 - ✅ TabBar — TabEntry+TabBar+TabBarState UI navigation (9 tests)
 - ✅ VideoEncode — VideoCodec+VideoFrame+VideoEncoder+GpuVideoEncoder stub (9 tests)
 
-## Open Items — Wave ABAA targets
+## Wave ABAA — COMPLETE (2026-04-19, 9798 tests)
 
-- ❌ **nom-compose ad-creative** — AdFormat + AdCreativeSpec + AdComposer (ad-creative demo)
-- ❌ **nom-canvas-core dark-theme** — ThemeMode + ThemeTokenMap + ThemeToggle
-- ❌ **nom-graph reasoning-tree** — ReasoningNode + HypothesisTree + BeliefPropagator
-- ❌ **nom-compose mobile-compose** — MobileScreen + MobileAppSpec + MobileComposer
-- ❌ **nom-telemetry trace-export** — TraceExporter + JaegerFormat + OpenTelemetrySpan
+- ✅ AdCreative — AdFormat+AdDimension+AdCreativeSpec+AdComposer (9 tests)
+- ✅ Theme — ThemeMode+ThemeTokenMap 4-token+ThemeToggle dark/light (9 tests)
+- ✅ HypothesisTree — HypothesisNodeState+ReasoningNode+HypothesisTree+BeliefPropagator (9 tests)
+- ✅ MobileCompose — MobilePlatform+MobileScreen+MobileAppSpec+MobileComposer (9 tests)
+- ✅ TraceExport — SpanStatus+OpenTelemetrySpan+JaegerSpan+TraceExporter (9 tests)
+
+## Open Items — Wave ABAB targets
+
+- ❌ **nom-compose 3d-mesh** — MeshVertex + MeshFace + MeshComposer (3D-mesh-compose demo)
+- ❌ **nom-graph wasm-bridge** — WasmModule + WasmBridge + WasmFeatureGate
+- ❌ **nom-intent graphify-chart** — ChartSpec + ChartSeries + GraphifyComposer (graphify pattern)
+- ❌ **nom-canvas-core animation-card** — AnimationCard + CardTimeline + CardAnimator
+- ❌ **nom-collab presence** — PresenceUser + PresenceMap + PresenceBroadcast
 
 ---
 

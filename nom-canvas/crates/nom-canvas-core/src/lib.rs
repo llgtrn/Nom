@@ -72,6 +72,10 @@ pub use affine_tokens::{AffineToken, AffineTokenSet, DesignTokenApplier, TokenCa
 pub mod theme;
 pub use theme::{ThemeEntry, ThemeMode, ThemeToggle, ThemeTokenMap};
 
+/// Animated reasoning-card progression: state transitions, keyframe timelines, and animator.
+pub mod animation_card;
+pub use animation_card::{AnimationCard, CardAnimator, CardKeyframe, CardState, CardTimeline};
+
 #[cfg(test)]
 mod integration_tests {
     use crate::elements::{paint_graph_node, paint_wire};

@@ -7,6 +7,7 @@ pub mod presence;
 pub mod session;
 pub use merge::{MergeRecord, MergeStrategy};
 pub use presence::{CursorPosition, PresenceMap, PresenceStatus};
+pub use presence::{PresenceBroadcast, PresenceEvent, PresenceUser, PresenceUserMap, PresenceUserStatus};
 pub use session::{CollabParticipant, CollabSession, SessionRole};
 
 /// Unique identifier for a peer in the collaborative session.
