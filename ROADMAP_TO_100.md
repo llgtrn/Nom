@@ -1,7 +1,7 @@
 # Nom — Roadmap to 100%
 
 **Date:** 2026-04-19 | **Mandate:** reach 100% on all 4 axes. Every `[ ]` is a completable task.
-**Last updated:** Wave ABE COMPLETE — HEAD `7dc8dd3`, **9217 tests**, 0 clippy warnings, fmt clean. A-axis ~65%, B-axis ~81%, C-axis ~89%, D-axis ~99%.
+**Last updated:** Wave ABF COMPLETE — HEAD `5a525e5`, **9315 tests**, 0 clippy warnings, fmt clean. A-axis ~67%, B-axis ~82%, C-axis ~90%, D-axis ~99%.
 
 ## Current finalization snapshot
 

@@ -1,6 +1,30 @@
 # Nom State Machine Report
 
-**Date:** 2026-04-19 | **HEAD:** `7dc8dd3` | **Tests:** 9217 | **Workspace:** clean — Waves AX+AY+AZ+ABA+ABB+ABC+ABD+ABE complete. 0 clippy warnings. A 65%, B 81%, C 89%, D 99%.
+**Date:** 2026-04-19 | **HEAD:** `5a525e5` | **Tests:** 9315 | **Workspace:** clean — Waves AX+AY+AZ+ABA+ABB+ABC+ABD+ABE+ABF complete. 0 clippy warnings. A 67%, B 82%, C 90%, D 99%.
+
+---
+
+## Iteration 77 — Wave ABF COMPLETE (HEAD 5a525e5, 9315 tests, 0 warnings)
+
+**12 parallel agents. Universal clone/inspect engine: NomInspector + SherlockAdapter + StrategyExtractor + RepoInspector + ContentHash/Dag + NativeCodegen + InspectPanel (internal) + EventQueue + SelectionManager + OpLog + ActiveSpan + golden 30.**
+
+| Gap ID | Fix | Crate |
+|--------|-----|-------|
+| Clone engine | NomInspector 7 targets + InspectFinding/InspectReport | nom-compose |
+| OSINT | SherlockAdapter parse_json_output + to_inspect_findings | nom-compose |
+| Strategy | StrategyExtractor BusinessModel/StrategySignal/StrategyReport | nom-intent |
+| Repo | RepoInspector RepoLanguage/RepoFile/RepoProfile | nom-compiler-bridge |
+| Content hash | ContentHash FNV-1a + ContentStore dedup_insert | nom-blocks |
+| Content DAG | DagNode + DagEdge + ContentDag find_by_hash | nom-graph |
+| Native codegen | TargetArch/NativeBinary/NativeCodegen lower_to_native stub | nom-concept |
+| Fixpoint | FixpointVerifier verify_fixpoint() | nom-concept |
+| Routing (internal) | InspectKind/InspectRequest/InspectResult (no UX panel) | nom-panels |
+| Input events | KeyModifiers + InputEvent + EventQueue | nom-gpui |
+| Selection | SelectionAnchor + SelectionRange + SelectionManager | nom-editor |
+| Ops | OpKind + Op + OpLog CRDT | nom-collab |
+| Spans | SpanKind + SpanEvent + ActiveSpan duration_ns | nom-telemetry |
+| D3 golden 30 | 30 total golden path tests | nom-canvas-tests |
+| Design spec | 2026-04-19-nom-inspector-design.md | docs/ |
 
 ---
 

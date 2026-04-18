@@ -1,6 +1,6 @@
 # Nom — Task Execution Checklist
 
-**Date:** 2026-04-19 | **HEAD:** `7dc8dd3` | **Tests:** 9217 | **Workspace:** clean — Waves AX+AY+AZ+ABA+ABB+ABC+ABD+ABE complete. A-axis ~65%, B-axis ~81%, C-axis ~89%, D-axis ~99%.
+**Date:** 2026-04-19 | **HEAD:** `5a525e5` | **Tests:** 9315 | **Workspace:** clean — Waves AX+AY+AZ+ABA+ABB+ABC+ABD+ABE+ABF complete. A-axis ~67%, B-axis ~82%, C-axis ~90%, D-axis ~99%.
 
 ## DB-Driven Architecture (Wave AE/AC verified PASS)
 
@@ -246,16 +246,35 @@
 - ✅ D4 PresenceMap + AnimationClip (+14)
 - ✅ D3 golden 26 — 26 total golden path tests
 
-## Open Items — Wave ABF targets
+## Wave ABF (2026-04-19) — COMMITTED ✅ (HEAD 5a525e5, 9315 tests)
 
-- ❌ **NomInspector** — universal clone/inspect/replicate (YouTube/GitHub/Web/Person/Company)
-- ❌ **Sherlock adapter** — PersonInspector OSINT via sherlock.py
-- ❌ **StrategyExtractor** — competitive intelligence from text/metadata
-- ❌ **InspectPanel** — ChatPanel → InspectPanel → CanvasMode routing
-- ❌ **ContentHash/ContentDag** — content-addressed DB entries
-- ❌ **NativeCodegen** — LLVM IR → native binary stub
-- ❌ **D3 golden 30** — 30 total golden path tests
-- ❌ **NomInspector design spec** — docs/superpowers/specs/
+- ✅ NomInspector — 7 InspectTarget kinds + InspectFinding/InspectReport + detect_target/inspect_url (+10)
+- ✅ Sherlock adapter — SherlockStatus/SherlockSite/SherlockResult + parse_json_output + to_inspect_findings (+8)
+- ✅ StrategyExtractor — BusinessModel/StrategySignal/StrategyReport keyword extraction (+8)
+- ✅ RepoInspector — RepoLanguage/RepoFile/RepoProfile (nom-compiler-bridge) (+8)
+- ✅ ContentHash/ContentDag — FNV-1a ContentHash + ContentStore + DagNode/DagEdge/ContentDag (+12)
+- ✅ NativeCodegen stub — TargetArch/TargetOs/NativeBinary/NativeCodegen lower_to_native() (+6)
+- ✅ FixpointVerifier — verify_fixpoint() in nom-concept bootstrap (+4)
+- ✅ InspectPanel (internal) — InspectKind/InspectRequest/InspectResult routing logic (+10)
+- ✅ EventQueue — KeyModifiers + InputEvent + EventQueue (nom-gpui) (+8)
+- ✅ SelectionManager — SelectionAnchor + SelectionRange + SelectionManager (nom-editor) (+8)
+- ✅ OpLog — OpKind + Op + OpLog CRDT log (nom-collab) (+6)
+- ✅ ActiveSpan — SpanKind + SpanEvent + duration_ns (nom-telemetry) (+6)
+- ✅ D3 golden 30 — 30 total golden path tests in nom-canvas-tests
+- ✅ NomInspector design spec — docs/superpowers/specs/2026-04-19-nom-inspector-design.md
+
+## Open Items — Wave ABG targets
+
+- ❌ **ChatDispatch → NomInspector** — wire ChatDispatch.infer_mode() directly to NomInspector; no InspectPanel in UX
+- ❌ **LlmQualityGate** — inspect_with_quality(target, llm_fn) → DreamScore ≥95 gates each step; retry loop via ReActLlmFn
+- ❌ **C5 audio real** — real rodio playback in AudioMixer; not just stubs
+- ❌ **C5 video GPU→FFmpeg** — real FrameCapture → FFmpeg encode in TwoStagePipeline
+- ❌ **A6 LSP real async** — real tokio stdin/stdout I/O in LspAsyncLoop (stubs exist)
+- ❌ **A10 corpus pipeline** — 100-repo ingestion: PyPI top-100 + GitHub top-100 per ecosystem
+- ❌ **A11 full compile** — NomParser → AstToIr → IrPrinter → NativeCodegen end-to-end pipeline
+- ❌ **B8 +20 translations** — 20 more paradigm translations in nom-concept
+- ❌ **C9 build --all-features** — `cargo build --all-features` passes cleanly
+- ❌ **D3 golden 35** — 35 total golden path tests
 
 ---
 
