@@ -279,16 +279,22 @@
 - ✅ C9 build --all-features passes cleanly (7,258 nom-canvas tests)
 - ✅ 8 vision repos cloned (SAM, YOLOv8, unilm, screenshot-to-code, gpt-engineer, donut, AnimateDiff, stable-video-diffusion)
 
-## Open Items — Wave ABI targets (vision pipeline native Rust)
+## Wave ABI (2026-04-19) — COMMITTED ✅ (HEAD 2b453b0, ~9458 tests)
 
-- ❌ **BBoxDetector** — YOLOv8 LetterBox + NMS + BBox pipeline in nom-compose/src/detection.rs
-- ❌ **SegmentPipeline** — SAM sparse/dense prompt encoding + mask decoder stubs in nom-compose/src/segmentation.rs
-- ❌ **LayoutAnalyzer** — LayoutLMv3 spatial bbox embedding pattern in nom-compose/src/layout.rs
-- ❌ **AnimationPipeline** — AnimateDiff UNet3D + temporal attention stubs in nom-compose/src/diffusion.rs
-- ❌ **VisionOrchestrator** — chains BBox→Segment→Layout→nomx generation
-- ❌ **C5 video GPU→FFmpeg** — real FrameCapture → FFmpeg encode in TwoStagePipeline
-- ❌ **A6 LSP real tokio** — real tokio stdin/stdout in LspAsyncLoop
-- ❌ **D3 golden 40** — 40 total golden path tests
+- ✅ BBoxDetector — LetterBox + IoU + NMS (YOLOv8 pattern, 9 tests)
+- ✅ SegmentPipeline — SAM BinaryMask + PointGrid + SamPipeline (9 tests)
+- ✅ LayoutAnalyzer — DocBBox + SpatialFeatures + reading-order (9 tests)
+- ✅ AnimationPipeline — LatentState + VideoFrame + LCG noise + CFG guidance (9 tests)
+- ✅ VisionOrchestrator — detect→segment→layout→.nomx (7 tests)
+
+## Open Items — Wave ABJ targets
+
+- ❌ **D3 golden 40** — 5 more golden path tests (40 total)
+- ❌ **VideoCapture real** — real FrameCapture→FFmpeg encode wiring
+- ❌ **A6 LSP tokio** — real tokio async stdin/stdout in LspAsyncLoop
+- ❌ **VisionOrchestrator + NomInspector bridge** — wire VisionOrchestrator output into NomInspector InspectFinding
+- ❌ **Pix2Struct/Donut pattern** — read source, implement document-without-OCR layout extraction
+- ❌ **gpt-engineer pattern** — read source, extract AI→code generation pipeline for nom-compose
 
 ---
 

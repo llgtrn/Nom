@@ -4,6 +4,20 @@
 
 ---
 
+## Iteration 80 — Wave ABI COMPLETE (HEAD 2b453b0, ~9458 tests, 0 warnings)
+
+**5 parallel agents. Native vision pipeline from source-reading SAM+YOLOv8+AnimateDiff+LayoutLMv3.**
+
+| Module | Pattern Source | Crate |
+|--------|---------------|-------|
+| detection.rs | YOLOv8 LetterBox+NMS+BBox | nom-compose |
+| segmentation.rs | SAM PointPrompt+BinaryMask+PointGrid | nom-compose |
+| layout.rs | LayoutLMv3 DocBBox+SpatialFeatures+LayoutAnalyzer | nom-compose |
+| diffusion.rs | AnimateDiff LatentState+VideoFrame+AnimationPipeline | nom-compose |
+| vision_orchestrator.rs | chains detect→segment→layout→.nomx | nom-compose |
+
+---
+
 ## Iteration 79 — Wave ABG+ABH COMPLETE (HEAD de66f18, ~9415 tests, 0 warnings)
 
 **14 parallel agents + 8 vision repos cloned + source-read of Sherlock+screenshot-to-code.**
