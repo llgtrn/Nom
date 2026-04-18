@@ -100,6 +100,9 @@ pub use canonicalize::{CanonicalForm, CanonicalizationChecker, CanonicalRequirem
 pub mod benchmark_table;
 pub use benchmark_table::{BenchmarkAggregation, BenchmarkSideTable, EntryBenchmark};
 
+pub mod bipartite;
+pub use bipartite::{BipartiteAssignment, CostMatrix, MinCostSolver};
+
 /// Closed kind set per doc 08 §8.1.
 ///
 /// Mirrors the rows in baseline.sql's `kinds` table. Kept in sync by

@@ -74,6 +74,10 @@ pub use slot::{SlotBinding, SlotValue};
 pub use stub_dict::StubDictReader;
 pub use workspace::{CanvasObject, Workspace};
 pub use nomx_manifest::{NomxDep, NomxManifest, NomxModuleEdge, NomxModuleGraph};
+/// CRDT merge strategies — vector clocks, merge operations, and conflict resolution.
+#[allow(missing_docs)]
+pub mod crdt_merge;
+pub use crdt_merge::{CrdtMergeOp, MergeStrategy, VectorClock};
 
 #[cfg(test)]
 mod integration_tests {

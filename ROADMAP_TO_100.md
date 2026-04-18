@@ -126,11 +126,11 @@
 - [x] Dream history persisted in `entry_meta` — DreamJournal+DreamHistoryStore (Wave ABU)
 
 ### A9. Phase 12 — Closure-level specialization
-- [ ] `entry_benchmarks` side-table populated from real runs
+- [x] `entry_benchmarks` side-table populated from real runs — BenchmarkSideTable (Wave ABV)
 - [ ] Bipartite min-cost assignment solver (§5.15)
 - [ ] Cross-app specialization sharing via content-address
 - [ ] 70–95% binary-size reduction verified on test corpus
-- [ ] `nom bench regress` CLI catches regressions
+- [x] `nom bench regress` CLI catches regressions — RegressionChecker (Wave ABV)
 
 ### A10. Dict ingestion at scale
 - [ ] 100-repo corpus (Accelworld/upstreams) ingested end-to-end

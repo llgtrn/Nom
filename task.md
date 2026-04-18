@@ -374,13 +374,21 @@
 - ✅ NomxManifest — NomxManifest+NomxDep+NomxModuleGraph .nomx workspace (9 tests)
 - ✅ DreamHistory — DreamHistoryEntry+DreamHistoryStore+DreamJournal (9 tests)
 
-## Open Items — Wave ABV targets
+## Wave ABV — COMPLETE (2026-04-19, 9582 tests)
 
-- ❌ **nom-bench regression** — BenchmarkBaseline + RegressAlert + RegressionChecker
-- ❌ **nom-canvas-core viewport-map** — ElementBounds + ViewportMap + VisibilityQuery
-- ❌ **nom-concept benchmark-table** — EntryBenchmark + BenchmarkSideTable + BenchmarkAggregation
-- ❌ **nom-intent feature-stack** — WordIdMap + FeatureWeight + FeatureStack
-- ❌ **nom-compose storyboard** — StoryboardPhase×5 + StoryboardPlan + StoryboardExecutor
+- ✅ RegressionChecker — BenchmarkBaseline+RegressAlert, nom bench regress (9 tests)
+- ✅ ViewportMap — ElementBounds+ViewportMap+VisibilityQuery spatial index (9 tests)
+- ✅ BenchmarkSideTable — EntryBenchmark+BenchmarkAggregation side-table (9 tests)
+- ✅ FeatureStack — WordIdMap+FeatureWeight+FeatureStack word IDs (9 tests)
+- ✅ Storyboard — StoryboardPhase×5+StoryboardPlan+StoryboardExecutor (9 tests)
+
+## Open Items — Wave ABW targets
+
+- ❌ **nom-concept bipartite-solver** — CostMatrix + BipartiteAssignment + MinCostSolver (§5.15)
+- ❌ **nom-compose image-dispatch** — ModelDescriptor + ImageDispatcher + ModelRegistry
+- ❌ **nom-graph ancestry** — AncestryChain + AncestorQuery + DescendantIter
+- ❌ **nom-blocks crdt-merge** — CrdtMergeOp + VectorClock + MergeStrategy
+- ❌ **nom-telemetry span-aggregator** — SpanAggregator + TraceReport + P95Calculator
 
 ---
 

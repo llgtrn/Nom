@@ -1,4 +1,5 @@
 #![deny(unsafe_code)]
+pub mod ancestry;
 pub mod cache;
 pub mod plan_cache;
 pub mod content_dag;
@@ -32,3 +33,4 @@ pub use sandbox::{eval_expr, sanitize, BinOpKind, EvalContext, Expr, SandboxErro
 pub use traversal::{GraphTraversal, TraversalOrder, TraversalResult};
 pub use weight::{EdgeWeight, WeightGraph};
 pub use weighted_graph::{WeightedEdge, WeightedGraph};
+pub use ancestry::{AncestorQuery, AncestryChain, DescendantIter, ParentMap};

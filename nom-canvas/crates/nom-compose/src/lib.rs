@@ -118,6 +118,8 @@ pub mod streaming_result;
 pub use streaming_result::{PartialResult, ResultBuffer, StreamingOutput};
 pub mod storyboard;
 pub use storyboard::{StoryboardExecutor, StoryboardPhase, StoryboardPlan, StoryboardStep};
+pub mod image_dispatch;
+pub use image_dispatch::{DispatchRecord, ImageDispatcher, ModelCapability, ModelDescriptor, ModelRegistry};
 
 #[cfg(test)]
 mod integration_tests {
