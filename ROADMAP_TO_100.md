@@ -287,13 +287,27 @@
 - [ ] Rename-refactor preview works
 
 ### C5. Backend wiring beyond spec-and-stub
-- [ ] Video backend: GPU scene → frame capture → FFmpeg parallel encode (Remotion)
+
+**C5-VIDEO (Remotion-pattern — 10 gaps from scan 2026-04-18):**
+- [ ] C5-V1: `CompositionConfig` struct + `CompositionRegistry` with `register(id, config_fn)` → `nom-compose/src/composition.rs`
+- [ ] C5-V2: `SequenceContext` (cumulated_from/relative_from/duration_frames) + `current_frame_in_sequence()` → `nom-compose/src/timeline.rs`
+- [ ] C5-V3: `interpolate(frame, input_range, output_range, easing, extrapolate_left, extrapolate_right)` + `ExtrapolateMode` → `nom-compose/src/animate.rs`
+- [ ] C5-V4: `spring(frame, fps, SpringConfig, from, to)` + `SpringConfig{damping,mass,tension}` → `nom-compose/src/animate.rs`
+- [ ] C5-V5: `VideoRenderConfig{concurrency, ffmpeg_path, on_frame_captured, on_progress}` + `RenderProgress{rendered_frames, encoded_frames, stage}` → video.rs
+- [ ] C5-V6: `ComposeEvent::Progress` extended with `rendered_frames/encoded_frames/elapsed_ms` → `nom-compose/src/progress.rs`
+- [ ] C5-V7: `make_cancel_signal()` → `(CancelSignal, cancel_fn)` + `CancelSignal::is_cancelled()` → `nom-compose/src/cancellation.rs`
+- [ ] C5-V8: `VideoConfigContext{width,height,fps,duration_frames}` + `get_video_config()` in context.rs
+- [ ] C5-V9: `validate_codec_pixel_format(codec, format, width, height)` — even-dims + codec/format matrix
+- [ ] C5-V10: Two-stage video pipeline (frame capture parallel → FFmpeg stdin streaming) in video.rs
+
+**Other C5 backends:**
+- [ ] Video backend GPU scene → FFmpeg parallel encode (blocked on C5-V5/V10)
 - [ ] Audio backend: rodio/symphonia real encode
 - [ ] Data-extract: opendataloader XY-Cut++ 0.015s/page
-- [ ] Image backend: Open-Higgsfield model dispatch
-- [ ] Storyboard: ArcReel 5-phase orchestration
-- [ ] Native_screen: platform-specific codegen (AC10 added validation/error artifacts; capture still open)
-- [ ] Mobile_screen: iOS/Android target (AC10 added validation/error artifacts; target integration still open)
+- [ ] Image backend: model dispatch with 200+ model registry
+- [ ] Storyboard: 5-phase orchestration
+- [ ] Native_screen: platform-specific codegen capture
+- [ ] Mobile_screen: iOS/Android target integration
 - [ ] App_bundle: Cargo + wgpu signed bundle
 
 ### C6. RAG real retrievers

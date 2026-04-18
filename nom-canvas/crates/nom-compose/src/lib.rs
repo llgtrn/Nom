@@ -1,5 +1,8 @@
 #![deny(unsafe_code)]
+pub mod animate;
 pub mod backends;
+pub mod composition;
+pub mod timeline;
 pub mod cancel;
 pub mod context;
 pub mod credential_store;
@@ -64,6 +67,9 @@ pub use glue::{AiGlueOrchestrator, GlueBlueprint, ReActLlmFn, StubLlmFn};
 pub use glue_cache::{CachedGlue, GlueCache, GlueStatus};
 pub use hybrid::HybridResolver;
 pub use orchestrator::ComposeOrchestrator;
+pub use composition::{CompositionConfig, CompositionRegistry, VideoCodec};
+pub use timeline::{SequenceContext, current_frame_in_sequence, is_frame_active};
+pub use animate::{ExtrapolateMode, SpringConfig, interpolate, spring};
 
 #[cfg(test)]
 mod integration_tests {
