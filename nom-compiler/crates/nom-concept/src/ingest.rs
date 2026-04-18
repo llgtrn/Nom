@@ -167,3 +167,154 @@ mod tests {
         assert_eq!(pipeline.source_counts(), [1, 1, 1, 1]);
     }
 }
+
+// ── Corpus pipeline ───────────────────────────────────────────────────────────
+
+/// Ecosystem for corpus ingestion.
+#[derive(Debug, Clone, PartialEq)]
+pub enum CorpusEcosystem {
+    PyPi,
+    GitHub,
+    RustCrates,
+    NpmPackages,
+}
+
+impl CorpusEcosystem {
+    pub fn name(&self) -> &'static str {
+        match self {
+            CorpusEcosystem::PyPi => "pypi",
+            CorpusEcosystem::GitHub => "github",
+            CorpusEcosystem::RustCrates => "crates.io",
+            CorpusEcosystem::NpmPackages => "npm",
+        }
+    }
+}
+
+/// A batch of repos to ingest from one ecosystem.
+#[derive(Debug, Clone)]
+pub struct CorpusBatch {
+    pub ecosystem: CorpusEcosystem,
+    pub repo_urls: Vec<String>,
+    pub max_entries: usize,
+}
+
+impl CorpusBatch {
+    pub fn new(ecosystem: CorpusEcosystem, max_entries: usize) -> Self {
+        Self { ecosystem, repo_urls: Vec::new(), max_entries }
+    }
+
+    pub fn add_repo(&mut self, url: impl Into<String>) {
+        self.repo_urls.push(url.into());
+    }
+
+    pub fn repo_count(&self) -> usize {
+        self.repo_urls.len()
+    }
+}
+
+/// Result from processing one corpus batch.
+#[derive(Debug, Clone)]
+pub struct CorpusBatchResult {
+    pub ecosystem: String,
+    pub repos_processed: usize,
+    pub entries_ingested: usize,
+    pub errors: Vec<String>,
+}
+
+impl CorpusBatchResult {
+    pub fn success_rate(&self) -> f64 {
+        if self.repos_processed == 0 { return 0.0; }
+        (self.repos_processed - self.errors.len()) as f64 / self.repos_processed as f64
+    }
+}
+
+/// Orchestrates multi-ecosystem corpus ingestion.
+pub struct CorpusOrchestrator {
+    pub target_total: usize,
+}
+
+impl CorpusOrchestrator {
+    pub fn new(target_total: usize) -> Self { Self { target_total } }
+
+    pub fn plan_batches(&self) -> Vec<CorpusBatch> {
+        let per_eco = self.target_total / 4;
+        vec![
+            CorpusBatch::new(CorpusEcosystem::PyPi, per_eco),
+            CorpusBatch::new(CorpusEcosystem::GitHub, per_eco),
+            CorpusBatch::new(CorpusEcosystem::RustCrates, per_eco),
+            CorpusBatch::new(CorpusEcosystem::NpmPackages, per_eco),
+        ]
+    }
+
+    pub fn simulate_batch(&self, batch: &CorpusBatch) -> CorpusBatchResult {
+        CorpusBatchResult {
+            ecosystem: batch.ecosystem.name().into(),
+            repos_processed: batch.repo_urls.len(),
+            entries_ingested: batch.repo_urls.len() * 10,
+            errors: vec![],
+        }
+    }
+}
+
+#[cfg(test)]
+mod corpus_pipeline_tests {
+    use super::*;
+
+    #[test]
+    fn test_corpus_ecosystem_names() {
+        assert_eq!(CorpusEcosystem::PyPi.name(), "pypi");
+        assert_eq!(CorpusEcosystem::GitHub.name(), "github");
+        assert_eq!(CorpusEcosystem::RustCrates.name(), "crates.io");
+        assert_eq!(CorpusEcosystem::NpmPackages.name(), "npm");
+    }
+
+    #[test]
+    fn test_corpus_batch_add() {
+        let mut batch = CorpusBatch::new(CorpusEcosystem::PyPi, 100);
+        batch.add_repo("https://github.com/pypa/pip");
+        batch.add_repo("https://github.com/numpy/numpy");
+        assert_eq!(batch.repo_count(), 2);
+    }
+
+    #[test]
+    fn test_corpus_orchestrator_plan() {
+        let orch = CorpusOrchestrator::new(400);
+        let batches = orch.plan_batches();
+        assert_eq!(batches.len(), 4);
+        assert_eq!(batches[0].max_entries, 100);
+    }
+
+    #[test]
+    fn test_simulate_batch() {
+        let orch = CorpusOrchestrator::new(400);
+        let mut batch = CorpusBatch::new(CorpusEcosystem::GitHub, 50);
+        batch.add_repo("https://github.com/rust-lang/rust");
+        let result = orch.simulate_batch(&batch);
+        assert_eq!(result.repos_processed, 1);
+        assert_eq!(result.entries_ingested, 10);
+        assert!(result.errors.is_empty());
+    }
+
+    #[test]
+    fn test_batch_result_success_rate() {
+        let r = CorpusBatchResult {
+            ecosystem: "pypi".into(),
+            repos_processed: 10,
+            entries_ingested: 100,
+            errors: vec!["err1".into()],
+        };
+        let rate = r.success_rate();
+        assert!((rate - 0.9).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_empty_batch_success_rate() {
+        let r = CorpusBatchResult {
+            ecosystem: "npm".into(),
+            repos_processed: 0,
+            entries_ingested: 0,
+            errors: vec![],
+        };
+        assert_eq!(r.success_rate(), 0.0);
+    }
+}

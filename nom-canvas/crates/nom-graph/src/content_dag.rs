@@ -150,3 +150,104 @@ mod tests {
         assert_eq!(dag.edge_count(), 1);
     }
 }
+
+#[cfg(test)]
+mod content_dag_integration_tests {
+    use super::*;
+
+    /// Build a multi-node, multi-edge DAG and verify counts are accurate.
+    #[test]
+    fn multi_node_multi_edge_counts() {
+        let mut dag = ContentDag::new();
+        dag.add_node(1, "root", "Root");
+        dag.add_node(2, "child-a", "ChildA");
+        dag.add_node(3, "child-b", "ChildB");
+        dag.add_edge(1, 2, "has_child");
+        dag.add_edge(1, 3, "has_child");
+        assert_eq!(dag.node_count(), 3);
+        assert_eq!(dag.edge_count(), 2);
+    }
+
+    /// find_by_hash returns the correct node when the hash is present.
+    #[test]
+    fn hash_lookup_returns_correct_node() {
+        let mut dag = ContentDag::new();
+        dag.add_node(10, "hello", "node-hello");
+        dag.add_node(20, "world", "node-world");
+        // byte-sum of "hello" = 104+101+108+108+111 = 532
+        let found = dag.find_by_hash(532);
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().id, 10);
+        assert_eq!(found.unwrap().label, "node-hello");
+    }
+
+    /// Inserting two nodes with identical content gives both the same content_hash,
+    /// but find_by_hash returns the first one (dedup-by-hash semantics).
+    #[test]
+    fn duplicate_content_same_hash() {
+        let mut dag = ContentDag::new();
+        dag.add_node(1, "dup", "first");
+        dag.add_node(2, "dup", "second");
+        // Both have the same content_hash; find_by_hash returns the first.
+        let found = dag.find_by_hash(dag.nodes[0].content_hash);
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().id, 1);
+    }
+
+    /// Edge traversal: verify that edges record from/to ids and kind correctly.
+    #[test]
+    fn edge_traversal_from_to_kind() {
+        let mut dag = ContentDag::new();
+        dag.add_node(5, "src", "Source");
+        dag.add_node(6, "dst", "Dest");
+        dag.add_edge(5, 6, "depends_on");
+        let edge = &dag.edges[0];
+        assert_eq!(edge.from, 5);
+        assert_eq!(edge.to, 6);
+        assert_eq!(edge.kind, "depends_on");
+    }
+
+    /// find_by_hash returns None when no node with that hash exists.
+    #[test]
+    fn find_by_hash_returns_none_for_missing() {
+        let mut dag = ContentDag::new();
+        dag.add_node(1, "present", "P");
+        assert!(dag.find_by_hash(0).is_none());
+        assert!(dag.find_by_hash(u64::MAX).is_none());
+    }
+
+    /// node_count and edge_count are both 0 for a freshly created DAG.
+    #[test]
+    fn empty_dag_has_zero_counts() {
+        let dag = ContentDag::new();
+        assert_eq!(dag.node_count(), 0);
+        assert_eq!(dag.edge_count(), 0);
+    }
+
+    /// Adding the same node id twice still increments node_count (no structural dedup by id).
+    #[test]
+    fn adding_same_id_twice_increments_count() {
+        let mut dag = ContentDag::new();
+        dag.add_node(42, "data", "LabelA");
+        dag.add_node(42, "data", "LabelB");
+        // ContentDag does not deduplicate by id — both are stored.
+        assert_eq!(dag.node_count(), 2);
+    }
+
+    /// Linear chain of 3 nodes: A→B→C — verify 3 nodes and 2 edges with correct topology.
+    #[test]
+    fn linear_chain_three_nodes() {
+        let mut dag = ContentDag::new();
+        dag.add_node(1, "alpha", "A");
+        dag.add_node(2, "beta", "B");
+        dag.add_node(3, "gamma", "C");
+        dag.add_edge(1, 2, "next");
+        dag.add_edge(2, 3, "next");
+        assert_eq!(dag.node_count(), 3);
+        assert_eq!(dag.edge_count(), 2);
+        assert_eq!(dag.edges[0].from, 1);
+        assert_eq!(dag.edges[0].to, 2);
+        assert_eq!(dag.edges[1].from, 2);
+        assert_eq!(dag.edges[1].to, 3);
+    }
+}

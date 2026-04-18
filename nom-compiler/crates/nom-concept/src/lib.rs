@@ -66,6 +66,9 @@ pub use native::{NativeBinary, NativeCodegen, NativeTarget, TargetArch, TargetOs
 pub mod ingest;
 pub use ingest::{IngestPipeline, IngestRecord, IngestSource};
 
+pub mod pipeline;
+pub use pipeline::{CompileError, CompileInput, CompileOutput, CompilePipeline, CompileStage};
+
 /// Closed kind set per doc 08 §8.1.
 ///
 /// Mirrors the rows in baseline.sql's `kinds` table. Kept in sync by

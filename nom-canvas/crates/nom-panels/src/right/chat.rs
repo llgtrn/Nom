@@ -221,6 +221,51 @@ impl Default for ChatPanel {
 }
 
 // ---------------------------------------------------------------------------
+// InspectDispatch — wires ChatDispatch to NomInspector on attachment events
+// (no UI panel — ChatPanel is the sole UI)
+// ---------------------------------------------------------------------------
+
+pub struct InspectDispatch {
+    pub session_id: u64,
+}
+
+impl InspectDispatch {
+    pub fn new(session_id: u64) -> Self {
+        Self { session_id }
+    }
+
+    /// Infer whether an attachment should trigger inspection.
+    /// Returns Some(InspectTarget kind string) if it should.
+    pub fn should_inspect(attachment: &ChatAttachment) -> Option<&'static str> {
+        match attachment {
+            ChatAttachment::WebUrl(_) => Some("website"),
+            ChatAttachment::FilePath(path) => {
+                if path.ends_with(".mp4") || path.ends_with(".webm") {
+                    Some("video_file")
+                } else if path.ends_with(".png") || path.ends_with(".jpg") {
+                    Some("image_file")
+                } else {
+                    None
+                }
+            }
+            ChatAttachment::ImageBytes { .. } => Some("image_file"),
+            ChatAttachment::NomxSource(_) => None,
+        }
+    }
+
+    /// Build the inspect command string sent to the AI pipeline.
+    pub fn build_inspect_command(attachment: &ChatAttachment, target_kind: &str) -> String {
+        match attachment {
+            ChatAttachment::WebUrl(url) => format!("inspect {} as {}", url, target_kind),
+            ChatAttachment::FilePath(path) => {
+                format!("inspect file {} as {}", path, target_kind)
+            }
+            _ => format!("inspect attachment as {}", target_kind),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -354,5 +399,62 @@ mod tests {
 
         session.submit(ChatMessage::new_user("second message", vec![]));
         assert_eq!(session.message_count(), 4);
+    }
+}
+
+#[cfg(test)]
+mod inspect_dispatch_tests {
+    use super::*;
+
+    #[test]
+    fn test_should_inspect_url() {
+        let att = ChatAttachment::WebUrl("https://github.com/foo/bar".into());
+        assert_eq!(InspectDispatch::should_inspect(&att), Some("website"));
+    }
+
+    #[test]
+    fn test_should_inspect_video() {
+        let att = ChatAttachment::FilePath("demo.mp4".into());
+        assert_eq!(InspectDispatch::should_inspect(&att), Some("video_file"));
+    }
+
+    #[test]
+    fn test_should_inspect_image() {
+        let att = ChatAttachment::FilePath("screenshot.png".into());
+        assert_eq!(InspectDispatch::should_inspect(&att), Some("image_file"));
+    }
+
+    #[test]
+    fn test_should_not_inspect_nomx() {
+        let att = ChatAttachment::NomxSource("entry { }".into());
+        assert_eq!(InspectDispatch::should_inspect(&att), None);
+    }
+
+    #[test]
+    fn test_should_not_inspect_unknown_file() {
+        let att = ChatAttachment::FilePath("readme.txt".into());
+        assert_eq!(InspectDispatch::should_inspect(&att), None);
+    }
+
+    #[test]
+    fn test_build_inspect_command_url() {
+        let att = ChatAttachment::WebUrl("https://youtube.com/c/foo".into());
+        let cmd = InspectDispatch::build_inspect_command(&att, "website");
+        assert!(cmd.contains("https://youtube.com/c/foo"));
+        assert!(cmd.contains("website"));
+    }
+
+    #[test]
+    fn test_build_inspect_command_file() {
+        let att = ChatAttachment::FilePath("clip.mp4".into());
+        let cmd = InspectDispatch::build_inspect_command(&att, "video_file");
+        assert!(cmd.contains("clip.mp4"));
+        assert!(cmd.contains("video_file"));
+    }
+
+    #[test]
+    fn test_inspect_dispatch_new() {
+        let d = InspectDispatch::new(42);
+        assert_eq!(d.session_id, 42);
     }
 }

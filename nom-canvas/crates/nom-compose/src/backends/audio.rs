@@ -987,6 +987,7 @@ mod tests {
 
 // ── Playback pipeline stub ────────────────────────────────────────────────────
 
+
 /// Supported source formats for the playback pipeline.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AudioFormat {
@@ -1223,5 +1224,141 @@ mod playback_tests {
             assert_eq!(track.state, PlaybackState::Stopped);
             assert_eq!(track.position_ms, 0);
         }
+    }
+}
+
+/// Playback queue for sequential/concurrent audio rendering.
+#[derive(Debug, Clone)]
+pub struct PlaybackEntry {
+    pub source: AudioSource,
+    pub volume: f32,
+    pub loop_count: u32,
+}
+
+impl PlaybackEntry {
+    pub fn new(source: AudioSource) -> Self {
+        Self { source, volume: 1.0, loop_count: 1 }
+    }
+
+    pub fn with_volume(mut self, volume: f32) -> Self {
+        self.volume = volume.clamp(0.0, 2.0);
+        self
+    }
+
+    pub fn with_loop(mut self, count: u32) -> Self {
+        self.loop_count = count;
+        self
+    }
+}
+
+/// Audio render result (per-source).
+#[derive(Debug, Clone)]
+pub struct AudioRenderResult {
+    pub source_name: String,
+    pub frames_rendered: u64,
+    pub duration_ms: u64,
+    pub peak_amplitude: f32,
+}
+
+/// Multi-track audio renderer (rodio-pattern stub).
+pub struct AudioRenderer {
+    pub sample_rate: u32,
+    pub channel_count: u8,
+}
+
+impl AudioRenderer {
+    pub fn new(sample_rate: u32, channel_count: u8) -> Self {
+        Self { sample_rate, channel_count }
+    }
+
+    pub fn stereo_44100() -> Self { Self::new(44100, 2) }
+
+    /// Render a playback entry to a result (stub — produces deterministic output).
+    pub fn render(&self, entry: &PlaybackEntry) -> AudioRenderResult {
+        let frames = (self.sample_rate as u64) * entry.loop_count as u64;
+        AudioRenderResult {
+            source_name: entry.source.path.clone(),
+            frames_rendered: frames,
+            duration_ms: (frames * 1000) / self.sample_rate as u64,
+            peak_amplitude: entry.volume * 0.8,
+        }
+    }
+
+    /// Mix multiple entries into a single combined result.
+    pub fn mix(&self, entries: &[PlaybackEntry]) -> Vec<AudioRenderResult> {
+        entries.iter().map(|e| self.render(e)).collect()
+    }
+}
+
+#[cfg(test)]
+mod audio_renderer_tests {
+    use super::*;
+
+    fn silence_source() -> AudioSource {
+        AudioSource::new("silence", AudioFormat::Wav)
+    }
+
+    #[test]
+    fn test_playback_entry_defaults() {
+        let entry = PlaybackEntry::new(silence_source());
+        assert_eq!(entry.volume, 1.0);
+        assert_eq!(entry.loop_count, 1);
+    }
+
+    #[test]
+    fn test_playback_entry_volume_clamp() {
+        let entry = PlaybackEntry::new(silence_source()).with_volume(5.0);
+        assert_eq!(entry.volume, 2.0);
+    }
+
+    #[test]
+    fn test_audio_renderer_stereo() {
+        let r = AudioRenderer::stereo_44100();
+        assert_eq!(r.sample_rate, 44100);
+        assert_eq!(r.channel_count, 2);
+    }
+
+    #[test]
+    fn test_render_duration() {
+        let r = AudioRenderer::stereo_44100();
+        let entry = PlaybackEntry::new(silence_source());
+        let result = r.render(&entry);
+        assert_eq!(result.duration_ms, 1000); // 44100 frames / 44100 = 1 second
+    }
+
+    #[test]
+    fn test_render_peak_amplitude() {
+        let r = AudioRenderer::stereo_44100();
+        let entry = PlaybackEntry::new(silence_source()).with_volume(1.0);
+        let result = r.render(&entry);
+        assert!((result.peak_amplitude - 0.8).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_mix_multiple() {
+        let r = AudioRenderer::stereo_44100();
+        let entries = vec![
+            PlaybackEntry::new(silence_source()),
+            PlaybackEntry::new(silence_source()).with_volume(0.5),
+        ];
+        let results = r.mix(&entries);
+        assert_eq!(results.len(), 2);
+    }
+
+    #[test]
+    fn test_loop_count_doubles_duration() {
+        let r = AudioRenderer::stereo_44100();
+        let entry = PlaybackEntry::new(silence_source()).with_loop(2);
+        let result = r.render(&entry);
+        assert_eq!(result.duration_ms, 2000);
+    }
+
+    #[test]
+    fn test_render_result_fields() {
+        let r = AudioRenderer::stereo_44100();
+        let entry = PlaybackEntry::new(silence_source());
+        let result = r.render(&entry);
+        assert!(!result.source_name.is_empty());
+        assert!(result.frames_rendered > 0);
     }
 }

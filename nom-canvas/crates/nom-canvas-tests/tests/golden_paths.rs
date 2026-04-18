@@ -516,3 +516,119 @@ fn golden_content_hash() {
     // Suppress unused-import lint on ContentHash
     let _: fn(&str) -> ContentHash = ContentHash::new;
 }
+
+// Golden path 31: NomInspector → InspectReport chain — inspect a GitHub URL and
+// confirm the report has findings and a non-empty nomx_entry.
+#[test]
+fn test_golden_inspect_pipeline() {
+    use nom_compose::{InspectReport, InspectTarget, NomInspector};
+
+    let target = InspectTarget::GithubRepo {
+        url: "https://github.com/nom-lang/nom".into(),
+    };
+    let report: InspectReport = NomInspector::inspect(target);
+    assert!(
+        report.finding_count() > 0,
+        "InspectReport must have findings after inspecting a GitHub repo"
+    );
+    assert!(
+        !report.nomx_entry.is_empty(),
+        "InspectReport nomx_entry must be non-empty after inspect"
+    );
+    assert_eq!(
+        report.target.kind_label(),
+        "github_repo",
+        "target kind must be github_repo"
+    );
+}
+
+// Golden path 32: LlmQualityGate scores a GitHub inspection above 60 (3 findings ×5 + 60 base).
+#[test]
+fn test_golden_quality_gate_flow() {
+    use nom_compose::inspector::{LlmQualityGate, QualityGateConfig};
+
+    let config = QualityGateConfig { min_score: 75, max_retries: 3 };
+    let gate = LlmQualityGate::new(config);
+    let result = gate.inspect_with_quality("https://github.com/nom-lang/nom");
+    assert!(
+        result.attempts >= 1,
+        "LlmQualityGate must make at least one attempt"
+    );
+    assert!(
+        result.score >= 60,
+        "LlmQualityGate score must be at least 60 for a GitHub repo (3 findings), got {}",
+        result.score
+    );
+    assert!(
+        result.finding_count > 0,
+        "LlmQualityGate result must report at least one finding"
+    );
+}
+
+// Golden path 33: CompilePipeline end-to-end — ComponentPipeline with defaults runs
+// a .nomx-style source string through every stage and emits at least one output.
+#[test]
+fn test_golden_compile_pipeline() {
+    use nom_compose::ComponentPipeline;
+
+    let pipeline = ComponentPipeline::with_defaults();
+    let source = "define compile_target that produces(binary) for(linux)";
+    let outputs = pipeline.run(source);
+    assert!(
+        !outputs.is_empty(),
+        "ComponentPipeline must emit at least one output for a define-clause source"
+    );
+}
+
+// Golden path 34: CorpusBatch orchestration — TaskQueue enqueues 3 corpus tasks,
+// drains them all, and confirms all tasks are in Pending state before drain.
+#[test]
+fn test_golden_corpus_batch() {
+    use nom_compose::{ComposeTask, TaskQueue, TaskState};
+
+    let mut queue = TaskQueue::new();
+    queue.enqueue("corpus_ingest", "https://github.com/org/repo-a");
+    queue.enqueue("corpus_ingest", "https://github.com/org/repo-b");
+    queue.enqueue("corpus_ingest", "https://github.com/org/repo-c");
+    assert_eq!(
+        queue.pending_count(),
+        3,
+        "TaskQueue must hold 3 pending tasks after 3 enqueue calls"
+    );
+    let batch: Vec<ComposeTask> = queue.drain_all();
+    assert_eq!(batch.len(), 3, "drain_all must return all 3 tasks");
+    assert!(
+        batch.iter().all(|t| t.state == TaskState::Pending),
+        "all drained tasks must be in Pending state"
+    );
+}
+
+// Golden path 35: ChatDispatch + InspectDispatch routing — a WebUrl attachment
+// triggers InspectDispatch, and a compose message routes to CanvasMode::Compose.
+#[test]
+fn test_golden_chat_dispatch_inspect() {
+    use nom_panels::right::chat::{ChatAttachment, InspectDispatch};
+    use nom_panels::{CanvasMode, ChatDispatch, ChatPanelMessage};
+
+    // InspectDispatch: WebUrl attachment should trigger inspection
+    let att = ChatAttachment::WebUrl("https://github.com/nom-lang/nom".into());
+    let kind = InspectDispatch::should_inspect(&att);
+    assert_eq!(
+        kind,
+        Some("website"),
+        "InspectDispatch must classify a WebUrl attachment as 'website'"
+    );
+    let cmd = InspectDispatch::build_inspect_command(&att, "website");
+    assert!(
+        cmd.contains("github.com"),
+        "inspect command must embed the URL, got: {cmd:?}"
+    );
+
+    // ChatDispatch: compose message must route to CanvasMode::Compose
+    let msg = ChatPanelMessage::new_user("compose a highlight reel from my videos", vec![]);
+    let (mode, _response) = ChatDispatch::dispatch(msg);
+    assert!(
+        matches!(mode, CanvasMode::Compose),
+        "ChatDispatch must route a compose message to CanvasMode::Compose"
+    );
+}

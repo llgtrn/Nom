@@ -267,6 +267,124 @@ impl NomInspector {
     }
 }
 
+/// Quality gate: LLM scores each inspection step; retry until DreamScore >=95.
+#[derive(Debug, Clone)]
+pub struct QualityGateConfig {
+    pub min_score: u8,
+    pub max_retries: u8,
+}
+
+impl Default for QualityGateConfig {
+    fn default() -> Self {
+        Self { min_score: 95, max_retries: 3 }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct QualityGateResult {
+    pub score: u8,
+    pub passed: bool,
+    pub attempts: u8,
+    pub finding_count: usize,
+    pub nomx_entry: String,
+}
+
+/// Wraps NomInspector with LLM quality scoring.
+pub struct LlmQualityGate {
+    pub config: QualityGateConfig,
+}
+
+impl LlmQualityGate {
+    pub fn new(config: QualityGateConfig) -> Self { Self { config } }
+
+    pub fn with_defaults() -> Self { Self { config: QualityGateConfig::default() } }
+
+    /// Score a report using an LLM fn (stub: counts findings as proxy for quality).
+    pub fn score_report(&self, report: &InspectReport) -> u8 {
+        let base: u8 = 60;
+        let bonus = (report.findings.len() as u8).saturating_mul(5).min(35);
+        base.saturating_add(bonus)
+    }
+
+    /// Run inspect_url with quality gate; retry up to max_retries.
+    pub fn inspect_with_quality(
+        &self,
+        url: &str,
+    ) -> QualityGateResult {
+        let mut attempts = 0u8;
+        loop {
+            attempts += 1;
+            let report = NomInspector::inspect_url(url);
+            let score = self.score_report(&report);
+            if score >= self.config.min_score || attempts >= self.config.max_retries {
+                return QualityGateResult {
+                    score,
+                    passed: score >= self.config.min_score,
+                    attempts,
+                    finding_count: report.findings.len(),
+                    nomx_entry: report.nomx_entry.clone(),
+                };
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod quality_gate_tests {
+    use super::*;
+
+    #[test]
+    fn test_quality_gate_defaults() {
+        let gate = LlmQualityGate::with_defaults();
+        assert_eq!(gate.config.min_score, 95);
+        assert_eq!(gate.config.max_retries, 3);
+    }
+
+    #[test]
+    fn test_score_report_base() {
+        let gate = LlmQualityGate::with_defaults();
+        let report = InspectReport::new(InspectTarget::Website { url: "x".into() });
+        let score = gate.score_report(&report);
+        assert_eq!(score, 60);
+    }
+
+    #[test]
+    fn test_score_report_with_findings() {
+        let gate = LlmQualityGate::with_defaults();
+        let target = InspectTarget::GithubRepo { url: "https://github.com/nom/nom".into() };
+        let mut report = InspectReport::new(target);
+        for i in 0..8 {
+            report.add_finding(InspectFinding::new("test", &format!("key{}", i), &format!("val{}", i), 0.9));
+        }
+        let score = gate.score_report(&report);
+        assert!(score >= 95);
+    }
+
+    #[test]
+    fn test_inspect_with_quality_runs() {
+        let gate = LlmQualityGate::with_defaults();
+        let result = gate.inspect_with_quality("https://github.com/nom/nom");
+        assert!(result.attempts >= 1);
+        assert!(result.attempts <= 3);
+    }
+
+    #[test]
+    fn test_quality_gate_result_fields() {
+        let r = QualityGateResult { score: 80, passed: false, attempts: 2, finding_count: 0, nomx_entry: "empty".into() };
+        assert_eq!(r.score, 80);
+        assert!(!r.passed);
+        assert_eq!(r.attempts, 2);
+    }
+
+    #[test]
+    fn test_custom_config() {
+        let config = QualityGateConfig { min_score: 80, max_retries: 5 };
+        let gate = LlmQualityGate::new(config);
+        assert_eq!(gate.config.min_score, 80);
+        assert_eq!(gate.config.max_retries, 5);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

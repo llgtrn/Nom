@@ -98,6 +98,8 @@ pub mod inspector;
 pub use inspector::{InspectFinding, InspectReport, InspectTarget, NomInspector};
 pub mod sherlock;
 pub use sherlock::{SherlockAdapter, SherlockResult, SherlockSite, SherlockStatus};
+pub mod sherlock_native;
+pub mod vision;
 
 #[cfg(test)]
 mod integration_tests {

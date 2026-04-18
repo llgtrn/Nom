@@ -222,6 +222,174 @@ impl LspAsyncLoop {
     }
 }
 
+// ---- LspSyncDriver ----------------------------------------------------------
+
+use std::io::{BufRead, Write};
+
+/// Synchronous LSP I/O driver (std::io, no tokio required).
+pub struct LspSyncDriver<R: BufRead, W: Write> {
+    pub reader: R,
+    pub writer: W,
+    pub config: LspLoopConfig,
+}
+
+impl<R: BufRead, W: Write> LspSyncDriver<R, W> {
+    pub fn new(reader: R, writer: W, config: LspLoopConfig) -> Self {
+        Self { reader, writer, config }
+    }
+
+    /// Read one LSP frame from the reader (Content-Length framing).
+    pub fn read_frame(&mut self) -> Option<LspFrame> {
+        let mut header = String::new();
+        let mut content_length: usize = 0;
+        loop {
+            header.clear();
+            if self.reader.read_line(&mut header).ok()? == 0 {
+                return None;
+            }
+            let trimmed = header.trim();
+            if trimmed.is_empty() {
+                break;
+            }
+            if let Some(rest) = trimmed.strip_prefix("Content-Length: ") {
+                content_length = rest.parse().ok()?;
+            }
+        }
+        if content_length == 0 {
+            return None;
+        }
+        if content_length > self.config.max_frame_size {
+            return None;
+        }
+        use std::io::Read;
+        let mut buf = String::new();
+        (&mut self.reader as &mut dyn BufRead)
+            .take(content_length as u64)
+            .read_to_string(&mut buf)
+            .ok()?;
+        if buf.len() < content_length {
+            return None;
+        }
+        // Parse method, id, params_raw from the body JSON.
+        let method = {
+            let needle = "\"method\":\"";
+            let start = buf.find(needle)? + needle.len();
+            let end = buf[start..].find('"')? + start;
+            buf[start..end].to_string()
+        };
+        let params_raw = {
+            let needle = "\"params\":";
+            if let Some(idx) = buf.find(needle) {
+                buf[idx + needle.len()..buf.rfind('}').unwrap_or(buf.len())].to_string()
+            } else {
+                "null".to_string()
+            }
+        };
+        let id: Option<u64> = {
+            let needle = "\"id\":";
+            buf.find(needle).and_then(|idx| {
+                let rest = &buf[idx + needle.len()..];
+                let end = rest.find(|c: char| !c.is_ascii_digit()).unwrap_or(rest.len());
+                rest[..end].parse().ok()
+            })
+        };
+        let header_bytes = format!("Content-Length: {}\r\n\r\n", content_length);
+        Some(LspFrame {
+            header_len: header_bytes.len(),
+            content_len: content_length,
+            method,
+            id,
+            params_raw,
+        })
+    }
+
+    /// Write one LSP frame to the writer.
+    pub fn write_frame(&mut self, content: &str) -> std::io::Result<()> {
+        write!(self.writer, "Content-Length: {}\r\n\r\n{}", content.len(), content)?;
+        self.writer.flush()
+    }
+}
+
+#[cfg(test)]
+mod lsp_sync_tests {
+    use super::*;
+    use std::io::BufReader;
+
+    fn make_lsp_msg(body: &str) -> Vec<u8> {
+        format!("Content-Length: {}\r\n\r\n{}", body.len(), body).into_bytes()
+    }
+
+    #[test]
+    fn test_read_frame_basic() {
+        let body = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#;
+        let msg = make_lsp_msg(body);
+        let cursor = std::io::Cursor::new(msg);
+        let reader = BufReader::new(cursor);
+        let writer = Vec::<u8>::new();
+        let config = LspLoopConfig::default();
+        let mut driver = LspSyncDriver::new(reader, writer, config);
+        let frame = driver.read_frame();
+        assert!(frame.is_some());
+        let f = frame.unwrap();
+        assert_eq!(f.method, "initialize");
+    }
+
+    #[test]
+    fn test_write_frame() {
+        let body = r#"{"jsonrpc":"2.0","result":{},"id":1}"#;
+        let cursor = std::io::Cursor::new(vec![]);
+        let reader = BufReader::new(cursor);
+        let mut out = Vec::<u8>::new();
+        let config = LspLoopConfig::default();
+        let mut driver = LspSyncDriver::new(reader, &mut out, config);
+        driver.write_frame(body).unwrap();
+        let output = String::from_utf8(out).unwrap();
+        assert!(output.contains("Content-Length:"));
+        assert!(output.contains("jsonrpc"));
+    }
+
+    #[test]
+    fn test_lsp_sync_driver_new() {
+        let cursor = std::io::Cursor::new(vec![]);
+        let reader = BufReader::new(cursor);
+        let writer = Vec::<u8>::new();
+        let config = LspLoopConfig { read_timeout_ms: 500, max_frame_size: 512 };
+        let driver = LspSyncDriver::new(reader, writer, config);
+        assert_eq!(driver.config.read_timeout_ms, 500);
+        assert_eq!(driver.config.max_frame_size, 512);
+    }
+
+    #[test]
+    fn test_read_frame_empty() {
+        let cursor = std::io::Cursor::new(vec![]);
+        let reader = BufReader::new(cursor);
+        let writer = Vec::<u8>::new();
+        let config = LspLoopConfig::default();
+        let mut driver = LspSyncDriver::new(reader, writer, config);
+        let frame = driver.read_frame();
+        assert!(frame.is_none());
+    }
+
+    #[test]
+    fn test_read_multiple_frames() {
+        let body1 = r#"{"id":1,"method":"a","params":null}"#;
+        let body2 = r#"{"id":2,"method":"b","params":null}"#;
+        let mut data = make_lsp_msg(body1);
+        data.extend(make_lsp_msg(body2));
+        let cursor = std::io::Cursor::new(data);
+        let reader = BufReader::new(cursor);
+        let writer = Vec::<u8>::new();
+        let config = LspLoopConfig::default();
+        let mut driver = LspSyncDriver::new(reader, writer, config);
+        let f1 = driver.read_frame();
+        let f2 = driver.read_frame();
+        assert!(f1.is_some());
+        assert!(f2.is_some());
+        assert_eq!(f1.unwrap().method, "a");
+        assert_eq!(f2.unwrap().method, "b");
+    }
+}
+
 // ---- Tests ------------------------------------------------------------------
 
 #[cfg(test)]
