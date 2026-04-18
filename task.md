@@ -486,13 +486,21 @@
 - ✅ OutlineView — OutlineItemKind+Item+Section+OutlineTree+Renderer (9 tests)
 - ✅ BlockTree — BlockNodeKind+BlockNode+BlockTree+Walker+TreeDiff (9 tests)
 
-## Open Items — Wave ABAJ targets
+## Wave ABAJ — COMPLETE (2026-04-19, 10216 tests) ✨ 10k+ milestone
 
-- ❌ **nom-graph memory_graph** — MemoryNode + MemoryEdge + MemoryGraph + MemoryQuery (graph-backed memory store)
-- ❌ **nom-compose data_compose** — DataSource + DataQuery + DataComposer + DataResult (data composition pipeline)
-- ❌ **nom-canvas-core transform_stack** — Transform2D + TransformStack + InverseTransform + TransformResult (2D transform math)
-- ❌ **nom-editor search_index** — SearchToken + SearchIndex + SearchQuery + SearchResult (editor search)
-- ❌ **nom-memoize memo_graph** — MemoKey + MemoEntry + MemoGraph + MemoInvalidator (graph-aware memoization)
+- ✅ MemoryGraph — MemoryTier+Node+Edge+Graph+MemoryQuery (9 tests)
+- ✅ DataCompose — DataSourceKind+Source+Query+Result+DataComposer (9 tests)
+- ✅ TransformStack — Transform2D+Stack+Inverse+Result+Composer (9 tests)
+- ✅ SearchIndex — SearchTokenKind+Token+Index+Query+Result (9 tests)
+- ✅ MemoGraph — MemoKeyKind+Key+Entry+Graph+Invalidator (9 tests)
+
+## Open Items — Wave ABAK targets (B-axis push to 95%+)
+
+- ❌ **nom-gpui scene_diff** — SceneDiff + ScenePatch + DiffRenderer + PatchApplier (GPUI scene diffing)
+- ❌ **nom-compose font_compose** — FontFamily + FontWeight + FontSpec + FontComposer (typography composition)
+- ❌ **nom-canvas-core motion_path** — MotionKeyframe + MotionPath + PathInterpolator + MotionAnimator (motion along path)
+- ❌ **nom-editor format_range** — FormatKind + FormatRange + FormatMap + FormatApplier (text formatting ranges)
+- ❌ **nom-ux skill_map** — SkillCategory + SkillEntry + SkillMap + SkillRecommender (UX skill mapping)
 
 ---
 
