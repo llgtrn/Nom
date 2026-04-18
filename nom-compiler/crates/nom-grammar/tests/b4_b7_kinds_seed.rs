@@ -135,6 +135,57 @@ fn b7_skill_entries_count_is_9() {
     );
 }
 
+// ── AH-DB-KINDS: 14 composition-target kinds ─────────────────────────
+
+const AH_DB_KINDS: &[&str] = &[
+    "video_compose",
+    "picture_compose",
+    "audio_compose",
+    "presentation_compose",
+    "web_app_compose",
+    "mobile_app_compose",
+    "native_app_compose",
+    "document_compose",
+    "data_extract",
+    "data_query",
+    "workflow_compose",
+    "ad_creative_compose",
+    "mesh_3d_compose",
+    "storyboard_compose",
+];
+
+const AH_DB_BANNED: &[&str] = &[
+    "affine", "comfy", "dify", "n8n", "bolt", "langchain", "openai", "gemini",
+];
+
+#[test]
+fn test_ah_db_kinds_count_is_14() {
+    let (_dir, conn) = baseline_conn();
+    let names = kind_names(&conn);
+    let found: Vec<&&str> = AH_DB_KINDS
+        .iter()
+        .filter(|k| names.contains(&k.to_string()))
+        .collect();
+    assert_eq!(
+        found.len(),
+        14,
+        "expected 14 AH-DB-KINDS composition targets, found {}",
+        found.len()
+    );
+}
+
+#[test]
+fn test_ah_db_kinds_no_foreign_names() {
+    for kind in AH_DB_KINDS {
+        for banned in AH_DB_BANNED {
+            assert!(
+                !kind.contains(banned),
+                "AH-DB kind '{kind}' contains banned foreign name '{banned}'"
+            );
+        }
+    }
+}
+
 // ── Guard: no external brand names in kind names or descriptions ──────
 
 /// Banned external brand / foreign-language names that must not appear

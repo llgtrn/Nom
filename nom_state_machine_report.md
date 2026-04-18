@@ -1,73 +1,61 @@
 # Nom State Machine Report
 
-**Date:** 2026-04-18 | **HEAD:** `fc67aa9` | **Tests:** 8391 | **Workspace:** clean — Waves AP+AQ+AR complete
+**Date:** 2026-04-18 | **HEAD:** `ced46fc` | **Tests:** 8428 | **Workspace:** clean — Waves AP+AQ+AR+AS+AT complete
 
 ---
 
-## Iteration 61 — Wave AP COMPLETE (HEAD 679ce6b, 8391 tests)
-
-**5 parallel executor batches. ALL CRITICAL + HIGH items fixed.**
+## Iteration 65 — Wave AT COMPLETE (HEAD ced46fc, 8428 tests)
 
 | Gap ID | Fix | Crate |
 |--------|-----|-------|
-| AL-RENDER-2 | Real wgpu::Surface/Device/Queue fields + full init chain + pollster=0.3 | nom-gpui |
-| AL-RENDER-1 | end_frame_render(): CommandEncoder + begin_render_pass + set_pipeline + draw + submit + present | nom-gpui |
-| AL-RENDER-3 | VertexBufferLayout (stride=80, 5×Float32x4, Instance); real WGSL QuadIn @location(0-4) + GlobalUniforms + NDC | nom-gpui |
-| AM-ATLAS-LRU | evict_lru() calls allocator.deallocate(alloc) per entry; no more allocator.clear() | nom-gpui |
-| AL-LAYOUT-TAFFY | LayoutEngine replaced with taffy::TaffyTree + node_map | nom-gpui |
-| AL-BACKEND-KIND | BackendKind closed enum DELETED; all dispatch uses runtime &str; UnifiedDispatcher+ComposeContext re-exported | nom-compose |
-| AL-GRAMMAR-STATUS | pub status: KindStatus added to GrammarKind; list_kinds() + promote_kind() SQL helpers | nom-compiler-bridge |
-| AM-UITIER-DIVERGE | score_atom_impl() extracted; UiTier + UiTierOps both delegate | nom-compiler-bridge |
-| AL-DEEPTHINK-CONFIDENCE | edge_color_for_confidence(card.confidence) wired | nom-panels |
-| AL-TOOLBAR-HEIGHT | TOOLBAR_H=48.0 deleted; all callers use TOOLBAR_HEIGHT=36.0 | nom-theme |
-| AL-FONTS | libre_baskerville_regular, eb_garamond_regular, berkeley_mono_regular added | nom-theme |
-| AL-THEME-SYSTEM oled | Theme::oled() constructor added (pure black bg) | nom-theme |
-| AN-WORKSPACE-DUP | insert_block() dedup guard; entity() returns Option; remove_node()+remove_connector() | nom-blocks |
-| AN-FRAME-SPATIAL rotation+cycle | rotation: f32 field; add_child() returns Result with cycle guard | nom-blocks |
-| AN-BLOCKDIFF-WORD | diff_blocks() emits Modified{field:"word"} diffs | nom-blocks |
-| AM-SPATIAL-WIRE hit_test | CanvasHitTester with R-tree broadphase in production (no #[cfg(test)] gate) | nom-canvas-core |
-| NOM-EDITOR-POINT | Point{row,column} type + Buffer::point_at() + Buffer::offset_from_point() | nom-editor |
-| NOM-GRAPH-EXEC | ExecutionEngine::execute() runs plan, calls node logic, stores results in cache | nom-graph |
+| AL-PALETTE-SEARCH-UI | 32px search box + category group headers; filtered_entries/grouped_items | nom-panels |
+| AL-TEST-FRAUD | ArtifactDiff + artifact_diff() moved out of cfg(test); 5 real SQL injection edge-case tests | nom-compose |
+| AL-FEATURE-TESTS | 3 #[cfg(all(test, feature="compiler"))] tests for nom_score/bm25_index/can_wire | nom-compiler-bridge |
+| AH-CTX | ComposeContext / ComposeResult / ComposeTier in nom-compose/src/context.rs | nom-compose |
+| AH-DICTW | DictWriter insert_partial_entry() + promote_to_complete() | nom-compiler-bridge |
+| AH-GLUE | ReActLlmFn trait + 4 adapters (Stub/NomCli/Mcp/RealLlm) + AiGlueOrchestrator + GlueBlueprint | nom-compose |
+| AH-HYBRID | HybridResolver 3-tier orchestration (DbDriven→Provider→AiLeading) | nom-compose |
+| UC-FLOWGRAPH | FlowGraph + FlowNode + FlowEdge + Kahn topological sort | nom-compose |
 
-Previously fixed (Waves AN/AO): AL-CRDT-OVERFLOW, AM-CRDT-IDEMPOTENT, AL-SQL-INJECT, AL-ATOMIC-ORDERING, AM-CONNECTOR-DESER, AN-FRAME-SPATIAL (x/y/w/h), AN-BLOCKDIFF-CONTENT, AN-WORKSPACE-DUP partial, AN-LSP-POSITIONS, NomGraph module.
+Previously complete (Waves AQ/AR/AS): NOM-GRAPH-ANCESTRY, NOM-BACKEND-SELF-DESCRIBE, AM-INTENT-STRUCT, AL-COSMIC, AM-SPATIAL-WIRE viewport.rs, UC-SERVE, B4 46 kinds, B5 side-tables, B7 9 skills, C3 feature flag, C7 interrupt, A3 EdgeKind, B1 define/that tokens, B2 NomxFormat, B9 bench/flow/media CLI, CI matrix, C1 run_composition.
 
 ---
 
-## Open Items (Wave AQ/AT targets)
+## Open Items (Wave AU targets)
 
-- ❌ **NOM-GRAPH-ANCESTRY** — Cache keys inspect only immediate parents; transitive closure ancestry walk missing
-- ❌ **NOM-BACKEND-SELF-DESCRIBE** — Backend trait missing version/displayName/params schema/input+output declarations
-- ❌ **AM-INTENT-STRUCT** — IntentResolver: no bm25_index; resolve() is substring-match; classify_with_react() disconnected
-- ❌ **AL-COSMIC** — cosmic_text::FontSystem not initialized; font data still placeholder IDs
-- ❌ **AM-SPATIAL-WIRE viewport.rs** — Viewport struct has NO SpatialIndex field
-- ❌ **UC-SERVE** — POST /compose axum endpoint not implemented in nom-cli
-- ❌ **AL-PALETTE-SEARCH-UI** — node_palette.rs: no 32px search box; no category group header rows
-- ❌ **AL-TEST-FRAUD** — semantic.rs: ArtifactDiff + artifact_diff() + 5 tests are cfg(test)-only
-- ❌ **AL-FEATURE-TESTS** — ui_tier.rs: zero #[cfg(feature = "compiler")] tests
 - ❌ **AN-TEST-DEDUP** — ~85% duplication ratio across 14 crates; target ≤20%
+- ❌ **AH-CACHE** — GlueCache in SharedState + 60s promotion ticker
+- ❌ **AH-ORCH** — ComposeOrchestrator multi-kind parallel pipeline
+- ❌ **AH-DB-KINDS** — 14 initial grammar.kinds seed rows (video/picture/audio/…)
+- ❌ **UC-CANDLE** — candle_adapter.rs BackendDevice::Cpu + ReActLlmFn impl
+- ❌ **UC-MIDDLEWARE** — StepMiddleware trait + MiddlewareRegistry wrapping every dispatch
+- ❌ **UC-PROMOTE** — POST /promote/:glue_hash endpoint → DictWriter::insert_partial_entry()
+- ❌ **B9 remaining** — nom corpus ingest pypi/github, nom ux seed, nom app new/...
+- ❌ **C1 full LLVM** — Click Run → native binary (run_composition wired; LLVM codegen not yet)
+- ❌ **C4 LSP visual** — hover tooltip/completion popup/diagnostic squiggle render verified
 
 ---
 
-## Per-crate Test Counts (Wave AP actuals)
+## Per-crate Test Counts (Wave AT actuals)
 
 | Crate | Tests |
 |---|---|
 | nom-gpui | 790 |
 | nom-blocks | 560 |
-| nom-canvas-core | 575 |
-| nom-cli | 400 |
+| nom-canvas-core | 575 (+12 integration) |
+| nom-cli | 411 |
 | nom-collab | 546 |
-| nom-compiler-bridge | 553 |
-| nom-compose | 685 |
+| nom-compiler-bridge | 550 |
+| nom-compose | 703 |
 | nom-editor | 620 |
-| nom-graph | 570 |
-| nom-intent | 470 |
+| nom-graph | 572 |
+| nom-intent | 472 |
 | nom-lint | 485 |
 | nom-memoize | 468 |
-| nom-panels | 601 |
+| nom-panels | 608 |
 | nom-telemetry | 500 |
-| nom-theme | 568 |
-| **TOTAL** | **8391** |
+| nom-theme | 556 |
+| **TOTAL** | **8428** |
 
 ---
 

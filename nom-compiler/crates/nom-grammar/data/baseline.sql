@@ -72,6 +72,25 @@ INSERT OR IGNORE INTO kinds (name, description, allowed_clauses, allowed_refs, s
 ('compose_generative_art',   'Skill: compose a generative art piece via pixel_grid with procedural color and vector_path layers.', '[]', '[]', 'baseline-1.0-b7', NULL),
 ('compose_lofi_audio_loop',  'Skill: compose a lofi audio loop via audio_buffer with layered instrument and effect bindings.', '[]', '[]', 'baseline-1.0-b7', NULL);
 
+-- ── Composition-target kinds — AH-DB-KINDS (14 hybrid-compose targets) ──
+-- Each row is a top-level composition target kind for the hybrid compose system.
+
+INSERT OR IGNORE INTO kinds (name, description, allowed_clauses, allowed_refs, shipped_commit, notes) VALUES
+('video_compose',        'Video composition from text or images.', '[]', '[]', 'baseline-1.0-ah-db', NULL),
+('picture_compose',      'Still image generation from text.', '[]', '[]', 'baseline-1.0-ah-db', NULL),
+('audio_compose',        'Audio generation from text or parameters.', '[]', '[]', 'baseline-1.0-ah-db', NULL),
+('presentation_compose', 'Slide presentation from outline.', '[]', '[]', 'baseline-1.0-ah-db', NULL),
+('web_app_compose',      'Web application from specification.', '[]', '[]', 'baseline-1.0-ah-db', NULL),
+('mobile_app_compose',   'Mobile application skeleton from specification.', '[]', '[]', 'baseline-1.0-ah-db', NULL),
+('native_app_compose',   'Native desktop application from specification.', '[]', '[]', 'baseline-1.0-ah-db', NULL),
+('document_compose',     'Document (PDF or text) from outline.', '[]', '[]', 'baseline-1.0-ah-db', NULL),
+('data_extract',         'Structured data extraction from unstructured input.', '[]', '[]', 'baseline-1.0-ah-db', NULL),
+('data_query',           'Semantic data query over structured datasets.', '[]', '[]', 'baseline-1.0-ah-db', NULL),
+('workflow_compose',     'Workflow automation from natural language description.', '[]', '[]', 'baseline-1.0-ah-db', NULL),
+('ad_creative_compose',  'Advertising creative from brief.', '[]', '[]', 'baseline-1.0-ah-db', NULL),
+('mesh_3d_compose',      'Three-dimensional mesh generation from description.', '[]', '[]', 'baseline-1.0-ah-db', NULL),
+('storyboard_compose',   'Visual storyboard from narrative.', '[]', '[]', 'baseline-1.0-ah-db', NULL);
+
 -- ── Quality names (the 10 founding axes per MEMORY.md) ──────────────
 
 INSERT OR IGNORE INTO quality_names (name, axis, metric_function, cardinality, required_at, source_ref, notes) VALUES

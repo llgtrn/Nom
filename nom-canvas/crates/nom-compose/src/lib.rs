@@ -7,7 +7,9 @@ pub mod deep_think;
 pub mod dispatch;
 pub mod flow_graph;
 pub mod glue;
+pub mod glue_cache;
 pub mod hybrid;
+pub mod orchestrator;
 pub mod plan;
 pub mod progress;
 pub mod provider_router;
@@ -59,7 +61,9 @@ pub use task_queue::{ComposeTask, TaskQueue, TaskState};
 pub use vendor_trait::{CostEstimate, MediaVendor, StubVendor, VendorCapability};
 pub use flow_graph::{FlowEdge, FlowGraph, FlowNode, FlowNodeKind};
 pub use glue::{AiGlueOrchestrator, GlueBlueprint, ReActLlmFn, StubLlmFn};
+pub use glue_cache::{CachedGlue, GlueCache, GlueStatus};
 pub use hybrid::HybridResolver;
+pub use orchestrator::ComposeOrchestrator;
 
 #[cfg(test)]
 mod integration_tests {
