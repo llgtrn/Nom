@@ -7,6 +7,7 @@ pub mod composition;
 pub mod context;
 pub mod credential_store;
 pub mod deep_think;
+pub mod dream_tree;
 pub mod detection;
 pub mod diffusion;
 pub mod dispatch;

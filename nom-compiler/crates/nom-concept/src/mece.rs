@@ -228,7 +228,276 @@ pub fn check_mece_with_required_axes(
     }
 }
 
+// ── Dream-system MECE types ───────────────────────────────────────────────────
+
+/// A single weighted objective in the dreaming system.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MeceObjective {
+    pub id: u64,
+    pub label: String,
+    /// Relative importance in [0.0, 1.0]. The sum of all objectives in a set
+    /// should equal 1.0 for a valid MECE partition.
+    pub weight: f32,
+}
+
+impl MeceObjective {
+    pub fn new(id: u64, label: impl Into<String>, weight: f32) -> Self {
+        Self { id, label: label.into(), weight }
+    }
+}
+
+/// A violation found during MECE validation of a dreaming objective set.
+#[derive(Debug, Clone, PartialEq)]
+pub enum MeceViolation {
+    /// Two objectives are not mutually exclusive (same label).
+    Overlap { a: u64, b: u64 },
+    /// An aspect is not covered by any objective.
+    GapInCoverage { missing: String },
+    /// The weights do not sum to 1.0 (tolerance ±0.01).
+    WeightSumNot1 { actual: f32 },
+}
+
+/// Validates a set of [`MeceObjective`]s for ME (mutual exclusivity) and
+/// weight consistency.
+pub struct MeceValidator;
+
+impl MeceValidator {
+    pub fn new() -> Self {
+        Self
+    }
+
+    /// Returns `WeightSumNot1` if `|sum − 1.0| > 0.01`.
+    pub fn validate_weights(objectives: &[MeceObjective]) -> Option<MeceViolation> {
+        let sum: f32 = objectives.iter().map(|o| o.weight).sum();
+        if (sum - 1.0_f32).abs() > 0.01 {
+            Some(MeceViolation::WeightSumNot1 { actual: sum })
+        } else {
+            None
+        }
+    }
+
+    /// Returns `Overlap{a, b}` for the first pair of objectives with identical
+    /// labels.
+    pub fn validate_labels(objectives: &[MeceObjective]) -> Option<MeceViolation> {
+        for i in 0..objectives.len() {
+            for j in (i + 1)..objectives.len() {
+                if objectives[i].label == objectives[j].label {
+                    return Some(MeceViolation::Overlap {
+                        a: objectives[i].id,
+                        b: objectives[j].id,
+                    });
+                }
+            }
+        }
+        None
+    }
+
+    /// Runs all checks and returns every violation found.
+    pub fn validate(objectives: &[MeceObjective]) -> Vec<MeceViolation> {
+        let mut violations = Vec::new();
+        if let Some(v) = Self::validate_weights(objectives) {
+            violations.push(v);
+        }
+        if let Some(v) = Self::validate_labels(objectives) {
+            violations.push(v);
+        }
+        violations
+    }
+
+    /// Returns `true` iff `validate()` produces no violations.
+    pub fn is_valid(objectives: &[MeceObjective]) -> bool {
+        Self::validate(objectives).is_empty()
+    }
+}
+
+impl Default for MeceValidator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Score for a dreaming proposal.
+///
+/// `EPIC_SCORE_THRESHOLD = 95.0` — `nom app dream` iterates until the score
+/// reaches this level.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AppScore {
+    /// Score in [0.0, 100.0].
+    pub value: f32,
+}
+
+/// The threshold above which a dreaming run is considered epic.
+pub const EPIC_SCORE_THRESHOLD: f32 = 95.0;
+
+impl AppScore {
+    pub fn new(value: f32) -> Self {
+        Self { value }
+    }
+
+    /// Returns `true` if the score meets the epic threshold (≥ 95.0).
+    pub fn is_epic(&self) -> bool {
+        self.value >= EPIC_SCORE_THRESHOLD
+    }
+
+    /// Computes a score by penalising 10 points per violation, clamped to
+    /// [0.0, 100.0].
+    pub fn from_violations(
+        _objectives: &[MeceObjective],
+        violations: &[MeceViolation],
+    ) -> Self {
+        let penalty = violations.len() as f32 * 10.0;
+        let value = (100.0_f32 - penalty).max(0.0);
+        Self { value }
+    }
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod mece_tests {
+    use super::*;
+
+    // ── test 1: MeceObjective fields ─────────────────────────────────────────
+
+    #[test]
+    fn objective_fields() {
+        let obj = MeceObjective::new(1, "performance", 0.4);
+        assert_eq!(obj.id, 1);
+        assert_eq!(obj.label, "performance");
+        assert!((obj.weight - 0.4).abs() < f32::EPSILON);
+    }
+
+    // ── test 2: validate_weights — valid sum ─────────────────────────────────
+
+    #[test]
+    fn validate_weights_valid_returns_none() {
+        let objectives = vec![
+            MeceObjective::new(1, "security", 0.5),
+            MeceObjective::new(2, "performance", 0.5),
+        ];
+        assert!(MeceValidator::validate_weights(&objectives).is_none());
+    }
+
+    // ── test 3: validate_weights — invalid sum ───────────────────────────────
+
+    #[test]
+    fn validate_weights_invalid_returns_violation() {
+        let objectives = vec![
+            MeceObjective::new(1, "security", 0.3),
+            MeceObjective::new(2, "performance", 0.3),
+        ];
+        let result = MeceValidator::validate_weights(&objectives);
+        assert!(result.is_some());
+        if let Some(MeceViolation::WeightSumNot1 { actual }) = result {
+            assert!((actual - 0.6).abs() < 0.001);
+        } else {
+            panic!("expected WeightSumNot1");
+        }
+    }
+
+    // ── test 4: validate_labels — duplicate returns Overlap ─────────────────
+
+    #[test]
+    fn validate_labels_duplicate_returns_overlap() {
+        let objectives = vec![
+            MeceObjective::new(10, "speed", 0.5),
+            MeceObjective::new(11, "speed", 0.5),
+        ];
+        let result = MeceValidator::validate_labels(&objectives);
+        assert!(result.is_some());
+        if let Some(MeceViolation::Overlap { a, b }) = result {
+            assert_eq!(a, 10);
+            assert_eq!(b, 11);
+        } else {
+            panic!("expected Overlap");
+        }
+    }
+
+    // ── test 5: validate_labels — unique labels returns None ─────────────────
+
+    #[test]
+    fn validate_labels_unique_returns_none() {
+        let objectives = vec![
+            MeceObjective::new(1, "speed", 0.5),
+            MeceObjective::new(2, "safety", 0.5),
+        ];
+        assert!(MeceValidator::validate_labels(&objectives).is_none());
+    }
+
+    // ── test 6: validate — collects multiple violations ──────────────────────
+
+    #[test]
+    fn validate_collects_multiple_violations() {
+        // Bad weights AND duplicate labels → 2 violations.
+        let objectives = vec![
+            MeceObjective::new(1, "dup", 0.2),
+            MeceObjective::new(2, "dup", 0.2),
+        ];
+        let violations = MeceValidator::validate(&objectives);
+        assert_eq!(violations.len(), 2, "expected 2 violations: {violations:?}");
+    }
+
+    // ── test 7: is_valid — true for clean set ────────────────────────────────
+
+    #[test]
+    fn is_valid_true_for_clean_set() {
+        let objectives = vec![
+            MeceObjective::new(1, "security", 0.4),
+            MeceObjective::new(2, "performance", 0.3),
+            MeceObjective::new(3, "usability", 0.3),
+        ];
+        assert!(MeceValidator::is_valid(&objectives));
+    }
+
+    // ── test 8: is_valid — false for invalid set ─────────────────────────────
+
+    #[test]
+    fn is_valid_false_for_invalid_set() {
+        let objectives = vec![
+            MeceObjective::new(1, "security", 0.2),
+            MeceObjective::new(2, "security", 0.2),
+        ];
+        assert!(!MeceValidator::is_valid(&objectives));
+    }
+
+    // ── test 9: AppScore::is_epic ────────────────────────────────────────────
+
+    #[test]
+    fn app_score_is_epic_at_or_above_threshold() {
+        assert!(AppScore::new(95.0).is_epic());
+        assert!(AppScore::new(100.0).is_epic());
+        assert!(!AppScore::new(94.9).is_epic());
+        assert!(!AppScore::new(0.0).is_epic());
+    }
+
+    // ── test 10: AppScore::from_violations ───────────────────────────────────
+
+    #[test]
+    fn app_score_from_violations_decreases_per_violation() {
+        let objectives = vec![
+            MeceObjective::new(1, "a", 0.5),
+            MeceObjective::new(2, "b", 0.5),
+        ];
+        let no_violations: Vec<MeceViolation> = vec![];
+        let one_violation = vec![MeceViolation::WeightSumNot1 { actual: 0.5 }];
+        let two_violations = vec![
+            MeceViolation::WeightSumNot1 { actual: 0.5 },
+            MeceViolation::Overlap { a: 1, b: 2 },
+        ];
+
+        let score_0 = AppScore::from_violations(&objectives, &no_violations);
+        let score_1 = AppScore::from_violations(&objectives, &one_violation);
+        let score_2 = AppScore::from_violations(&objectives, &two_violations);
+
+        assert!((score_0.value - 100.0).abs() < f32::EPSILON);
+        assert!((score_1.value - 90.0).abs() < f32::EPSILON);
+        assert!((score_2.value - 80.0).abs() < f32::EPSILON);
+        assert!(score_0.value > score_1.value);
+        assert!(score_1.value > score_2.value);
+    }
+}
+
+// ── Legacy tests ──────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {

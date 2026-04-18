@@ -3,6 +3,9 @@
 pub mod skill_router;
 pub use skill_router::{SkillDefinition, SkillRouter};
 
+pub mod skill_route;
+pub use skill_route::{SkillDispatch, SkillEntry};
+
 pub mod retrievers;
 pub use retrievers::{BM25Document, BM25Retriever, CosineSimilarityRetriever, VectorDocument};
 

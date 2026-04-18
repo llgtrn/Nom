@@ -294,12 +294,21 @@
 - ✅ TypeInferencer — TypeEnv + TypeConstraint + TypeInferencer using IrValue::type_of() (12 tests)
 - ✅ ReAct+BM25 integration — 8 real integration tests (no stubs), BM25 top-k + ReAct loop
 
-## Open Items — Wave ABL targets
+## Wave ABL (2026-04-19) — COMMITTED ✅ (HEAD 7341c05, +35 tests)
 
-- ✅ **D3 golden 40** — already at 40 golden path tests (nom-canvas-tests)
-- ❌ **VideoCapture real** — real FrameCapture→FFmpeg encode wiring (ABL-1 running)
-- ❌ **A6 LSP async** — LspAsyncLoop message parsing + Content-Length framing (ABL-2 running)
-- ❌ **VisionOrchestrator + NomInspector bridge** — VisionBridge::vision_to_findings() + enrich_report() (ABL-3 running)
+- ✅ VideoCapture real — FrameCapture + FfmpegEncoder + real ffmpeg arg construction (9 tests)
+- ✅ LspAsyncLoop — LspAsyncConfig + LspAsyncMessage + parse/format/process_batch (8 tests)
+- ✅ VisionBridge — VisionOutput→InspectFinding enrich_report() wired (8 tests)
+- ✅ Pipeline+Ingest integration — 10 CompilePipeline + CorpusOrchestrator integration tests
+- ✅ D-axis: 100% COMPLETE
+
+## Open Items — Wave ABM targets (A+B axis advancement)
+
+- ❌ **A5 EntryKind::Skill routing** — route `EntryKind::Skill` in nom-intent resolve()
+- ❌ **A5 lifecycle transitions** — merge/eliminate/evolve entry state transitions in nom-dict
+- ❌ **B6 MECE validator** — MECE objective validator in nom-concept
+- ❌ **B6 Dream tree** — Pareto front dream tree stubs in nom-compose
+- ❌ **C5 deeper LSP visual** — add LSP position bridging to Buffer::point_at() integration
 
 ---
 

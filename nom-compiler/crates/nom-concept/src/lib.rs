@@ -21,8 +21,8 @@ pub use closure::{ClosureError, ConceptClosure, ConceptGraph, UnresolvedRef};
 
 pub mod mece;
 pub use mece::{
-    MeCollision, MeceReport, ObjectiveBinding, check_mece, check_mece_with_required_axes,
-    stub_axis_of,
+    AppScore, EPIC_SCORE_THRESHOLD, MeCollision, MeceObjective, MeceReport, MeceViolation,
+    MeceValidator, ObjectiveBinding, check_mece, check_mece_with_required_axes, stub_axis_of,
 };
 
 pub mod strict;
@@ -56,7 +56,10 @@ pub mod exhaustiveness;
 pub use exhaustiveness::{ExhaustivenessWarning, check_exhaustiveness};
 
 pub mod dream;
-pub use dream::{DreamScore, MeceCategory, MeceValidator, MeceViolation, ViolationKind};
+pub use dream::{
+    DreamScore, MeceCategory, MeceValidator as DreamMeceValidator,
+    MeceViolation as DreamMeceViolation, ViolationKind,
+};
 
 pub mod bootstrap;
 pub use bootstrap::{
@@ -71,6 +74,9 @@ pub use ingest::{IngestPipeline, IngestRecord, IngestSource};
 
 pub mod pipeline;
 pub use pipeline::{CompileError, CompileInput, CompileOutput, CompilePipeline, CompileStage};
+
+pub mod lifecycle;
+pub use lifecycle::{EntryState, LifecycleManager, LifecycleTransition};
 
 /// Closed kind set per doc 08 §8.1.
 ///
