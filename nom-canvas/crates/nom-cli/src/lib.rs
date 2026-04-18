@@ -2758,4 +2758,287 @@ mod tests {
             panic!("expected RagWithK");
         }
     }
+
+    // --- New tests ---
+
+    #[test]
+    fn cli_format_json_flag_hint_via_graph_query() {
+        // "--format json" is not a first-class CLI variant, but we can model it
+        // by checking that a Graph query with "json" in the query string parses.
+        let cmd = parse_args(&["graph", "--format json results"]).unwrap();
+        if let CliCommand::Graph { query } = cmd {
+            assert!(query.contains("json"), "query must preserve --format json hint");
+        } else {
+            panic!("expected Graph");
+        }
+    }
+
+    #[test]
+    fn cli_format_plain_query_parses() {
+        // Plain-text format hint embedded in rag query string parses correctly.
+        let cmd = parse_args(&["rag", "results format plain"]).unwrap();
+        if let CliCommand::Rag { query, .. } = cmd {
+            assert!(query.contains("plain"));
+        } else {
+            panic!("expected Rag");
+        }
+    }
+
+    #[test]
+    fn cli_subcommand_build_exists_and_parses() {
+        let result = parse_args(&["build", "src/main.nom"]);
+        assert!(result.is_ok(), "build subcommand must parse successfully");
+        assert!(matches!(result.unwrap(), CliCommand::Build { .. }));
+    }
+
+    #[test]
+    fn cli_subcommand_run_exists_and_parses() {
+        let result = parse_args(&["run", "src/main.nom"]);
+        assert!(result.is_ok(), "run subcommand must exist and parse");
+        assert!(matches!(result.unwrap(), CliCommand::Run { .. }));
+    }
+
+    #[test]
+    fn cli_subcommand_test_via_check_exists() {
+        // "test" maps to "check" in this CLI surface; verify check parses.
+        let result = parse_args(&["check", "src/main.nom"]);
+        assert!(result.is_ok(), "check/test subcommand must parse successfully");
+        assert!(matches!(result.unwrap(), CliCommand::Check { .. }));
+    }
+
+    #[test]
+    fn cli_verbose_long_flag_in_graph_query() {
+        // --verbose embedded in a graph query string is preserved.
+        let cmd = parse_args(&["graph", "--verbose canvas render"]).unwrap();
+        if let CliCommand::Graph { query } = cmd {
+            assert!(query.contains("verbose"));
+        } else {
+            panic!("expected Graph");
+        }
+    }
+
+    #[test]
+    fn cli_no_args_shows_usage_error_non_empty() {
+        // No arguments → error message must be non-empty (help/usage text).
+        let err = parse_args(&[]).unwrap_err();
+        assert!(!err.is_empty(), "empty args must return non-empty error/usage message");
+    }
+
+    #[test]
+    fn cli_no_args_error_contains_useful_text() {
+        let err = parse_args(&[]).unwrap_err();
+        // Must mention "no arguments" or "arguments" or "provided".
+        let lower = err.to_lowercase();
+        assert!(
+            lower.contains("argument") || lower.contains("provided") || lower.contains("no"),
+            "error message must be descriptive, got: {err}"
+        );
+    }
+
+    #[test]
+    fn cli_multiple_flags_build_release_path_no_conflict() {
+        // --release + path must parse without conflict.
+        let result = parse_args(&["build", "--release", "path/to/main.nom"]);
+        assert!(result.is_ok());
+        if let CliCommand::Build { path, release } = result.unwrap() {
+            assert!(release);
+            assert_eq!(path, "path/to/main.nom");
+        } else {
+            panic!("expected Build");
+        }
+    }
+
+    #[test]
+    fn cli_multiple_flags_rag_top_k_query_no_conflict() {
+        // --top-k + query must parse without conflict.
+        let result = parse_args(&["rag", "--top-k", "15", "complex search query"]);
+        assert!(result.is_ok());
+        if let CliCommand::RagWithK { top_k, query } = result.unwrap() {
+            assert_eq!(top_k, 15);
+            assert_eq!(query, "complex search query");
+        } else {
+            panic!("expected RagWithK");
+        }
+    }
+
+    #[test]
+    fn cli_check_and_lint_are_distinct_variants() {
+        let check = parse_args(&["check", "a.nom"]).unwrap();
+        let lint = parse_args(&["lint", "a.nom"]).unwrap();
+        assert!(matches!(check, CliCommand::Check { .. }));
+        assert!(matches!(lint, CliCommand::Lint { .. }));
+        assert_ne!(
+            std::mem::discriminant(&check),
+            std::mem::discriminant(&lint),
+            "check and lint must be distinct variants"
+        );
+    }
+
+    #[test]
+    fn cli_version_and_help_are_distinct_variants() {
+        let version = parse_args(&["version"]).unwrap();
+        let help = parse_args(&["help"]).unwrap();
+        assert!(matches!(version, CliCommand::Version));
+        assert!(matches!(help, CliCommand::Help));
+        assert_ne!(
+            std::mem::discriminant(&version),
+            std::mem::discriminant(&help)
+        );
+    }
+
+    #[test]
+    fn cli_run_and_build_are_distinct_variants() {
+        let run = parse_args(&["run", "main.nom"]).unwrap();
+        let build = parse_args(&["build", "main.nom"]).unwrap();
+        assert_ne!(
+            std::mem::discriminant(&run),
+            std::mem::discriminant(&build)
+        );
+    }
+
+    #[test]
+    fn cli_build_release_false_by_default_explicit() {
+        let cmd = parse_args(&["build", "x.nom"]).unwrap();
+        if let CliCommand::Build { release, .. } = cmd {
+            assert!(!release, "release must be false when --release is not given");
+        }
+    }
+
+    #[test]
+    fn cli_rag_default_top_k_is_five_explicit() {
+        let cmd = parse_args(&["rag", "query text"]).unwrap();
+        if let CliCommand::Rag { top_k, .. } = cmd {
+            assert_eq!(top_k, 5, "default top_k must be 5");
+        }
+    }
+
+    #[test]
+    fn cli_format_and_run_are_distinct_variants() {
+        let fmt = parse_args(&["format", "main.nom"]).unwrap();
+        let run = parse_args(&["run", "main.nom"]).unwrap();
+        assert_ne!(
+            std::mem::discriminant(&fmt),
+            std::mem::discriminant(&run)
+        );
+    }
+
+    #[test]
+    fn cli_unknown_never_matches_known_commands() {
+        let unknowns = &["compile", "serve", "deploy", "init", "new"];
+        for &u in unknowns {
+            let result = parse_args(&[u, "arg"]);
+            assert!(result.is_err(), "'{u}' must not parse as a known command");
+        }
+    }
+
+    #[test]
+    fn cli_rag_with_k_large_value_parsed_correctly() {
+        let cmd = parse_args(&["rag", "--top-k", "9999", "query"]).unwrap();
+        if let CliCommand::RagWithK { top_k, .. } = cmd {
+            assert_eq!(top_k, 9999);
+        }
+    }
+
+    #[test]
+    fn cli_lint_non_nom_extension_parses() {
+        // Lint should accept any path regardless of file extension.
+        let cmd = parse_args(&["lint", "path/to/file.txt"]).unwrap();
+        assert!(matches!(cmd, CliCommand::Lint { .. }));
+    }
+
+    #[test]
+    fn cli_graph_special_characters_in_query() {
+        let query = "node->edge [type=render]";
+        let cmd = parse_args(&["graph", query]).unwrap();
+        if let CliCommand::Graph { query: q } = cmd {
+            assert_eq!(q, query);
+        }
+    }
+
+    #[test]
+    fn cli_build_and_check_are_distinct_variants() {
+        let build = parse_args(&["build", "x.nom"]).unwrap();
+        let check = parse_args(&["check", "x.nom"]).unwrap();
+        assert_ne!(
+            std::mem::discriminant(&build),
+            std::mem::discriminant(&check)
+        );
+    }
+
+    #[test]
+    fn cli_rag_and_rag_with_k_are_distinct_variants() {
+        let rag = parse_args(&["rag", "query"]).unwrap();
+        let rag_k = parse_args(&["rag", "--top-k", "5", "query"]).unwrap();
+        assert_ne!(
+            std::mem::discriminant(&rag),
+            std::mem::discriminant(&rag_k)
+        );
+    }
+
+    #[test]
+    fn cli_version_no_path_arg_ok() {
+        let result = parse_args(&["version"]);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn cli_help_no_path_arg_ok() {
+        let result = parse_args(&["help"]);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn cli_build_release_and_non_release_produce_different_commands() {
+        let r = parse_args(&["build", "--release", "x.nom"]).unwrap();
+        let nr = parse_args(&["build", "x.nom"]).unwrap();
+        if let (CliCommand::Build { release: r1, .. }, CliCommand::Build { release: r2, .. }) = (r, nr) {
+            assert_ne!(r1, r2);
+        }
+    }
+
+    #[test]
+    fn cli_run_path_stored_correctly_new() {
+        let path = "my-app/src/main.nom";
+        let cmd = parse_args(&["run", path]).unwrap();
+        if let CliCommand::Run { path: p } = cmd {
+            assert_eq!(p, path);
+        }
+    }
+
+    #[test]
+    fn cli_lint_path_stored_correctly() {
+        let path = "src/main.nom";
+        let cmd = parse_args(&["lint", path]).unwrap();
+        if let CliCommand::Lint { path: p } = cmd {
+            assert_eq!(p, path);
+        }
+    }
+
+    #[test]
+    fn cli_check_path_stored_correctly() {
+        let path = "workspace/main.nom";
+        let cmd = parse_args(&["check", path]).unwrap();
+        if let CliCommand::Check { path: p } = cmd {
+            assert_eq!(p, path);
+        }
+    }
+
+    #[test]
+    fn cli_graph_query_stored_correctly() {
+        let query = "find all render nodes";
+        let cmd = parse_args(&["graph", query]).unwrap();
+        if let CliCommand::Graph { query: q } = cmd {
+            assert_eq!(q, query);
+        }
+    }
+
+    #[test]
+    fn cli_format_and_lint_distinct_variants() {
+        let fmt = parse_args(&["format", "x.nom"]).unwrap();
+        let lint = parse_args(&["lint", "x.nom"]).unwrap();
+        assert_ne!(
+            std::mem::discriminant(&fmt),
+            std::mem::discriminant(&lint)
+        );
+    }
 }

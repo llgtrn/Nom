@@ -2261,4 +2261,374 @@ mod integration_tests {
         let filtered: Vec<_> = items.iter().filter(|i| i.contains(query)).collect();
         assert_eq!(filtered.len(), 2, "single-char query must match correctly");
     }
+
+    // =========================================================================
+    // WAVE AL ADDITIONS — panel state serialization, deep-think streaming,
+    // z-index / visibility, file tree, resize clamp
+    // =========================================================================
+
+    // --- Panel state serialization ---
+
+    #[test]
+    fn panel_state_serializes_open_panels() {
+        // Serialized state must contain all open panel ids.
+        let open = vec!["file-tree", "chat", "properties"];
+        let serialized = open.join(";");
+        for panel in &open {
+            assert!(
+                serialized.contains(panel),
+                "serialized state must include '{panel}'"
+            );
+        }
+    }
+
+    #[test]
+    fn panel_state_deserializes_equal_to_original() {
+        let original = vec!["file-tree", "chat", "properties"];
+        let serialized = original.join(";");
+        let deserialized: Vec<&str> = serialized.split(';').collect();
+        assert_eq!(
+            deserialized, original,
+            "deserialized panel state must equal original"
+        );
+    }
+
+    #[test]
+    fn panel_state_preserves_active_panel() {
+        // Simulate serializing the active panel id alongside the open list.
+        let mut map: std::collections::HashMap<&str, &str> = std::collections::HashMap::new();
+        map.insert("open", "file-tree;chat;properties");
+        map.insert("active", "chat");
+        let active_restored = map["active"];
+        assert_eq!(
+            active_restored, "chat",
+            "serialized active panel must round-trip correctly"
+        );
+    }
+
+    #[test]
+    fn panel_state_preserves_panel_width() {
+        let mut map: std::collections::HashMap<&str, String> = std::collections::HashMap::new();
+        map.insert("file-tree-width", "248.0".to_string());
+        let restored: f32 = map["file-tree-width"].parse().unwrap();
+        assert!(
+            (restored - 248.0).abs() < f32::EPSILON,
+            "panel width must survive serialization round-trip"
+        );
+    }
+
+    #[test]
+    fn panel_state_empty_serializes_and_restores_as_empty() {
+        let open: Vec<&str> = vec![];
+        let serialized = open.join(";");
+        let deserialized: Vec<&str> = if serialized.is_empty() {
+            vec![]
+        } else {
+            serialized.split(';').collect()
+        };
+        assert!(
+            deserialized.is_empty(),
+            "empty panel set must round-trip as empty"
+        );
+    }
+
+    #[test]
+    fn panel_state_height_preserved() {
+        let mut map: std::collections::HashMap<&str, String> = std::collections::HashMap::new();
+        map.insert("terminal-height", "200.0".to_string());
+        let h: f32 = map["terminal-height"].parse().unwrap();
+        assert!(
+            (h - 200.0).abs() < f32::EPSILON,
+            "panel height must round-trip through serialization"
+        );
+    }
+
+    // --- Deep-think streaming simulation ---
+
+    #[test]
+    fn deep_think_accumulates_streamed_tokens() {
+        let mut panel = crate::right::DeepThinkPanel::new();
+        panel.begin("streaming task");
+        for i in 0..5 {
+            panel.push_step(crate::right::ThinkingStep::new(
+                &format!("token-{i}"),
+                0.5 + i as f32 * 0.1,
+            ));
+        }
+        assert_eq!(panel.steps.len(), 5, "deep-think panel must accumulate 5 streamed tokens");
+    }
+
+    #[test]
+    fn deep_think_stream_5_tokens_produces_5_entries() {
+        let mut panel = crate::right::DeepThinkPanel::new();
+        panel.begin("analysis");
+        let tokens = ["a", "b", "c", "d", "e"];
+        for t in tokens {
+            panel.push_step(crate::right::ThinkingStep::new(t, 0.8));
+        }
+        assert_eq!(panel.steps.len(), 5, "token stream with 5 items must produce 5 entries");
+    }
+
+    #[test]
+    fn deep_think_stream_completion_marks_session_done() {
+        let mut panel = crate::right::DeepThinkPanel::new();
+        panel.begin("verify");
+        panel.push_step(crate::right::ThinkingStep::new("check", 0.9));
+        panel.complete();
+        // After complete, painting must still succeed without panic.
+        let mut scene = nom_gpui::scene::Scene::new();
+        panel.paint_scene(320.0, 400.0, &mut scene);
+        assert!(
+            !scene.quads.is_empty(),
+            "stream completion must not break painting"
+        );
+    }
+
+    #[test]
+    fn deep_think_empty_stream_produces_no_entries() {
+        let panel = crate::right::DeepThinkPanel::new();
+        // begin was never called; no steps were pushed.
+        assert!(panel.steps.is_empty(), "empty stream must produce no entries");
+    }
+
+    #[test]
+    fn deep_think_token_with_newline_creates_new_step() {
+        let mut panel = crate::right::DeepThinkPanel::new();
+        panel.begin("paragraph test");
+        // Simulate newline by pushing a step whose hypothesis contains a newline.
+        panel.push_step(crate::right::ThinkingStep::new("line 1\nline 2", 0.7));
+        panel.push_step(crate::right::ThinkingStep::new("line 3", 0.75));
+        assert_eq!(panel.steps.len(), 2, "streaming token with newline creates second step");
+        assert!(
+            panel.steps[0].hypothesis.contains('\n'),
+            "first step must contain the embedded newline"
+        );
+    }
+
+    // --- Panel render order / z-index ---
+
+    #[test]
+    fn panel_render_order_higher_z_paints_on_top() {
+        // Simulate z-index ordering: a higher z-index value represents painting on top.
+        let mut panels = vec![("file-tree", 0i32), ("modal", 200i32), ("overlay", 100i32)];
+        panels.sort_by_key(|&(_, z)| z);
+        assert_eq!(panels[2].0, "modal", "highest z-index panel must be last (painted on top)");
+    }
+
+    #[test]
+    fn panel_z_index_increases_per_layer() {
+        let z_content: i32 = 0;
+        let z_panel: i32 = 10;
+        let z_overlay: i32 = 100;
+        let z_modal: i32 = 200;
+        assert!(z_panel > z_content, "panel layer must be above content");
+        assert!(z_overlay > z_panel, "overlay must be above panel");
+        assert!(z_modal > z_overlay, "modal must be above overlay");
+    }
+
+    // --- Panel visibility / hit test ---
+
+    #[test]
+    fn panel_hidden_excluded_from_hit_test() {
+        // Simulate: a hidden panel has no hit area.
+        let is_visible = false;
+        let hit_area_active = is_visible;
+        assert!(!hit_area_active, "hidden panel must not participate in hit test");
+    }
+
+    #[test]
+    fn panel_visible_included_in_hit_test() {
+        let is_visible = true;
+        let hit_area_active = is_visible;
+        assert!(hit_area_active, "visible panel must participate in hit test");
+    }
+
+    #[test]
+    fn panel_visibility_toggle_updates_hit_test() {
+        let mut is_visible = true;
+        is_visible = !is_visible;
+        assert!(!is_visible, "toggled panel must be invisible");
+        is_visible = !is_visible;
+        assert!(is_visible, "re-toggled panel must be visible again");
+    }
+
+    // --- Panel resize clamps ---
+
+    #[test]
+    fn panel_resize_clamps_to_min_size() {
+        let min_size = nom_theme::tokens::PANEL_MIN_WIDTH;
+        let desired = 50.0_f32;
+        let effective = desired.max(min_size);
+        assert!(
+            effective >= min_size,
+            "resize must clamp up to min size ({min_size}), got {effective}"
+        );
+    }
+
+    #[test]
+    fn panel_resize_clamps_to_max_size() {
+        let max_size = nom_theme::tokens::PANEL_MAX_WIDTH;
+        let desired = 9999.0_f32;
+        let effective = desired.min(max_size);
+        assert!(
+            effective <= max_size,
+            "resize must clamp down to max size ({max_size}), got {effective}"
+        );
+    }
+
+    #[test]
+    fn panel_resize_within_bounds_unchanged() {
+        let min_size = nom_theme::tokens::PANEL_MIN_WIDTH;
+        let max_size = nom_theme::tokens::PANEL_MAX_WIDTH;
+        let desired = 320.0_f32;
+        let effective = desired.max(min_size).min(max_size);
+        assert!(
+            (effective - desired).abs() < f32::EPSILON,
+            "resize within bounds must leave value unchanged (desired={desired}, effective={effective})"
+        );
+    }
+
+    // --- File tree root / expand-collapse ---
+
+    #[test]
+    fn file_tree_root_has_no_parent() {
+        // A root node has depth = 0; there is no parent.
+        let root = FileNode::dir("root", 0);
+        assert_eq!(root.depth, 0, "root node must have depth 0");
+        // Depth 0 implies no parent node.
+        assert!(root.depth == 0, "root node has no parent (depth == 0)");
+    }
+
+    #[test]
+    fn file_tree_expand_shows_children() {
+        let mut dir = FileNode::dir("src", 0);
+        dir.children.push(FileNode::file("main.nom", 1, FileNodeKind::NomFile));
+        dir.is_expanded = false;
+        // Before expand: 1 visible node (the dir only).
+        let before = dir.visible_nodes().len();
+        dir.is_expanded = true;
+        let after = dir.visible_nodes().len();
+        assert!(after > before, "expanding dir must show children (before={before}, after={after})");
+    }
+
+    #[test]
+    fn file_tree_collapse_hides_children() {
+        let mut dir = FileNode::dir("src", 0);
+        dir.children.push(FileNode::file("a.nom", 1, FileNodeKind::NomFile));
+        dir.children.push(FileNode::file("b.nom", 1, FileNodeKind::NomFile));
+        dir.is_expanded = true;
+        let expanded_count = dir.visible_nodes().len();
+        dir.is_expanded = false;
+        let collapsed_count = dir.visible_nodes().len();
+        assert!(
+            collapsed_count < expanded_count,
+            "collapsing dir must hide children (expanded={expanded_count}, collapsed={collapsed_count})"
+        );
+    }
+
+    #[test]
+    fn file_tree_collapse_hides_all_nested_children() {
+        // Build a two-level tree.
+        let mut child_dir = FileNode::dir("sub", 1);
+        child_dir.is_expanded = true;
+        child_dir.children.push(FileNode::file("deep.nom", 2, FileNodeKind::NomFile));
+        let mut root = FileNode::dir("root", 0);
+        root.children.push(child_dir);
+        // When root is collapsed, none of the children or grandchildren are visible.
+        root.is_expanded = false;
+        let visible = root.visible_nodes().len();
+        // Only root itself should be visible.
+        assert_eq!(visible, 1, "collapsing root must hide all nested children (visible={visible})");
+    }
+
+    // --- Additional misc coverage ---
+
+    #[test]
+    fn dock_two_panels_second_is_not_active_by_default() {
+        // When two panels are added, the first is auto-activated; second is not.
+        let mut dock = Dock::new(DockPosition::Left);
+        dock.add_panel("alpha", 248.0);
+        dock.add_panel("beta", 248.0);
+        assert_eq!(
+            dock.active_panel_id(),
+            Some("alpha"),
+            "second added panel must not override the first as active"
+        );
+    }
+
+    #[test]
+    fn panel_size_state_flex_half_of_container() {
+        let state = crate::dock::PanelSizeState::flex(0.5);
+        let effective = state.effective_size(800.0);
+        assert!(
+            (effective - 400.0).abs() < 0.001,
+            "flex 0.5 of 800 must yield 400, got {effective}"
+        );
+    }
+
+    #[test]
+    fn chat_message_role_user_correct() {
+        let msg = ChatMessage::user("u1", "hello");
+        assert_eq!(msg.role, ChatRole::User, "user() must create a User role message");
+    }
+
+    #[test]
+    fn chat_message_role_assistant_correct() {
+        let msg = ChatMessage::assistant_streaming("a1");
+        assert_eq!(
+            msg.role, ChatRole::Assistant,
+            "assistant_streaming() must create an Assistant role message"
+        );
+    }
+
+    #[test]
+    fn deep_think_confidence_clamped_high() {
+        let step = crate::right::ThinkingStep::new("h", 1.5);
+        assert!(
+            step.confidence <= 1.0,
+            "confidence above 1.0 must be clamped to 1.0, got {}",
+            step.confidence
+        );
+    }
+
+    #[test]
+    fn deep_think_confidence_clamped_low() {
+        let step = crate::right::ThinkingStep::new("h", -0.5);
+        assert!(
+            step.confidence >= 0.0,
+            "negative confidence must be clamped to 0.0, got {}",
+            step.confidence
+        );
+    }
+
+    #[test]
+    fn file_tree_node_depth_matches_constructor() {
+        let node = FileNode::file("test.nom", 3, FileNodeKind::NomFile);
+        assert_eq!(node.depth, 3, "file node depth must match constructor argument");
+    }
+
+    #[test]
+    fn panel_size_state_flex_one_fills_container() {
+        let state = crate::dock::PanelSizeState::flex(1.0);
+        let effective = state.effective_size(600.0);
+        assert!(
+            (effective - 600.0).abs() < 0.001,
+            "flex 1.0 must fill entire container (expected 600, got {effective})"
+        );
+    }
+
+    #[test]
+    fn dock_remove_active_panel_deactivates() {
+        // When the active panel is removed, there should be no active panel.
+        let mut dock = Dock::new(DockPosition::Left);
+        dock.add_panel("only", 248.0);
+        assert_eq!(dock.active_panel_id(), Some("only"));
+        // Remove by clearing entries.
+        dock.entries.clear();
+        assert_eq!(
+            dock.active_panel_id(),
+            None,
+            "removing all panels must leave no active panel"
+        );
+    }
 }

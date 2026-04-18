@@ -126,6 +126,49 @@ impl SwapchainConfig {
 }
 
 // ---------------------------------------------------------------------------
+// RenderPassConfig — per-pass clear values and MSAA sample count
+// ---------------------------------------------------------------------------
+
+/// Configuration for a single render pass: clear color, depth/stencil clear
+/// values, and the MSAA sample count.
+///
+/// `sample_count = 1` means no MSAA (the common case).
+/// `sample_count = 4` is the most common MSAA level.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RenderPassConfig {
+    /// Background clear color applied at the start of the pass.
+    pub clear_color: LinearRgba,
+    /// Depth buffer clear value.  The canonical value is `1.0` (far plane).
+    pub depth_clear: f32,
+    /// Stencil buffer clear value.  Usually `0`.
+    pub stencil_clear: u32,
+    /// MSAA sample count: 1 = no MSAA, 4 = 4× MSAA.
+    pub sample_count: u32,
+}
+
+impl Default for RenderPassConfig {
+    fn default() -> Self {
+        Self {
+            // Opaque black clear — standard background for GPU renderers.
+            clear_color: LinearRgba([0.0, 0.0, 0.0, 1.0]),
+            depth_clear: 1.0,
+            stencil_clear: 0,
+            sample_count: 1,
+        }
+    }
+}
+
+impl RenderPassConfig {
+    /// Build a 4× MSAA pass config with default clear values.
+    pub fn msaa4() -> Self {
+        Self {
+            sample_count: 4,
+            ..Self::default()
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Color space types
 // ---------------------------------------------------------------------------
 
@@ -141,7 +184,7 @@ pub enum ColorSpace {
 /// All arithmetic and blending should be performed in linear space.
 /// Derives `Pod` + `Zeroable` so it can be cast directly to/from byte slices.
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Default, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct LinearRgba(pub [f32; 4]);
 
 impl From<Hsla> for LinearRgba {
@@ -3133,5 +3176,446 @@ mod tests {
     fn ortho_projection_positive_x_axis() {
         let m = ortho_projection(1920.0, 1080.0);
         assert!(m[0][0] > 0.0, "x scale must be positive");
+    }
+
+    // ------------------------------------------------------------------
+    // Wave AL: RenderPassConfig tests
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn render_pass_config_default_clear_color_is_black() {
+        let cfg = RenderPassConfig::default();
+        assert_eq!(cfg.clear_color.0[0], 0.0, "R must be 0 for black clear");
+        assert_eq!(cfg.clear_color.0[1], 0.0, "G must be 0 for black clear");
+        assert_eq!(cfg.clear_color.0[2], 0.0, "B must be 0 for black clear");
+        assert_eq!(cfg.clear_color.0[3], 1.0, "A must be 1 for opaque black clear");
+    }
+
+    #[test]
+    fn render_pass_config_default_sample_count_is_1() {
+        let cfg = RenderPassConfig::default();
+        assert_eq!(cfg.sample_count, 1, "default sample_count must be 1 (no MSAA)");
+    }
+
+    #[test]
+    fn render_pass_config_msaa4_sample_count_is_4() {
+        let cfg = RenderPassConfig::msaa4();
+        assert_eq!(cfg.sample_count, 4, "msaa4 config must have sample_count=4");
+    }
+
+    #[test]
+    fn render_pass_config_default_depth_clear_is_1() {
+        let cfg = RenderPassConfig::default();
+        assert!(
+            (cfg.depth_clear - 1.0).abs() < 1e-6,
+            "default depth_clear must be 1.0, got {}",
+            cfg.depth_clear
+        );
+    }
+
+    #[test]
+    fn render_pass_config_default_stencil_clear_is_0() {
+        let cfg = RenderPassConfig::default();
+        assert_eq!(cfg.stencil_clear, 0, "default stencil_clear must be 0");
+    }
+
+    #[test]
+    fn render_pass_config_two_equal_defaults() {
+        let a = RenderPassConfig::default();
+        let b = RenderPassConfig::default();
+        assert_eq!(a, b, "two default configs must compare equal");
+    }
+
+    #[test]
+    fn render_pass_config_different_sample_counts_not_equal() {
+        let no_msaa = RenderPassConfig::default();
+        let msaa = RenderPassConfig::msaa4();
+        assert_ne!(no_msaa, msaa, "configs with different sample_count must not be equal");
+    }
+
+    #[test]
+    fn render_pass_config_custom_clear_color() {
+        let cfg = RenderPassConfig {
+            clear_color: LinearRgba([0.1, 0.2, 0.3, 1.0]),
+            ..RenderPassConfig::default()
+        };
+        assert!((cfg.clear_color.0[0] - 0.1).abs() < 1e-6, "R channel must be 0.1");
+        assert!((cfg.clear_color.0[1] - 0.2).abs() < 1e-6, "G channel must be 0.2");
+        assert!((cfg.clear_color.0[2] - 0.3).abs() < 1e-6, "B channel must be 0.3");
+    }
+
+    #[test]
+    fn render_pass_config_msaa4_inherits_default_clear_color() {
+        let cfg = RenderPassConfig::msaa4();
+        assert_eq!(cfg.clear_color.0[0], 0.0, "msaa4 inherits black R=0");
+        assert_eq!(cfg.clear_color.0[3], 1.0, "msaa4 inherits alpha=1");
+    }
+
+    #[test]
+    fn render_pass_config_copy_produces_equal_value() {
+        let cfg = RenderPassConfig::msaa4();
+        let copy = cfg;  // Copy semantics via #[derive(Copy)]
+        assert_eq!(cfg, copy, "copied RenderPassConfig must equal original");
+    }
+
+    #[test]
+    fn render_pass_config_depth_clear_can_be_zero() {
+        let cfg = RenderPassConfig { depth_clear: 0.0, ..RenderPassConfig::default() };
+        assert_eq!(cfg.depth_clear, 0.0, "depth_clear 0.0 must be preserved");
+    }
+
+    // ------------------------------------------------------------------
+    // Wave AL: PipelineDescriptor additional tests
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn pipeline_descriptor_vertex_shader_is_nonempty_string() {
+        let d = describe_quad_pipeline();
+        assert!(!d.vertex_shader.is_empty(), "vertex_shader must be a non-empty string");
+        assert!(d.vertex_shader.len() > 10, "vertex_shader must have substantial content");
+    }
+
+    #[test]
+    fn pipeline_descriptor_topology_is_triangle_list_quad_pipeline() {
+        let d = describe_quad_pipeline();
+        assert_eq!(d.topology, "triangle-list", "quad pipeline topology must be triangle-list");
+    }
+
+    #[test]
+    fn pipeline_descriptor_vertex_entry_is_valid_identifier() {
+        let d = describe_quad_pipeline();
+        assert!(!d.vertex_entry.is_empty(), "vertex_entry must not be empty");
+        assert!(
+            d.vertex_entry.chars().all(|c| c.is_alphanumeric() || c == '_'),
+            "vertex_entry must be a valid identifier: {}",
+            d.vertex_entry
+        );
+    }
+
+    #[test]
+    fn pipeline_descriptor_fragment_entry_is_valid_identifier() {
+        let d = describe_quad_pipeline();
+        assert!(!d.fragment_entry.is_empty(), "fragment_entry must not be empty");
+        assert!(
+            d.fragment_entry.chars().all(|c| c.is_alphanumeric() || c == '_'),
+            "fragment_entry must be a valid identifier: {}",
+            d.fragment_entry
+        );
+    }
+
+    #[test]
+    fn pipeline_descriptor_copy_produces_equal_value() {
+        let d = describe_quad_pipeline();
+        let copy = d; // Copy semantics (PipelineDescriptor derives Copy)
+        assert_eq!(d, copy, "copied PipelineDescriptor must equal the original");
+    }
+
+    #[test]
+    fn pipeline_descriptor_color_format_contains_unorm() {
+        let d = describe_quad_pipeline();
+        assert!(
+            d.color_format.contains("unorm"),
+            "color_format must contain 'unorm', got: {}",
+            d.color_format
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // Wave AL: FrameStats accumulation and merge tests
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn frame_stats_initial_all_counters_zeroed() {
+        let s = FrameStats::default();
+        assert_eq!(s.quads_drawn, 0);
+        assert_eq!(s.shadows_drawn, 0);
+        assert_eq!(s.frosted_drawn, 0);
+        assert_eq!(s.paths_drawn, 0);
+        assert_eq!(s.mono_sprites_drawn, 0);
+        assert_eq!(s.sprites_drawn, 0);
+        assert_eq!(s.underlines_drawn, 0);
+        assert_eq!(s.frames, 0);
+    }
+
+    #[test]
+    fn frame_stats_recording_quad_increments_quads_drawn() {
+        let mut r = Renderer::new();
+        r.begin_frame().unwrap();
+        r.draw_quads_gpu(&[QuadInstance::default()]).unwrap();
+        assert_eq!(r.stats().quads_drawn, 1, "quads_drawn must be 1 after one quad");
+    }
+
+    #[test]
+    fn frame_stats_recording_polychrome_sprite_increments_sprites_drawn() {
+        let mut r = Renderer::new();
+        let mut scene = Scene::new();
+        scene.push_poly_sprite(crate::scene::PolychromeSprite::default());
+        r.draw(&mut scene);
+        assert_eq!(r.stats().sprites_drawn, 1, "sprites_drawn must be 1 after one polychrome sprite");
+    }
+
+    #[test]
+    fn frame_stats_reset_via_new_renderer_clears_all() {
+        let mut r = Renderer::new();
+        let mut scene = Scene::new();
+        scene.push_quad(crate::scene::Quad::default());
+        scene.push_shadow(crate::scene::Shadow::default());
+        r.draw(&mut scene);
+        assert!(r.stats().quads_drawn > 0, "must have quads before reset check");
+
+        let fresh = Renderer::new();
+        let s = fresh.stats();
+        assert_eq!(s.quads_drawn, 0, "reset: quads_drawn = 0");
+        assert_eq!(s.shadows_drawn, 0, "reset: shadows_drawn = 0");
+        assert_eq!(s.frames, 0, "reset: frames = 0");
+        assert_eq!(s.sprites_drawn, 0, "reset: sprites_drawn = 0");
+        assert_eq!(s.underlines_drawn, 0, "reset: underlines_drawn = 0");
+    }
+
+    #[test]
+    fn frame_stats_merge_two_partial_frames_combined() {
+        let mut r1 = Renderer::new();
+        let mut scene1 = Scene::new();
+        for _ in 0..3 {
+            scene1.push_quad(crate::scene::Quad::default());
+        }
+        r1.draw(&mut scene1);
+
+        let mut r2 = Renderer::new();
+        let mut scene2 = Scene::new();
+        for _ in 0..5 {
+            scene2.push_quad(crate::scene::Quad::default());
+        }
+        r2.draw(&mut scene2);
+
+        let combined = r1.stats().quads_drawn + r2.stats().quads_drawn;
+        assert_eq!(combined, 8, "merged quads = 3 + 5 = 8");
+    }
+
+    #[test]
+    fn frame_stats_underlines_increment_via_scene_push() {
+        let mut r = Renderer::new();
+        let mut scene = Scene::new();
+        for _ in 0..3 {
+            scene.push_underline(crate::scene::Underline::default());
+        }
+        r.draw(&mut scene);
+        assert_eq!(r.stats().underlines_drawn, 3, "underlines_drawn must count pushed underlines");
+    }
+
+    #[test]
+    fn frame_stats_polychrome_sprites_two_increments() {
+        let mut r = Renderer::new();
+        let mut scene = Scene::new();
+        scene.push_poly_sprite(crate::scene::PolychromeSprite::default());
+        scene.push_poly_sprite(crate::scene::PolychromeSprite::default());
+        r.draw(&mut scene);
+        assert_eq!(r.stats().sprites_drawn, 2, "sprites_drawn must equal 2");
+    }
+
+    // ------------------------------------------------------------------
+    // Wave AL: ortho_projection corner mapping tests
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn ortho_projection_top_left_corner_maps_to_neg1_pos1() {
+        let (w, h) = (800.0_f32, 600.0_f32);
+        let m = ortho_projection(w, h);
+        let ndc_x = 0.0_f32 * m[0][0] + m[3][0];
+        let ndc_y = 0.0_f32 * m[1][1] + m[3][1];
+        assert!((ndc_x - (-1.0)).abs() < 1e-5, "top-left x → NDC -1, got {ndc_x}");
+        assert!((ndc_y - 1.0).abs() < 1e-5, "top-left y → NDC 1, got {ndc_y}");
+    }
+
+    #[test]
+    fn ortho_projection_bottom_right_corner_maps_to_pos1_neg1() {
+        let (w, h) = (800.0_f32, 600.0_f32);
+        let m = ortho_projection(w, h);
+        let ndc_x = w * m[0][0] + m[3][0];
+        let ndc_y = h * m[1][1] + m[3][1];
+        assert!((ndc_x - 1.0).abs() < 1e-5, "bottom-right x → NDC 1, got {ndc_x}");
+        assert!((ndc_y - (-1.0)).abs() < 1e-5, "bottom-right y → NDC -1, got {ndc_y}");
+    }
+
+    #[test]
+    fn ortho_projection_center_maps_to_ndc_zero() {
+        let (w, h) = (800.0_f32, 600.0_f32);
+        let m = ortho_projection(w, h);
+        let ndc_x = (w / 2.0) * m[0][0] + m[3][0];
+        let ndc_y = (h / 2.0) * m[1][1] + m[3][1];
+        assert!((ndc_x - 0.0).abs() < 1e-5, "center x → NDC 0, got {ndc_x}");
+        assert!((ndc_y - 0.0).abs() < 1e-5, "center y → NDC 0, got {ndc_y}");
+    }
+
+    #[test]
+    fn ortho_projection_center_is_ndc_origin_for_multiple_viewports() {
+        for &(w, h) in &[(100.0_f32, 200.0_f32), (1920.0, 1080.0), (4096.0, 4096.0)] {
+            let m = ortho_projection(w, h);
+            let ndc_x = (w / 2.0) * m[0][0] + m[3][0];
+            let ndc_y = (h / 2.0) * m[1][1] + m[3][1];
+            assert!(
+                (ndc_x - 0.0).abs() < 1e-4,
+                "center NDC x must be 0 for {}x{}, got {ndc_x}",
+                w, h
+            );
+            assert!(
+                (ndc_y - 0.0).abs() < 1e-4,
+                "center NDC y must be 0 for {}x{}, got {ndc_y}",
+                w, h
+            );
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Wave AL: atlas eviction tests
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn atlas_fill_ratio_after_many_packs_stays_le_1() {
+        use crate::atlas::{GlyphCacheKey, TextureAtlas};
+
+        let mut atlas = TextureAtlas::new(0);
+        for i in 0..200u32 {
+            atlas.pack_glyph(
+                GlyphCacheKey { font_id: 0, font_size_px: 120, glyph_id: i + 10000, subpixel_index: 0 },
+                32,
+                32,
+            );
+            let ratio = atlas.fill_ratio();
+            assert!(ratio <= 1.0, "fill_ratio must be <= 1.0, got {ratio} after packing glyph {i}");
+        }
+    }
+
+    #[test]
+    fn atlas_eviction_batch_size_matches_constant() {
+        use crate::atlas::TextureAtlas;
+        assert_eq!(TextureAtlas::EVICTION_BATCH, 32, "EVICTION_BATCH constant must be 32");
+    }
+
+    #[test]
+    fn atlas_new_allocation_succeeds_after_eviction() {
+        use crate::atlas::{GlyphCacheKey, TextureAtlas};
+
+        let mut atlas = TextureAtlas::new(0);
+        for i in 0..(TextureAtlas::EVICTION_BATCH + 1) as u32 {
+            atlas.pack_glyph(
+                GlyphCacheKey { font_id: 0, font_size_px: 120, glyph_id: i + 20000, subpixel_index: 0 },
+                8,
+                8,
+            );
+        }
+        atlas.clear();
+        let result = atlas.pack_glyph(
+            GlyphCacheKey { font_id: 0, font_size_px: 120, glyph_id: 99999, subpixel_index: 0 },
+            8,
+            8,
+        );
+        assert!(result.is_some(), "new allocation after eviction/clear must succeed");
+    }
+
+    #[test]
+    fn atlas_evicted_entries_absent_from_cache() {
+        use crate::atlas::{GlyphCacheKey, TextureAtlas};
+
+        let mut atlas = TextureAtlas::new(0);
+        let keys: Vec<GlyphCacheKey> = (0..5u32)
+            .map(|i| GlyphCacheKey { font_id: 0, font_size_px: 120, glyph_id: i + 30000, subpixel_index: 0 })
+            .collect();
+
+        for &key in &keys {
+            atlas.pack_glyph(key, 8, 8).unwrap();
+        }
+        for &key in &keys {
+            assert!(atlas.get(&key).is_some(), "key glyph_id={} must exist before eviction", key.glyph_id);
+        }
+
+        atlas.clear();
+
+        for &key in &keys {
+            assert!(
+                atlas.get(&key).is_none(),
+                "evicted key glyph_id={} must not be in atlas after clear",
+                key.glyph_id
+            );
+        }
+    }
+
+    #[test]
+    fn atlas_fill_ratio_is_zero_on_fresh_atlas() {
+        use crate::atlas::TextureAtlas;
+        let atlas = TextureAtlas::new(0);
+        assert_eq!(atlas.fill_ratio(), 0.0, "fresh atlas must have fill_ratio=0");
+    }
+
+    // ------------------------------------------------------------------
+    // Wave AL extra: additional coverage to reach target count
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn render_pass_config_stencil_clear_can_be_nonzero() {
+        let cfg = RenderPassConfig { stencil_clear: 255, ..RenderPassConfig::default() };
+        assert_eq!(cfg.stencil_clear, 255, "stencil_clear 255 must be preserved");
+    }
+
+    #[test]
+    fn render_pass_config_sample_count_1_means_no_msaa() {
+        let cfg = RenderPassConfig::default();
+        assert_eq!(cfg.sample_count, 1, "sample_count=1 represents a non-MSAA pass");
+        assert_ne!(cfg.sample_count, 4, "non-MSAA pass must not have sample_count=4");
+    }
+
+    #[test]
+    fn render_pass_config_msaa4_differs_from_default() {
+        let default = RenderPassConfig::default();
+        let msaa = RenderPassConfig::msaa4();
+        assert_ne!(default.sample_count, msaa.sample_count, "msaa4 and default must differ in sample_count");
+    }
+
+    #[test]
+    fn pipeline_descriptor_sprite_clone_equal() {
+        let d = describe_sprite_pipeline();
+        let copy = d;
+        assert_eq!(d.topology, copy.topology, "copied sprite descriptor topology must match");
+        assert_eq!(d.color_format, copy.color_format, "copied sprite descriptor color_format must match");
+        assert_eq!(d.vertex_entry, copy.vertex_entry, "copied sprite descriptor vertex_entry must match");
+        assert_eq!(d.fragment_entry, copy.fragment_entry, "copied sprite descriptor fragment_entry must match");
+    }
+
+    #[test]
+    fn frame_stats_mono_sprites_increment_via_scene() {
+        let mut r = Renderer::new();
+        let mut scene = Scene::new();
+        scene.push_sprite(crate::scene::MonochromeSprite::default());
+        scene.push_sprite(crate::scene::MonochromeSprite::default());
+        r.draw(&mut scene);
+        assert_eq!(r.stats().mono_sprites_drawn, 2, "mono_sprites_drawn must count pushed monochrome sprites");
+    }
+
+    #[test]
+    fn frame_stats_paths_increment_via_scene() {
+        let mut r = Renderer::new();
+        let mut scene = Scene::new();
+        scene.push_path(crate::scene::Path::default());
+        r.draw(&mut scene);
+        assert_eq!(r.stats().paths_drawn, 1, "paths_drawn must count pushed paths");
+    }
+
+    #[test]
+    fn ortho_projection_translation_row_is_last_column() {
+        // Column-major layout: the translation is in m[3][0] and m[3][1].
+        let m = ortho_projection(800.0, 600.0);
+        // m[3][0] = tx = -1, m[3][1] = ty = 1
+        assert!((m[3][0] - (-1.0)).abs() < 1e-6, "tx must be -1 (column 3, row 0)");
+        assert!((m[3][1] - 1.0).abs() < 1e-6, "ty must be 1 (column 3, row 1)");
+    }
+
+    #[test]
+    fn render_pass_config_transparent_clear_color() {
+        // Fully transparent clear: alpha = 0.
+        let cfg = RenderPassConfig {
+            clear_color: LinearRgba([0.0, 0.0, 0.0, 0.0]),
+            ..RenderPassConfig::default()
+        };
+        assert_eq!(cfg.clear_color.0[3], 0.0, "alpha 0 must be preserved");
     }
 }

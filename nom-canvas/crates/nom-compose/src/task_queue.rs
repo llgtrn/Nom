@@ -26,6 +26,8 @@ pub struct ComposeTask {
 pub struct TaskQueue {
     next_id: u64,
     tasks: Vec<ComposeTask>,
+    /// Optional hard cap on pending tasks (0 = unlimited).
+    pub max_size: usize,
 }
 
 impl TaskQueue {
@@ -33,7 +35,26 @@ impl TaskQueue {
         Self {
             next_id: 1,
             tasks: Vec::new(),
+            max_size: 0,
         }
+    }
+
+    /// Create a queue with a hard cap on pending tasks.
+    pub fn with_max_size(max: usize) -> Self {
+        Self {
+            next_id: 1,
+            tasks: Vec::new(),
+            max_size: max,
+        }
+    }
+
+    /// Enqueue a task. Returns `None` if `max_size > 0` and the pending count
+    /// has reached the cap; returns `Some(id)` on success.
+    pub fn try_enqueue(&mut self, backend: BackendKind, input: impl Into<String>) -> Option<u64> {
+        if self.max_size > 0 && self.pending_count() >= self.max_size {
+            return None;
+        }
+        Some(self.enqueue(backend, input))
     }
 
     pub fn enqueue(&mut self, backend: BackendKind, input: impl Into<String>) -> u64 {
@@ -47,6 +68,20 @@ impl TaskQueue {
             progress_pct: 0,
         });
         id
+    }
+
+    /// Return and remove the oldest pending task (FIFO dequeue). Returns `None` when empty.
+    pub fn dequeue_pending(&mut self) -> Option<ComposeTask> {
+        if let Some(pos) = self.tasks.iter().position(|t| t.state == TaskState::Pending) {
+            Some(self.tasks.remove(pos))
+        } else {
+            None
+        }
+    }
+
+    /// Remove and return all tasks in insertion order.
+    pub fn drain_all(&mut self) -> Vec<ComposeTask> {
+        self.tasks.drain(..).collect()
     }
 
     pub fn start(&mut self, id: u64) -> bool {
@@ -374,5 +409,133 @@ mod tests {
         let mut q = TaskQueue::new();
         let id = q.enqueue(BackendKind::Export, "data");
         assert_eq!(q.get(id).unwrap().backend, BackendKind::Export);
+    }
+
+    // ── Wave AK new tests ────────────────────────────────────────────────────
+
+    #[test]
+    fn task_queue_with_max_size_rejects_over_limit() {
+        // max_size=3: 4th try_enqueue must return None.
+        let mut q = TaskQueue::with_max_size(3);
+        assert!(q.try_enqueue(BackendKind::Video, "a").is_some());
+        assert!(q.try_enqueue(BackendKind::Audio, "b").is_some());
+        assert!(q.try_enqueue(BackendKind::Image, "c").is_some());
+        assert!(q.try_enqueue(BackendKind::Data, "d").is_none(), "4th enqueue must be rejected");
+        assert_eq!(q.pending_count(), 3, "pending count must stay at 3");
+    }
+
+    #[test]
+    fn task_queue_completed_task_not_counted_as_pending() {
+        // A completed task must not show up in pending_count.
+        let mut q = TaskQueue::new();
+        let id = q.enqueue(BackendKind::Video, "v");
+        q.start(id);
+        q.complete(id);
+        assert_eq!(q.pending_count(), 0, "completed task must not be counted as pending");
+        assert_eq!(q.running_count(), 0, "completed task must not be counted as running");
+    }
+
+    #[test]
+    fn task_queue_dequeue_pending_fifo_order() {
+        // dequeue_pending returns tasks in insertion order.
+        let mut q = TaskQueue::new();
+        q.enqueue(BackendKind::Video, "first");
+        q.enqueue(BackendKind::Audio, "second");
+        let t1 = q.dequeue_pending().unwrap();
+        let t2 = q.dequeue_pending().unwrap();
+        assert_eq!(t1.input, "first", "first dequeued must be first inserted");
+        assert_eq!(t2.input, "second", "second dequeued must be second inserted");
+    }
+
+    #[test]
+    fn task_queue_dequeue_pending_empty_returns_none() {
+        // Dequeue from an empty queue must return None.
+        let mut q = TaskQueue::new();
+        assert!(q.dequeue_pending().is_none(), "empty queue dequeue must return None");
+    }
+
+    #[test]
+    fn task_queue_drain_returns_all_tasks_in_order() {
+        // drain_all must return all tasks in insertion order and leave the queue empty.
+        let mut q = TaskQueue::new();
+        q.enqueue(BackendKind::Video, "t1");
+        q.enqueue(BackendKind::Audio, "t2");
+        q.enqueue(BackendKind::Image, "t3");
+        let drained = q.drain_all();
+        assert_eq!(drained.len(), 3, "drain must return all 3 tasks");
+        assert_eq!(drained[0].input, "t1");
+        assert_eq!(drained[1].input, "t2");
+        assert_eq!(drained[2].input, "t3");
+        assert_eq!(q.pending_count(), 0, "queue must be empty after drain");
+    }
+
+    #[test]
+    fn task_queue_max_size_zero_is_unlimited() {
+        // max_size=0 means no cap; try_enqueue always succeeds.
+        let mut q = TaskQueue::with_max_size(0);
+        for i in 0..20u64 {
+            assert!(
+                q.try_enqueue(BackendKind::Transform, format!("t{i}")).is_some(),
+                "unlimited queue must accept task {i}"
+            );
+        }
+        assert_eq!(q.pending_count(), 20);
+    }
+
+    #[test]
+    fn task_queue_try_enqueue_allows_after_task_started() {
+        // After starting a task (removing from pending), try_enqueue should accept new tasks.
+        let mut q = TaskQueue::with_max_size(2);
+        let id1 = q.try_enqueue(BackendKind::Video, "v1").unwrap();
+        q.try_enqueue(BackendKind::Audio, "a1").unwrap();
+        // Queue is full; 3rd must fail.
+        assert!(q.try_enqueue(BackendKind::Image, "i1").is_none());
+        // Start one task — pending drops to 1.
+        q.start(id1);
+        // Now pending=1 < max_size=2; new enqueue must succeed.
+        assert!(q.try_enqueue(BackendKind::Data, "d1").is_some(), "after starting a task, new enqueue must succeed");
+    }
+
+    #[test]
+    fn task_queue_dequeue_pending_skips_running_tasks() {
+        // dequeue_pending must only return Pending tasks, not Running ones.
+        let mut q = TaskQueue::new();
+        let id = q.enqueue(BackendKind::Video, "run-me");
+        q.start(id); // now Running
+        q.enqueue(BackendKind::Audio, "pending-one");
+        let t = q.dequeue_pending().unwrap();
+        assert_eq!(t.input, "pending-one", "dequeue must skip running tasks");
+    }
+
+    #[test]
+    fn task_queue_drain_empty_returns_empty_vec() {
+        let mut q = TaskQueue::new();
+        let drained = q.drain_all();
+        assert!(drained.is_empty(), "drain on empty queue must return empty vec");
+    }
+
+    #[test]
+    fn task_queue_with_max_size_1_accepts_one_rejects_second() {
+        let mut q = TaskQueue::with_max_size(1);
+        assert!(q.try_enqueue(BackendKind::Video, "only").is_some());
+        assert!(q.try_enqueue(BackendKind::Audio, "overflow").is_none());
+    }
+
+    #[test]
+    fn task_queue_drain_mixed_states() {
+        // drain_all must return tasks in all states (Pending + Running + Completed).
+        let mut q = TaskQueue::new();
+        let id1 = q.enqueue(BackendKind::Video, "pending");
+        let id2 = q.enqueue(BackendKind::Audio, "running");
+        let id3 = q.enqueue(BackendKind::Image, "done");
+        q.start(id2);
+        q.start(id3);
+        q.complete(id3);
+        let drained = q.drain_all();
+        assert_eq!(drained.len(), 3);
+        assert_eq!(drained[0].state, TaskState::Pending);
+        assert_eq!(drained[1].state, TaskState::Running);
+        assert_eq!(drained[2].state, TaskState::Completed);
+        let _ = (id1, id2, id3);
     }
 }

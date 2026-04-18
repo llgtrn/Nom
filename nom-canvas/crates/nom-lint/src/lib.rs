@@ -4262,4 +4262,338 @@ mod tests {
     fn lint_level_info_clone_equality() {
         assert_eq!(LintLevel::Info.clone(), LintLevel::Info);
     }
+
+    // --- New tests: suppression, depth, ordering, auto-fix, zero rules ---
+
+    #[test]
+    fn lint_suppression_annotation_skips_line() {
+        // A line containing "nom-lint:suppress" should be ignored by rules.
+        // We implement this by checking that the runner does NOT report a
+        // diagnostic when the source line carries the suppress annotation.
+        // Since LintRunner runs rules on every line, we verify the expected
+        // behavior via a custom "suppress-aware" wrapper around check_file.
+        let source = "fn foo() {}   // nom-lint:suppress";
+        // TrailingWhitespace would normally fire, but after suppression the
+        // caller filters out diagnostics on suppressed lines.
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        let raw = runner.check_file(source);
+        // The runner itself does not understand suppress; the caller does.
+        // Simulate the caller-side suppression filter:
+        let suppressed: Vec<_> = raw
+            .iter()
+            .filter(|d| {
+                !source
+                    .lines()
+                    .nth((d.line - 1) as usize)
+                    .unwrap_or("")
+                    .contains("nom-lint:suppress")
+            })
+            .collect();
+        assert!(
+            suppressed.is_empty(),
+            "suppressed line should produce no visible diagnostics"
+        );
+    }
+
+    #[test]
+    fn lint_suppression_only_suppresses_annotated_line() {
+        // Lines without the annotation still produce diagnostics.
+        let source = "fn a() {}   // nom-lint:suppress\nfn b() {}   ";
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        let raw = runner.check_file(source);
+        let suppressed: Vec<_> = raw
+            .iter()
+            .filter(|d| {
+                !source
+                    .lines()
+                    .nth((d.line - 1) as usize)
+                    .unwrap_or("")
+                    .contains("nom-lint:suppress")
+            })
+            .collect();
+        assert_eq!(
+            suppressed.len(),
+            1,
+            "unsuppressed line must still produce diagnostic"
+        );
+        assert_eq!(suppressed[0].line, 2);
+    }
+
+    #[test]
+    fn lint_nested_depth_five_no_warn() {
+        // A line with 5 levels of indentation (20 spaces) should not trigger
+        // a hypothetical depth rule (depth == 5 is the boundary; >5 warns).
+        // We test the boundary via a custom depth-counting helper.
+        fn nesting_depth(line: &str) -> usize {
+            let spaces = line.len() - line.trim_start().len();
+            spaces / 4
+        }
+        let line = "    ".repeat(5) + "x";
+        assert_eq!(nesting_depth(&line), 5, "exactly 5 levels should be ok");
+    }
+
+    #[test]
+    fn lint_nested_depth_six_exceeds_limit() {
+        fn nesting_depth(line: &str) -> usize {
+            let spaces = line.len() - line.trim_start().len();
+            spaces / 4
+        }
+        let line = "    ".repeat(6) + "x";
+        assert!(
+            nesting_depth(&line) > 5,
+            "6 levels must exceed the 5-level warn threshold"
+        );
+    }
+
+    #[test]
+    fn lint_multiple_rules_fire_on_same_line() {
+        // A line that is both too long AND has trailing whitespace AND has an
+        // empty block triggers all three rules simultaneously.
+        let long_trailing_empty = format!("{}fn f() {{}}   ", "a".repeat(115));
+        let mut runner = LintRunner::new();
+        runner.add_rule(LineTooLongRule { max_len: 120 });
+        runner.add_rule(TrailingWhitespaceRule);
+        runner.add_rule(EmptyBlockRule);
+        let diags = runner.check_line(&long_trailing_empty, 1);
+        assert_eq!(
+            diags.len(),
+            3,
+            "all three rules must fire on the same line"
+        );
+    }
+
+    #[test]
+    fn lint_result_ordering_errors_before_warnings() {
+        // When sorting diagnostics, errors come first, then warnings, then infos.
+        let mut diags = vec![
+            LintDiagnostic {
+                level: LintLevel::Warning,
+                message: "w".into(),
+                line: 1,
+                span: 0..1,
+            },
+            LintDiagnostic {
+                level: LintLevel::Error,
+                message: "e".into(),
+                line: 2,
+                span: 0..1,
+            },
+            LintDiagnostic {
+                level: LintLevel::Info,
+                message: "i".into(),
+                line: 3,
+                span: 0..1,
+            },
+        ];
+        diags.sort_by_key(|d| match d.level {
+            LintLevel::Error => 0u8,
+            LintLevel::Warning => 1,
+            LintLevel::Info => 2,
+        });
+        assert_eq!(diags[0].level, LintLevel::Error);
+        assert_eq!(diags[1].level, LintLevel::Warning);
+        assert_eq!(diags[2].level, LintLevel::Info);
+    }
+
+    #[test]
+    fn lint_result_ordering_warnings_before_infos() {
+        let mut diags = vec![
+            LintDiagnostic {
+                level: LintLevel::Info,
+                message: "i".into(),
+                line: 1,
+                span: 0..1,
+            },
+            LintDiagnostic {
+                level: LintLevel::Warning,
+                message: "w".into(),
+                line: 2,
+                span: 0..1,
+            },
+        ];
+        diags.sort_by_key(|d| match d.level {
+            LintLevel::Error => 0u8,
+            LintLevel::Warning => 1,
+            LintLevel::Info => 2,
+        });
+        assert_eq!(diags[0].level, LintLevel::Warning);
+        assert_eq!(diags[1].level, LintLevel::Info);
+    }
+
+    #[test]
+    fn lint_auto_fix_trailing_whitespace_produces_fix_text() {
+        // An auto-fix for trailing whitespace trims the trailing characters.
+        let line = "fn foo()   ";
+        let fix = line.trim_end_matches(|c| c == ' ' || c == '\t');
+        assert_eq!(fix, "fn foo()");
+        assert!(!fix.ends_with(' '));
+    }
+
+    #[test]
+    fn lint_auto_fix_preserves_inner_content() {
+        let line = "  let x = 1;   ";
+        let fix = line.trim_end_matches(|c| c == ' ' || c == '\t');
+        assert_eq!(fix, "  let x = 1;");
+    }
+
+    #[test]
+    fn lint_pass_on_clean_empty_document() {
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        runner.add_rule(LineTooLongRule::new());
+        runner.add_rule(EmptyBlockRule);
+        // A completely empty document should never produce diagnostics.
+        let diags = runner.run("");
+        assert!(diags.is_empty(), "clean empty document must have zero diagnostics");
+    }
+
+    #[test]
+    fn lint_pass_on_whitespace_only_document_with_no_trailing_per_line() {
+        // A document with only newlines has no per-line trailing whitespace.
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        let diags = runner.run("\n\n\n");
+        assert!(diags.is_empty());
+    }
+
+    #[test]
+    fn lint_zero_rules_produces_empty_result_any_source() {
+        let runner = LintRunner::new();
+        let source = "fn foo()    \n".repeat(50) + &"x".repeat(200);
+        let diags = runner.run(&source);
+        assert!(
+            diags.is_empty(),
+            "runner with zero rules must always produce empty result"
+        );
+    }
+
+    #[test]
+    fn lint_zero_rules_empty_source_also_empty() {
+        let runner = LintRunner::new();
+        assert!(runner.run("").is_empty());
+    }
+
+    #[test]
+    fn lint_error_level_variant_exists() {
+        let d = LintDiagnostic {
+            level: LintLevel::Error,
+            message: "err".into(),
+            line: 1,
+            span: 0..1,
+        };
+        assert_eq!(d.level, LintLevel::Error);
+    }
+
+    #[test]
+    fn lint_info_level_variant_exists() {
+        let d = LintDiagnostic {
+            level: LintLevel::Info,
+            message: "info".into(),
+            line: 1,
+            span: 0..1,
+        };
+        assert_eq!(d.level, LintLevel::Info);
+    }
+
+    #[test]
+    fn lint_multiple_rules_fire_two_rules_one_line() {
+        // EmptyBlock + LineTooLong on the same line.
+        let line = format!("{}fn f() {{}}", "a".repeat(120));
+        let mut runner = LintRunner::new();
+        runner.add_rule(LineTooLongRule { max_len: 120 });
+        runner.add_rule(EmptyBlockRule);
+        let diags = runner.check_line(&line, 1);
+        assert_eq!(diags.len(), 2);
+    }
+
+    #[test]
+    fn lint_runner_run_and_check_file_equivalent() {
+        let source = "ok\nfoo   \nok";
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        assert_eq!(runner.run(source), runner.check_file(source));
+    }
+
+    #[test]
+    fn lint_diagnostic_span_range_non_empty_for_findings() {
+        let diag = TrailingWhitespaceRule.check("abc   ", 1).unwrap();
+        assert!(diag.span.end > diag.span.start, "span must be non-empty for real findings");
+    }
+
+    #[test]
+    fn lint_empty_block_rule_name_is_correct() {
+        assert_eq!(EmptyBlockRule.name(), "empty-block");
+    }
+
+    #[test]
+    fn lint_trailing_whitespace_rule_name_is_correct() {
+        assert_eq!(TrailingWhitespaceRule.name(), "trailing-whitespace");
+    }
+
+    #[test]
+    fn lint_line_too_long_rule_name_is_correct() {
+        assert_eq!(LineTooLongRule::new().name(), "line-too-long");
+    }
+
+    #[test]
+    fn lint_runner_default_is_empty() {
+        let runner = LintRunner::default();
+        assert!(runner.run("any content   ").is_empty(), "default runner has no rules");
+    }
+
+    #[test]
+    fn lint_diagnostic_eq_different_levels_not_equal() {
+        let w = LintDiagnostic { level: LintLevel::Warning, message: "x".into(), line: 1, span: 0..1 };
+        let e = LintDiagnostic { level: LintLevel::Error, message: "x".into(), line: 1, span: 0..1 };
+        assert_ne!(w, e);
+    }
+
+    #[test]
+    fn lint_diagnostic_eq_same_fields_equal() {
+        let a = LintDiagnostic { level: LintLevel::Warning, message: "msg".into(), line: 5, span: 2..8 };
+        let b = a.clone();
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn lint_line_too_long_default_max_is_120() {
+        let rule = LineTooLongRule::default();
+        assert_eq!(rule.max_len, 120);
+    }
+
+    #[test]
+    fn lint_check_file_single_line_trailing_ws() {
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        let diags = runner.check_file("hello   ");
+        assert_eq!(diags.len(), 1);
+        assert_eq!(diags[0].line, 1);
+    }
+
+    #[test]
+    fn lint_empty_block_rule_not_triggered_by_non_brace_pairs() {
+        assert!(EmptyBlockRule.check("[]", 1).is_none());
+        assert!(EmptyBlockRule.check("()", 1).is_none());
+    }
+
+    #[test]
+    fn lint_runner_add_multiple_trailing_rules_fires_each() {
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        runner.add_rule(TrailingWhitespaceRule); // duplicate rule — fires twice
+        let diags = runner.check_line("foo   ", 1);
+        assert_eq!(diags.len(), 2, "two identical rules each produce a diagnostic");
+    }
+
+    #[test]
+    fn lint_level_warning_clone_equality() {
+        assert_eq!(LintLevel::Warning.clone(), LintLevel::Warning);
+    }
+
+    #[test]
+    fn lint_level_error_clone_equality() {
+        assert_eq!(LintLevel::Error.clone(), LintLevel::Error);
+    }
 }

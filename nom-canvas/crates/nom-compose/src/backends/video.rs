@@ -791,4 +791,144 @@ mod tests {
         assert_eq!(block.duration_ms, 0, "zero frames => zero duration");
         assert!(store.exists(&block.artifact_hash));
     }
+
+    // ── Wave AK new tests ────────────────────────────────────────────────────
+
+    #[test]
+    fn video_backend_h264stub_produces_nonempty_artifact() {
+        // H264Stub codec with Mp4Stub container must produce a non-empty stored artifact.
+        let mut store = InMemoryStore::new();
+        let input = VideoInput {
+            entity: NomtuRef { id: "h264-ne".into(), word: "film".into(), kind: "media".into() },
+            frames: vec![vec![0xAAu8; 8]],
+            fps: 24,
+            width: 640,
+            height: 480,
+            container_format: ContainerFormat::Mp4Stub,
+            codec: VideoCodec::H264Stub,
+        };
+        let block = VideoBackend::compose(input, &mut store, &LogProgressSink);
+        let payload = store.read(&block.artifact_hash).unwrap();
+        assert!(!payload.is_empty(), "H264Stub compose must produce non-empty artifact");
+    }
+
+    #[test]
+    fn video_backend_vp9stub_different_mime_than_h264stub() {
+        // Vp9Stub in WebMStub yields "video/webm"; H264Stub in Mp4Stub yields "video/mp4".
+        assert_eq!(
+            ContainerFormat::WebMStub.to_string(),
+            "video/webm",
+            "Vp9Stub container must be video/webm"
+        );
+        assert_eq!(
+            ContainerFormat::Mp4Stub.to_string(),
+            "video/mp4",
+            "H264Stub container must be video/mp4"
+        );
+        assert_ne!(
+            ContainerFormat::WebMStub.to_string(),
+            ContainerFormat::Mp4Stub.to_string(),
+            "VP9 and H264 stub mime types must differ"
+        );
+    }
+
+    #[test]
+    fn video_backend_three_frames_larger_than_one_frame() {
+        // 3 frames → combined artifact size must exceed single-frame artifact.
+        let mut store = InMemoryStore::new();
+        let single = default_video_input("sz1", "s", vec![vec![0u8; 16]], 24, 4, 4);
+        let triple = default_video_input("sz3", "t", vec![vec![1u8; 16], vec![2u8; 16], vec![3u8; 16]], 24, 4, 4);
+        let s_block = VideoBackend::compose(single, &mut store, &LogProgressSink);
+        let t_block = VideoBackend::compose(triple, &mut store, &LogProgressSink);
+        let s_size = store.byte_size(&s_block.artifact_hash).unwrap();
+        let t_size = store.byte_size(&t_block.artifact_hash).unwrap();
+        assert!(t_size > s_size, "3 GPU frames must produce larger artifact than 1 frame");
+    }
+
+    #[test]
+    fn video_backend_zero_frames_produces_y4m_header_only() {
+        // Zero frames → Y4m output has the header but zero FRAME markers (not an error).
+        let mut store = InMemoryStore::new();
+        let input = default_video_input("zf-ak", "empty", vec![], 30, 8, 8);
+        let block = VideoBackend::compose(input, &mut store, &LogProgressSink);
+        let payload = store.read(&block.artifact_hash).unwrap();
+        let text = String::from_utf8_lossy(&payload);
+        assert!(text.starts_with("YUV4MPEG2"), "zero frames must still produce Y4m header");
+        assert_eq!(text.matches("FRAME").count(), 0, "zero frames must have 0 FRAME markers");
+        assert_eq!(block.duration_ms, 0, "zero frames must have zero duration");
+    }
+
+    #[test]
+    fn video_codec_h264stub_name_round_trip() {
+        // VideoCodec::H264Stub.to_string() -> "h264" and the Display impl is deterministic.
+        let name = VideoCodec::H264Stub.to_string();
+        assert_eq!(name, "h264", "H264Stub codec name must be 'h264'");
+        // Round-trip: same variant produces the same string on repeated calls.
+        assert_eq!(VideoCodec::H264Stub.to_string(), name, "codec name must be stable");
+    }
+
+    #[test]
+    fn video_backend_artifact_stored_for_h264stub() {
+        // After compose, the artifact hash must be retrievable from the store.
+        let mut store = InMemoryStore::new();
+        let input = VideoInput {
+            entity: NomtuRef { id: "h264-store".into(), word: "scene".into(), kind: "media".into() },
+            frames: vec![vec![0xFFu8; 4]],
+            fps: 25,
+            width: 320,
+            height: 240,
+            container_format: ContainerFormat::Mp4Stub,
+            codec: VideoCodec::H264Stub,
+        };
+        let block = VideoBackend::compose(input, &mut store, &LogProgressSink);
+        assert!(store.exists(&block.artifact_hash), "H264Stub artifact must be in store");
+    }
+
+    #[test]
+    fn video_backend_vp9stub_artifact_stored() {
+        let mut store = InMemoryStore::new();
+        let input = VideoInput {
+            entity: NomtuRef { id: "vp9-store".into(), word: "clip".into(), kind: "media".into() },
+            frames: vec![vec![0x11u8; 4]],
+            fps: 30,
+            width: 640,
+            height: 360,
+            container_format: ContainerFormat::WebMStub,
+            codec: VideoCodec::Vp9Stub,
+        };
+        let block = VideoBackend::compose(input, &mut store, &LogProgressSink);
+        assert!(store.exists(&block.artifact_hash), "Vp9Stub artifact must be in store");
+    }
+
+    #[test]
+    fn video_backend_entity_word_preserved_mp4stub() {
+        let mut store = InMemoryStore::new();
+        let input = VideoInput {
+            entity: NomtuRef { id: "word-mp4".into(), word: "my-movie".into(), kind: "media".into() },
+            frames: vec![vec![0u8; 4]],
+            fps: 24,
+            width: 1920,
+            height: 1080,
+            container_format: ContainerFormat::Mp4Stub,
+            codec: VideoCodec::H264Stub,
+        };
+        let block = VideoBackend::compose(input, &mut store, &LogProgressSink);
+        assert_eq!(block.entity.word, "my-movie");
+    }
+
+    #[test]
+    fn video_backend_h264_stub_payload_contains_stub_marker() {
+        let spec = VideoSpec::new(24, 1280, 720, 1.0);
+        let bytes = encode_stub_container("MP4", "h264", &spec);
+        let text = String::from_utf8_lossy(&bytes);
+        assert!(text.contains("NOM-STUB-CONTAINER"), "MP4/h264 payload must contain stub marker");
+    }
+
+    #[test]
+    fn video_backend_vp9_stub_payload_contains_stub_marker() {
+        let spec = VideoSpec::new(30, 854, 480, 1.0);
+        let bytes = encode_stub_container("WebM", "vp9", &spec);
+        let text = String::from_utf8_lossy(&bytes);
+        assert!(text.contains("NOM-STUB-CONTAINER"), "WebM/vp9 payload must contain stub marker");
+    }
 }

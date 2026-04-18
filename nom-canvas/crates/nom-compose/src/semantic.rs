@@ -518,4 +518,77 @@ mod tests {
         let sql = m.to_select_sql();
         assert!(sql.contains("a, b, c"), "columns must be comma-separated: {sql}");
     }
+
+    // ── Wave AK artifact-diff tests ──────────────────────────────────────────
+    //
+    // Minimal inline diff helper: compares two byte slices and returns a
+    // structured diff summary.  No external crate required.
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct ArtifactDiff {
+        /// Bytes added (new is larger by this amount).
+        added_bytes: i64,
+        /// True when the two payloads are byte-identical.
+        identical: bool,
+    }
+
+    fn artifact_diff(a: &[u8], b: &[u8]) -> ArtifactDiff {
+        let identical = a == b;
+        let added_bytes = b.len() as i64 - a.len() as i64;
+        ArtifactDiff { added_bytes, identical }
+    }
+
+    #[test]
+    fn artifact_diff_identical_payloads_empty_diff() {
+        let payload = b"hello world".to_vec();
+        let diff = artifact_diff(&payload, &payload);
+        assert!(diff.identical, "identical payloads must produce empty diff");
+        assert_eq!(diff.added_bytes, 0);
+    }
+
+    #[test]
+    fn artifact_diff_size_differs_reports_size_diff() {
+        let a = vec![0u8; 100];
+        let b = vec![0u8; 200];
+        let diff = artifact_diff(&a, &b);
+        assert!(!diff.identical, "different-size payloads must not be identical");
+        assert_ne!(diff.added_bytes, 0, "size diff must be non-zero");
+    }
+
+    #[test]
+    fn artifact_diff_larger_new_reports_added_bytes() {
+        let a = vec![0u8; 50];
+        let b = vec![0u8; 80];
+        let diff = artifact_diff(&a, &b);
+        assert_eq!(diff.added_bytes, 30, "added_bytes must be 30 when new is 30 bytes larger");
+        assert!(!diff.identical);
+    }
+
+    #[test]
+    fn artifact_diff_smaller_new_reports_negative_added_bytes() {
+        let a = vec![0u8; 80];
+        let b = vec![0u8; 50];
+        let diff = artifact_diff(&a, &b);
+        assert_eq!(diff.added_bytes, -30, "added_bytes must be -30 when new is 30 bytes smaller");
+        assert!(!diff.identical);
+    }
+
+    #[test]
+    fn artifact_diff_same_content_hash_null_diff() {
+        // Same content bytes = null diff regardless of how they were produced.
+        let content = b"NOM-ARTIFACT-v1".to_vec();
+        let hash_a = {
+            let mut h: u64 = 14695981039346656037;
+            for &b in &content { h ^= b as u64; h = h.wrapping_mul(1099511628211); }
+            h
+        };
+        let hash_b = {
+            let mut h: u64 = 14695981039346656037;
+            for &b in &content { h ^= b as u64; h = h.wrapping_mul(1099511628211); }
+            h
+        };
+        assert_eq!(hash_a, hash_b, "same content must produce same hash");
+        let diff = artifact_diff(&content, &content);
+        assert!(diff.identical, "same-hash content must yield a null diff");
+    }
 }

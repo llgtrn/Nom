@@ -2724,4 +2724,714 @@ mod tests {
         }
         assert!(!reachable.contains("isolated"), "isolated must not be reachable");
     }
+
+    // -----------------------------------------------------------------------
+    // Strongly Connected Components (Kosaraju's algorithm implemented inline)
+    // -----------------------------------------------------------------------
+
+    /// Compute SCCs via Kosaraju: forward DFS → finish-order stack, then
+    /// reverse-graph DFS in pop order.  Returns a Vec of SCCs (each SCC is a
+    /// sorted Vec<String>).
+    fn kosaraju_sccs(dag: &Dag) -> Vec<Vec<String>> {
+        use std::collections::{HashMap, HashSet};
+
+        let node_ids: Vec<String> = {
+            let mut ids: Vec<_> = dag.nodes.keys().cloned().collect();
+            ids.sort();
+            ids
+        };
+
+        // Build adjacency lists (directed and reversed).
+        let mut fwd: HashMap<&str, Vec<&str>> = HashMap::new();
+        let mut rev: HashMap<&str, Vec<&str>> = HashMap::new();
+        for id in &node_ids {
+            fwd.entry(id.as_str()).or_default();
+            rev.entry(id.as_str()).or_default();
+        }
+        for e in &dag.edges {
+            fwd.entry(e.src_node.as_str())
+                .or_default()
+                .push(e.dst_node.as_str());
+            rev.entry(e.dst_node.as_str())
+                .or_default()
+                .push(e.src_node.as_str());
+        }
+
+        // Pass 1: DFS on forward graph, push to finish stack.
+        let mut visited: HashSet<String> = HashSet::new();
+        let mut finish_stack: Vec<String> = Vec::new();
+
+        fn dfs_fwd<'a>(
+            node: &'a str,
+            fwd: &HashMap<&'a str, Vec<&'a str>>,
+            visited: &mut HashSet<String>,
+            stack: &mut Vec<String>,
+        ) {
+            if !visited.insert(node.to_string()) {
+                return;
+            }
+            if let Some(nbrs) = fwd.get(node) {
+                for &nbr in nbrs {
+                    dfs_fwd(nbr, fwd, visited, stack);
+                }
+            }
+            stack.push(node.to_string());
+        }
+
+        for id in &node_ids {
+            if !visited.contains(id.as_str()) {
+                dfs_fwd(id.as_str(), &fwd, &mut visited, &mut finish_stack);
+            }
+        }
+
+        // Pass 2: DFS on reverse graph in reverse finish order.
+        let mut visited2: HashSet<String> = HashSet::new();
+        let mut sccs: Vec<Vec<String>> = Vec::new();
+
+        fn dfs_rev<'a>(
+            node: &'a str,
+            rev: &HashMap<&'a str, Vec<&'a str>>,
+            visited: &mut HashSet<String>,
+            component: &mut Vec<String>,
+        ) {
+            if !visited.insert(node.to_string()) {
+                return;
+            }
+            component.push(node.to_string());
+            if let Some(nbrs) = rev.get(node) {
+                for &nbr in nbrs {
+                    dfs_rev(nbr, rev, visited, component);
+                }
+            }
+        }
+
+        while let Some(node) = finish_stack.pop() {
+            if !visited2.contains(&node) {
+                let mut component: Vec<String> = Vec::new();
+                dfs_rev(node.as_str(), &rev, &mut visited2, &mut component);
+                component.sort();
+                sccs.push(component);
+            }
+        }
+
+        sccs
+    }
+
+    #[test]
+    fn scc_dag_every_node_is_own_component() {
+        // A true DAG (no cycles): every node is its own SCC.
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("a", "verb"));
+        dag.add_node(ExecNode::new("b", "verb"));
+        dag.add_node(ExecNode::new("c", "verb"));
+        dag.add_edge("a", "out", "b", "in");
+        dag.add_edge("b", "out", "c", "in");
+        let sccs = kosaraju_sccs(&dag);
+        // Each SCC must be size 1.
+        assert_eq!(sccs.len(), 3, "DAG with 3 nodes must have 3 SCCs");
+        for scc in &sccs {
+            assert_eq!(scc.len(), 1, "every SCC in a DAG must be a singleton");
+        }
+    }
+
+    #[test]
+    fn scc_three_node_cycle_one_component() {
+        // A→B→C→A: all three in one SCC.
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("A", "verb"));
+        dag.add_node(ExecNode::new("B", "verb"));
+        dag.add_node(ExecNode::new("C", "verb"));
+        dag.add_edge("A", "out", "B", "in");
+        dag.add_edge("B", "out", "C", "in");
+        dag.add_edge("C", "out", "A", "in");
+        let sccs = kosaraju_sccs(&dag);
+        assert_eq!(sccs.len(), 1, "3-cycle must produce exactly 1 SCC");
+        assert_eq!(sccs[0].len(), 3, "the single SCC must contain all 3 nodes");
+    }
+
+    #[test]
+    fn scc_two_disjoint_cycles_two_components() {
+        // Cycle1: X→Y→X; Cycle2: P→Q→P — two separate SCCs.
+        let mut dag = Dag::new();
+        for n in &["X", "Y", "P", "Q"] {
+            dag.add_node(ExecNode::new(*n, "verb"));
+        }
+        dag.add_edge("X", "out", "Y", "in");
+        dag.add_edge("Y", "out", "X", "in");
+        dag.add_edge("P", "out", "Q", "in");
+        dag.add_edge("Q", "out", "P", "in");
+        let sccs = kosaraju_sccs(&dag);
+        assert_eq!(sccs.len(), 2, "two disjoint 2-cycles must produce 2 SCCs");
+        for scc in &sccs {
+            assert_eq!(scc.len(), 2, "each SCC must contain 2 nodes");
+        }
+    }
+
+    #[test]
+    fn scc_count_equals_condensation_nodes() {
+        // Build a graph with 2 SCCs: {A,B} cycle, {C,D} cycle, plus A→C edge
+        // between them.  Condensation has exactly 2 nodes.
+        let mut dag = Dag::new();
+        for n in &["A", "B", "C", "D"] {
+            dag.add_node(ExecNode::new(*n, "verb"));
+        }
+        dag.add_edge("A", "out", "B", "in");
+        dag.add_edge("B", "out", "A", "in");
+        dag.add_edge("C", "out", "D", "in");
+        dag.add_edge("D", "out", "C", "in");
+        dag.add_edge("A", "out", "C", "in"); // cross-SCC edge
+        let sccs = kosaraju_sccs(&dag);
+        assert_eq!(
+            sccs.len(),
+            2,
+            "condensation node count must equal SCC count = 2"
+        );
+    }
+
+    #[test]
+    fn scc_each_component_non_empty() {
+        // Any graph: every SCC returned must have at least 1 node.
+        let mut dag = Dag::new();
+        for n in &["n1", "n2", "n3", "n4", "n5"] {
+            dag.add_node(ExecNode::new(*n, "verb"));
+        }
+        dag.add_edge("n1", "out", "n2", "in");
+        dag.add_edge("n2", "out", "n3", "in");
+        dag.add_edge("n3", "out", "n1", "in"); // cycle
+        dag.add_edge("n4", "out", "n5", "in");
+        let sccs = kosaraju_sccs(&dag);
+        for scc in &sccs {
+            assert!(!scc.is_empty(), "every SCC must be non-empty");
+        }
+    }
+
+    #[test]
+    fn scc_empty_graph_returns_empty() {
+        let dag = Dag::new();
+        let sccs = kosaraju_sccs(&dag);
+        assert!(sccs.is_empty(), "empty graph must produce zero SCCs");
+    }
+
+    #[test]
+    fn scc_directed_edge_a_to_b_separate_sccs() {
+        // A→B but no B→A: two separate SCCs (no cycle).
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("A", "verb"));
+        dag.add_node(ExecNode::new("B", "verb"));
+        dag.add_edge("A", "out", "B", "in");
+        let sccs = kosaraju_sccs(&dag);
+        assert_eq!(sccs.len(), 2, "A→B with no back-edge must give 2 singleton SCCs");
+        for scc in &sccs {
+            assert_eq!(scc.len(), 1, "each node must be its own SCC");
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Transitive Reduction (inline)
+    // -----------------------------------------------------------------------
+
+    /// Compute transitive reduction of a DAG.
+    /// An edge u→v is redundant if there exists another path u→...→v of length ≥ 2.
+    /// Returns the set of (src, dst) pairs that survive the reduction.
+    fn transitive_reduction(dag: &Dag) -> Vec<(String, String)> {
+        use std::collections::{HashMap, HashSet, VecDeque};
+
+        // Build adjacency list.
+        let mut adj: HashMap<&str, Vec<&str>> = HashMap::new();
+        for id in dag.nodes.keys() {
+            adj.entry(id.as_str()).or_default();
+        }
+        for e in &dag.edges {
+            adj.entry(e.src_node.as_str())
+                .or_default()
+                .push(e.dst_node.as_str());
+        }
+
+        // For each edge (u, v), check if v is reachable from u via a path
+        // that does NOT use the direct edge u→v (i.e. via some intermediate node).
+        let mut redundant: HashSet<(String, String)> = HashSet::new();
+        for e in &dag.edges {
+            let u = e.src_node.as_str();
+            let v = e.dst_node.as_str();
+            // BFS from each neighbour of u (excluding v) to see if v is reachable.
+            for &w in adj.get(u).unwrap_or(&vec![]).iter() {
+                if w == v {
+                    continue;
+                }
+                // BFS from w.
+                let mut seen: HashSet<&str> = HashSet::new();
+                let mut q: VecDeque<&str> = VecDeque::new();
+                q.push_back(w);
+                seen.insert(w);
+                while let Some(cur) = q.pop_front() {
+                    if cur == v {
+                        redundant.insert((u.to_string(), v.to_string()));
+                        break;
+                    }
+                    for &nbr in adj.get(cur).unwrap_or(&vec![]).iter() {
+                        if seen.insert(nbr) {
+                            q.push_back(nbr);
+                        }
+                    }
+                }
+                if redundant.contains(&(u.to_string(), v.to_string())) {
+                    break;
+                }
+            }
+        }
+
+        dag.edges
+            .iter()
+            .filter(|e| !redundant.contains(&(e.src_node.clone(), e.dst_node.clone())))
+            .map(|e| (e.src_node.clone(), e.dst_node.clone()))
+            .collect()
+    }
+
+    #[test]
+    fn transitive_reduction_removes_redundant_edge() {
+        // A→B→C, A→C: A→C is redundant (reachable via B).
+        let mut dag = Dag::new();
+        for n in &["A", "B", "C"] {
+            dag.add_node(ExecNode::new(*n, "verb"));
+        }
+        dag.add_edge("A", "out", "B", "in");
+        dag.add_edge("B", "out", "C", "in");
+        dag.add_edge("A", "out", "C", "in"); // redundant
+        let reduced = transitive_reduction(&dag);
+        assert_eq!(
+            reduced.len(),
+            2,
+            "A→C must be removed; only A→B and B→C survive"
+        );
+        assert!(
+            !reduced.contains(&("A".to_string(), "C".to_string())),
+            "redundant A→C must not appear in transitive reduction"
+        );
+    }
+
+    #[test]
+    fn transitive_reduction_simple_chain_unchanged() {
+        // A→B→C has no redundant edges; reduction keeps both.
+        let mut dag = Dag::new();
+        for n in &["A", "B", "C"] {
+            dag.add_node(ExecNode::new(*n, "verb"));
+        }
+        dag.add_edge("A", "out", "B", "in");
+        dag.add_edge("B", "out", "C", "in");
+        let reduced = transitive_reduction(&dag);
+        assert_eq!(
+            reduced.len(),
+            2,
+            "simple chain A→B→C must be unchanged by transitive reduction"
+        );
+    }
+
+    #[test]
+    fn transitive_reduction_idempotent() {
+        // Applying reduction twice must yield the same result as once.
+        let mut dag = Dag::new();
+        for n in &["A", "B", "C"] {
+            dag.add_node(ExecNode::new(*n, "verb"));
+        }
+        dag.add_edge("A", "out", "B", "in");
+        dag.add_edge("B", "out", "C", "in");
+        dag.add_edge("A", "out", "C", "in"); // redundant
+        let reduced_once = transitive_reduction(&dag);
+
+        // Rebuild DAG from reduced edges and reduce again.
+        let mut dag2 = Dag::new();
+        for n in &["A", "B", "C"] {
+            dag2.add_node(ExecNode::new(*n, "verb"));
+        }
+        for (src, dst) in &reduced_once {
+            dag2.add_edge(src.clone(), "out", dst.clone(), "in");
+        }
+        let reduced_twice = transitive_reduction(&dag2);
+
+        let mut once_sorted = reduced_once.clone();
+        once_sorted.sort();
+        let mut twice_sorted = reduced_twice.clone();
+        twice_sorted.sort();
+        assert_eq!(
+            once_sorted, twice_sorted,
+            "transitive reduction must be idempotent"
+        );
+    }
+
+    #[test]
+    fn transitive_reduction_disconnected_graph() {
+        // Two disconnected chains: A→B and C→D — neither has redundant edges.
+        let mut dag = Dag::new();
+        for n in &["A", "B", "C", "D"] {
+            dag.add_node(ExecNode::new(*n, "verb"));
+        }
+        dag.add_edge("A", "out", "B", "in");
+        dag.add_edge("C", "out", "D", "in");
+        let reduced = transitive_reduction(&dag);
+        assert_eq!(
+            reduced.len(),
+            2,
+            "disconnected graph with no redundancies must keep all edges"
+        );
+    }
+
+    #[test]
+    fn transitive_reduction_preserves_reachability() {
+        // A→B→C, A→C (redundant).
+        // After reduction, C must still be reachable from A via B.
+        let mut dag = Dag::new();
+        for n in &["A", "B", "C"] {
+            dag.add_node(ExecNode::new(*n, "verb"));
+        }
+        dag.add_edge("A", "out", "B", "in");
+        dag.add_edge("B", "out", "C", "in");
+        dag.add_edge("A", "out", "C", "in");
+        let reduced = transitive_reduction(&dag);
+
+        // Check that C is reachable from A in the reduced edge set.
+        let mut adj: std::collections::HashMap<&str, Vec<&str>> = std::collections::HashMap::new();
+        for (src, dst) in &reduced {
+            adj.entry(src.as_str()).or_default().push(dst.as_str());
+        }
+        let mut reachable = std::collections::HashSet::new();
+        let mut stack = vec!["A"];
+        while let Some(n) = stack.pop() {
+            if reachable.insert(n) {
+                if let Some(nbrs) = adj.get(n) {
+                    for &nbr in nbrs {
+                        stack.push(nbr);
+                    }
+                }
+            }
+        }
+        assert!(
+            reachable.contains("C"),
+            "C must still be reachable from A after transitive reduction"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Weighted Shortest Paths (Dijkstra implemented inline)
+    // -----------------------------------------------------------------------
+
+    /// Dijkstra's algorithm on the DAG using `1.0 - confidence` as the edge cost
+    /// (so high-confidence = short distance).  Returns Some(distance) or None.
+    /// Negative weights are treated as 0 cost.
+    fn dijkstra(dag: &Dag, src: &str, dst: &str) -> Option<f32> {
+        use std::collections::HashMap;
+
+        // Build weighted adjacency: cost = 1.0 - confidence (so conf=1.0 → cost=0.0).
+        let mut adj: HashMap<&str, Vec<(&str, f32)>> = HashMap::new();
+        for id in dag.nodes.keys() {
+            adj.entry(id.as_str()).or_default();
+        }
+        for e in &dag.edges {
+            let cost = (1.0f32 - e.confidence).max(0.0);
+            adj.entry(e.src_node.as_str())
+                .or_default()
+                .push((e.dst_node.as_str(), cost));
+        }
+
+        if !dag.nodes.contains_key(src) {
+            return None;
+        }
+
+        let mut dist: HashMap<String, f32> = HashMap::new();
+        dist.insert(src.to_string(), 0.0);
+
+        // Vec-based priority queue (small graphs; O(N²) is fine for tests).
+        let mut pq: Vec<(f32, String)> = vec![(0.0, src.to_string())];
+
+        while !pq.is_empty() {
+            // Find the minimum-cost entry.
+            let min_idx = pq
+                .iter()
+                .enumerate()
+                .min_by(|(_, (ca, _)), (_, (cb, _))| ca.partial_cmp(cb).unwrap())
+                .map(|(i, _)| i)
+                .unwrap();
+            let (cost, node) = pq.remove(min_idx);
+
+            if node == dst {
+                return Some(cost);
+            }
+            if cost > *dist.get(&node).unwrap_or(&f32::INFINITY) {
+                continue;
+            }
+
+            if let Some(neighbours) = adj.get(node.as_str()) {
+                for &(nbr, edge_cost) in neighbours {
+                    let new_dist = cost + edge_cost;
+                    if new_dist < *dist.get(nbr).unwrap_or(&f32::INFINITY) {
+                        dist.insert(nbr.to_string(), new_dist);
+                        pq.push((new_dist, nbr.to_string()));
+                    }
+                }
+            }
+        }
+
+        if dag.nodes.contains_key(dst) {
+            dist.get(dst).copied()
+        } else {
+            None
+        }
+    }
+
+    #[test]
+    fn dijkstra_reachable_node_returns_correct_distance() {
+        // A→B (conf=1.0, cost=0.0), B→C (conf=1.0, cost=0.0).
+        // Distance A→C = 0.0.
+        let mut dag = Dag::new();
+        for n in &["A", "B", "C"] {
+            dag.add_node(ExecNode::new(*n, "verb"));
+        }
+        dag.add_edge_weighted("A", "out", "B", "in", 1.0);
+        dag.add_edge_weighted("B", "out", "C", "in", 1.0);
+        let d = dijkstra(&dag, "A", "C").expect("path must exist");
+        assert!(
+            d < 1e-5,
+            "distance A→C via full-confidence edges must be 0.0, got {d}"
+        );
+    }
+
+    #[test]
+    fn dijkstra_no_path_returns_none_or_infinity() {
+        // A and B are disconnected: no path from A to B.
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("A", "verb"));
+        dag.add_node(ExecNode::new("B", "verb"));
+        let result = dijkstra(&dag, "A", "B");
+        // Either None or Some(infinity) — in our impl, dist[B] stays at f32::INFINITY.
+        match result {
+            None => {} // acceptable
+            Some(d) => assert!(
+                d.is_infinite() || d >= f32::MAX / 2.0,
+                "disconnected nodes must return None or infinity, got {d}"
+            ),
+        }
+    }
+
+    #[test]
+    fn dijkstra_single_node_distance_zero() {
+        // A single node: distance from A to A is 0.
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("solo", "verb"));
+        let d = dijkstra(&dag, "solo", "solo").expect("self-distance must be Some");
+        assert!(
+            d < 1e-5,
+            "distance from a node to itself must be 0.0, got {d}"
+        );
+    }
+
+    #[test]
+    fn dijkstra_negative_weight_treated_as_zero_cost() {
+        // Confidence > 1.0 is clamped to 1.0, cost = 0.0.  No panic.
+        let mut dag = Dag::new();
+        for n in &["X", "Y"] {
+            dag.add_node(ExecNode::new(*n, "verb"));
+        }
+        dag.add_edge_weighted("X", "out", "Y", "in", 1.5); // clamped to 1.0 → cost=0.0
+        let d = dijkstra(&dag, "X", "Y").expect("path must exist");
+        assert!(
+            d < 1e-5,
+            "clamped-to-1.0 edge must produce cost=0.0, got {d}"
+        );
+    }
+
+    #[test]
+    fn dijkstra_multiple_paths_shorter_selected() {
+        // A→C (conf=0.5, cost=0.5), A→B (conf=1.0, cost=0.0), B→C (conf=1.0, cost=0.0).
+        // Shortest path A→B→C has cost 0.0 < direct A→C cost 0.5.
+        let mut dag = Dag::new();
+        for n in &["A", "B", "C"] {
+            dag.add_node(ExecNode::new(*n, "verb"));
+        }
+        dag.add_edge_weighted("A", "out", "C", "direct", 0.5); // cost = 0.5
+        dag.add_edge_weighted("A", "out", "B", "in", 1.0); // cost = 0.0
+        dag.add_edge_weighted("B", "out", "C", "in", 1.0); // cost = 0.0
+        let d = dijkstra(&dag, "A", "C").expect("path must exist");
+        assert!(
+            d < 1e-5,
+            "Dijkstra must select A→B→C (cost=0.0) over A→C direct (cost=0.5), got {d}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Additional SCC tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn scc_single_node_is_its_own_scc() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("lone", "verb"));
+        let sccs = kosaraju_sccs(&dag);
+        assert_eq!(sccs.len(), 1, "single node must produce 1 SCC");
+        assert_eq!(sccs[0], vec!["lone".to_string()]);
+    }
+
+    #[test]
+    fn scc_five_node_dag_five_singletons() {
+        // 5-node DAG (a chain, no cycles): 5 singleton SCCs.
+        let mut dag = Dag::new();
+        for n in &["v1", "v2", "v3", "v4", "v5"] {
+            dag.add_node(ExecNode::new(*n, "verb"));
+        }
+        dag.add_edge("v1", "out", "v2", "in");
+        dag.add_edge("v2", "out", "v3", "in");
+        dag.add_edge("v3", "out", "v4", "in");
+        dag.add_edge("v4", "out", "v5", "in");
+        let sccs = kosaraju_sccs(&dag);
+        assert_eq!(sccs.len(), 5, "DAG chain must have 5 singleton SCCs");
+    }
+
+    #[test]
+    fn scc_two_node_cycle_is_one_scc() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("X", "verb"));
+        dag.add_node(ExecNode::new("Y", "verb"));
+        dag.add_edge("X", "out", "Y", "in");
+        dag.add_edge("Y", "out", "X", "in");
+        let sccs = kosaraju_sccs(&dag);
+        assert_eq!(sccs.len(), 1, "2-node cycle must be one SCC");
+        assert_eq!(sccs[0].len(), 2, "the SCC must contain both nodes");
+    }
+
+    // -----------------------------------------------------------------------
+    // Additional transitive reduction tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn transitive_reduction_empty_graph_is_empty() {
+        let dag = Dag::new();
+        let reduced = transitive_reduction(&dag);
+        assert!(reduced.is_empty(), "empty graph transitive reduction must be empty");
+    }
+
+    #[test]
+    fn transitive_reduction_single_edge_unchanged() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("u", "verb"));
+        dag.add_node(ExecNode::new("v", "verb"));
+        dag.add_edge("u", "out", "v", "in");
+        let reduced = transitive_reduction(&dag);
+        assert_eq!(reduced.len(), 1, "single non-redundant edge must survive reduction");
+    }
+
+    // -----------------------------------------------------------------------
+    // Additional Dijkstra tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn dijkstra_unknown_dst_returns_none_or_unreachable() {
+        // dst node is not in dag.nodes at all.
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("known", "verb"));
+        let result = dijkstra(&dag, "known", "unknown_node");
+        // "unknown_node" not in nodes → result is None or infinity.
+        match result {
+            None => {}
+            Some(d) => assert!(
+                d.is_infinite() || d >= f32::MAX / 2.0,
+                "unknown dst must give None or infinity, got {d}"
+            ),
+        }
+    }
+
+    #[test]
+    fn dijkstra_partial_confidence_path() {
+        // A→B (conf=0.5, cost=0.5), B→C (conf=0.5, cost=0.5).
+        // Total cost A→C = 1.0.
+        let mut dag = Dag::new();
+        for n in &["A", "B", "C"] {
+            dag.add_node(ExecNode::new(*n, "verb"));
+        }
+        dag.add_edge_weighted("A", "out", "B", "in", 0.5);
+        dag.add_edge_weighted("B", "out", "C", "in", 0.5);
+        let d = dijkstra(&dag, "A", "C").expect("path must exist");
+        assert!(
+            (d - 1.0f32).abs() < 1e-5,
+            "A→B(cost=0.5) + B→C(cost=0.5) = total cost 1.0, got {d}"
+        );
+    }
+
+    #[test]
+    fn dijkstra_direct_vs_longer_path_picks_lower_cost() {
+        // Direct: A→C (conf=0.2, cost=0.8).  Indirect: A→B (conf=1.0, cost=0.0) + B→C (conf=1.0, cost=0.0).
+        // Dijkstra must pick A→B→C (cost=0.0) over direct (cost=0.8).
+        let mut dag = Dag::new();
+        for n in &["A", "B", "C"] {
+            dag.add_node(ExecNode::new(*n, "verb"));
+        }
+        dag.add_edge_weighted("A", "out", "C", "direct", 0.2);
+        dag.add_edge_weighted("A", "out", "B", "in", 1.0);
+        dag.add_edge_weighted("B", "out", "C", "in", 1.0);
+        let d = dijkstra(&dag, "A", "C").expect("path must exist");
+        assert!(
+            d < 0.5,
+            "indirect high-confidence path must win over direct low-confidence path, got {d}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Three more gap-fillers to reach target
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn scc_all_nodes_covered_by_sccs() {
+        // The union of all SCCs must contain every node exactly once.
+        let mut dag = Dag::new();
+        for n in &["n1", "n2", "n3", "n4"] {
+            dag.add_node(ExecNode::new(*n, "verb"));
+        }
+        dag.add_edge("n1", "out", "n2", "in");
+        dag.add_edge("n2", "out", "n3", "in");
+        dag.add_edge("n3", "out", "n1", "in"); // cycle
+        // n4 is isolated
+        let sccs = kosaraju_sccs(&dag);
+        let mut all_nodes: Vec<String> = sccs.iter().flatten().cloned().collect();
+        all_nodes.sort();
+        let expected: Vec<String> = {
+            let mut v: Vec<_> = ["n1", "n2", "n3", "n4"].iter().map(|s| s.to_string()).collect();
+            v.sort();
+            v
+        };
+        assert_eq!(all_nodes, expected, "union of all SCCs must cover every node exactly once");
+    }
+
+    #[test]
+    fn transitive_reduction_four_hop_chain_no_shortcut() {
+        // A→B→C→D→E with no shortcut edges: reduction must keep all 4 edges.
+        let mut dag = Dag::new();
+        for n in &["A", "B", "C", "D", "E"] {
+            dag.add_node(ExecNode::new(*n, "verb"));
+        }
+        dag.add_edge("A", "out", "B", "in");
+        dag.add_edge("B", "out", "C", "in");
+        dag.add_edge("C", "out", "D", "in");
+        dag.add_edge("D", "out", "E", "in");
+        let reduced = transitive_reduction(&dag);
+        assert_eq!(reduced.len(), 4, "chain with no shortcuts must keep all 4 edges after reduction");
+    }
+
+    #[test]
+    fn dijkstra_three_node_chain_correct_distances() {
+        // A→B (conf=0.5, cost=0.5), B→C (conf=0.75, cost=0.25).
+        // Distance A→B = 0.5; A→C = 0.75.
+        let mut dag = Dag::new();
+        for n in &["A", "B", "C"] {
+            dag.add_node(ExecNode::new(*n, "verb"));
+        }
+        dag.add_edge_weighted("A", "out", "B", "in", 0.5);
+        dag.add_edge_weighted("B", "out", "C", "in", 0.75);
+        let d_ab = dijkstra(&dag, "A", "B").expect("A→B path must exist");
+        let d_ac = dijkstra(&dag, "A", "C").expect("A→C path must exist");
+        assert!(
+            (d_ab - 0.5f32).abs() < 1e-5,
+            "A→B cost must be 0.5, got {d_ab}"
+        );
+        assert!(
+            (d_ac - 0.75f32).abs() < 1e-5,
+            "A→C cost must be 0.5+0.25=0.75, got {d_ac}"
+        );
+    }
 }

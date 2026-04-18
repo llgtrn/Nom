@@ -4,10 +4,14 @@
 //! Core canvas primitives: elements, hit-testing, selection, snapping, spatial
 //! indexing, and viewport management for the NomCanvas IDE.
 
+/// Undo/redo command stack for canvas operations.
+pub mod commands;
 /// Canvas element primitives (rects, ellipses, lines, arrows, graph nodes, wires, connectors).
 pub mod elements;
 /// Hit-testing for canvas elements (AABB, rotated rect, ellipse, bezier connector).
 pub mod hit_test;
+/// Pointer capture state machine (Idle → Pressed → Dragging → Idle).
+pub mod pointer;
 /// Selection state and rubber-band drag selection.
 pub mod selection;
 /// Grid snapping and edge/center snap-with-guides.

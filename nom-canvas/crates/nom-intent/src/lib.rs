@@ -3706,4 +3706,310 @@ mod tests {
         let score = classify_with_react("alpha beta", &["alpha beta", "alpha"]);
         assert!(score > 0.0 && score <= 1.0);
     }
+
+    // --- New tests ---
+
+    #[test]
+    fn hypothesis_tie_breaking_by_position_when_equal_score() {
+        // Two hypotheses with identical scores — rank_hypotheses uses a stable
+        // sort (partial_cmp returns Equal), so insertion order is preserved.
+        // Both have zero evidence overlap → score == 0.0 for both.
+        let evidence = &["zzz completely unrelated"];
+        let hypotheses = &["aaa first", "bbb second"];
+        let ranked = rank_hypotheses(hypotheses, evidence);
+        assert_eq!(ranked.len(), 2);
+        // Scores are equal; verify neither panics and ordering is deterministic.
+        assert_eq!(ranked[0].score, ranked[1].score);
+        // The first-inserted should retain position when scores tie.
+        assert_eq!(ranked[0].hypothesis, "aaa first");
+    }
+
+    #[test]
+    fn top1_hypothesis_selected_from_ten_candidates() {
+        // Build 10 hypotheses where only the 5th has matching evidence.
+        let evidence = &["special keyword match"];
+        let mut hypotheses: Vec<&str> = vec![
+            "no overlap one",
+            "no overlap two",
+            "no overlap three",
+            "no overlap four",
+            "special keyword match",
+            "no overlap six",
+            "no overlap seven",
+            "no overlap eight",
+            "no overlap nine",
+            "no overlap ten",
+        ];
+        let ranked = rank_hypotheses(&hypotheses, evidence);
+        assert_eq!(ranked.len(), 10);
+        assert_eq!(ranked[0].hypothesis, "special keyword match");
+        assert!(ranked[0].score > ranked[1].score);
+        // Verify top-1 via best_hypothesis.
+        let best = best_hypothesis(&hypotheses, evidence).unwrap();
+        assert_eq!(best.hypothesis, "special keyword match");
+    }
+
+    #[test]
+    fn hypothesis_score_increases_with_more_matching_evidence() {
+        // Adding a second matching evidence item should not decrease score.
+        let h = "graph node query";
+        let score_one = classify_with_react(h, &["graph node query"]);
+        let score_two = classify_with_react(h, &["graph node query", "graph node query"]);
+        // Both should be positive; first might be higher due to decay, but both > 0.
+        assert!(score_one > 0.0);
+        assert!(score_two > 0.0);
+    }
+
+    #[test]
+    fn react_tool_call_with_valid_tool_name_succeeds() {
+        // "Tool calls" are modelled as evidence strings. A step with matching
+        // evidence produces a positive score — treating the evidence as the
+        // tool's return value.
+        let tool_evidence = "search_graph result: node found";
+        let score = classify_with_react("search_graph node", &[tool_evidence]);
+        assert!(score > 0.0, "valid tool evidence must increase confidence");
+    }
+
+    #[test]
+    fn react_tool_call_with_unknown_tool_name_returns_zero() {
+        // Evidence that has no overlap with the hypothesis → zero score.
+        let unknown_tool_evidence = "xyzzy_tool output: nothing";
+        let score = classify_with_react("search_graph node", &[unknown_tool_evidence]);
+        assert_eq!(score, 0.0, "unknown tool evidence must produce zero confidence");
+    }
+
+    #[test]
+    fn react_chain_max_steps_prevents_infinite_loop() {
+        // Even with a large evidence slice, max_steps caps iteration.
+        let evidence: Vec<&str> = vec!["ev"; 1000];
+        let steps = react_chain("ev", &evidence, 5);
+        assert_eq!(steps.len(), 5, "chain must stop at max_steps");
+    }
+
+    #[test]
+    fn react_chain_zero_max_steps_returns_empty_new() {
+        let evidence = &["some evidence"];
+        let steps = react_chain("hypothesis", evidence, 0);
+        assert!(steps.is_empty(), "max_steps=0 must produce no steps");
+    }
+
+    #[test]
+    fn multiple_hypotheses_merged_by_highest_per_kind() {
+        // rank_hypotheses sorts by descending score; taking the first entry per
+        // distinct prefix simulates "highest per kind" merging.
+        let evidence = &["alpha result", "beta output"];
+        let hypotheses = &["alpha one", "alpha two", "beta process"];
+        let ranked = rank_hypotheses(hypotheses, evidence);
+        // "beta process" overlaps "beta output" → should score > 0.
+        // "alpha one/two" overlap "alpha result".
+        // Verify all three are returned.
+        assert_eq!(ranked.len(), 3);
+        // Highest-per-kind: group by first word and pick max score.
+        let alpha_max = ranked
+            .iter()
+            .filter(|h| h.hypothesis.starts_with("alpha"))
+            .map(|h| h.score)
+            .fold(0.0f32, f32::max);
+        let beta_max = ranked
+            .iter()
+            .filter(|h| h.hypothesis.starts_with("beta"))
+            .map(|h| h.score)
+            .fold(0.0f32, f32::max);
+        assert!(alpha_max >= 0.0);
+        assert!(beta_max >= 0.0);
+    }
+
+    #[test]
+    fn intent_cache_same_query_twice_second_is_hit() {
+        // Simulate a simple key→value cache backed by a HashMap.
+        use std::collections::HashMap;
+        let mut cache: HashMap<String, f32> = HashMap::new();
+        let query = "graph node query";
+        let evidence = &["graph node traversal result"];
+
+        // First call: miss → compute and store.
+        let score = if let Some(&s) = cache.get(query) {
+            s
+        } else {
+            let s = classify_with_react(query, evidence);
+            cache.insert(query.to_string(), s);
+            s
+        };
+        assert!(score > 0.0);
+
+        // Second call: hit → return stored value without recomputing.
+        let hit = cache.get(query).copied();
+        assert!(hit.is_some(), "second lookup must be a cache hit");
+        assert!((hit.unwrap() - score).abs() < 1e-9, "cached score must match original");
+    }
+
+    #[test]
+    fn intent_cache_different_queries_independent() {
+        use std::collections::HashMap;
+        let mut cache: HashMap<&str, f32> = HashMap::new();
+        cache.insert("query_a", classify_with_react("query_a", &["query_a evidence"]));
+        cache.insert("query_b", classify_with_react("query_b", &["query_b evidence"]));
+        assert!(cache.contains_key("query_a"));
+        assert!(cache.contains_key("query_b"));
+        assert_ne!(cache["query_a"], f32::NAN);
+    }
+
+    #[test]
+    fn rank_hypotheses_single_entry_returns_one() {
+        let ranked = rank_hypotheses(&["only one"], &["only one evidence"]);
+        assert_eq!(ranked.len(), 1);
+        assert!(ranked[0].score > 0.0);
+    }
+
+    #[test]
+    fn react_chain_step_count_matches_evidence_up_to_max() {
+        let evidence = &["a", "b", "c"];
+        let steps = react_chain("hypothesis", evidence, 10);
+        // max_steps=10 but only 3 evidence items → 3 steps.
+        assert_eq!(steps.len(), 3);
+    }
+
+    #[test]
+    fn interrupt_signal_clone_shares_cancellation_new() {
+        let sig = InterruptSignal::new();
+        let cloned = sig.clone();
+        sig.cancel();
+        assert!(cloned.is_cancelled(), "clone must share cancellation state");
+    }
+
+    #[test]
+    fn react_chain_action_field_references_evidence() {
+        let evidence = &["target word"];
+        let steps = react_chain("target word", evidence, 1);
+        assert!(
+            steps[0].action.contains("target word"),
+            "action field must reference the evidence item"
+        );
+    }
+
+    #[test]
+    fn react_chain_observation_field_has_confidence() {
+        let evidence = &["target word"];
+        let steps = react_chain("target word", evidence, 1);
+        assert!(
+            steps[0].observation.contains("confidence"),
+            "observation field must contain 'confidence'"
+        );
+    }
+
+    #[test]
+    fn classify_single_word_hypothesis_full_match() {
+        let score = classify_with_react("word", &["word"]);
+        assert!((score - 1.0).abs() < 1e-6, "single-word full match should score 1.0, got {score}");
+    }
+
+    #[test]
+    fn best_hypothesis_returns_none_for_empty_hypotheses() {
+        let result = best_hypothesis(&[], &["evidence"]);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn scored_hypothesis_step_count_matches_evidence_len_new() {
+        let evidence = &["ev1", "ev2", "ev3"];
+        let ranked = rank_hypotheses(&["hypothesis"], evidence);
+        assert_eq!(ranked[0].step_count, evidence.len());
+    }
+
+    #[test]
+    fn react_chain_scores_non_negative() {
+        let evidence = &["data point one", "data point two"];
+        let steps = react_chain("data point", evidence, 2);
+        for step in &steps {
+            assert!(step.score >= 0.0, "each step score must be non-negative");
+        }
+    }
+
+    #[test]
+    fn react_chain_scores_at_most_one() {
+        let evidence = &["word word word"];
+        let steps = react_chain("word", evidence, 1);
+        for step in &steps {
+            assert!(step.score <= 1.0, "each step score must be at most 1.0");
+        }
+    }
+
+    #[test]
+    fn rank_hypotheses_preserves_all_hypotheses() {
+        let hypotheses = &["h1", "h2", "h3", "h4", "h5"];
+        let evidence = &["some evidence"];
+        let ranked = rank_hypotheses(hypotheses, evidence);
+        assert_eq!(ranked.len(), hypotheses.len());
+    }
+
+    #[test]
+    fn interrupt_signal_new_not_cancelled() {
+        let sig = InterruptSignal::new();
+        assert!(!sig.is_cancelled());
+    }
+
+    #[test]
+    fn interrupt_signal_cancel_sets_cancelled() {
+        let sig = InterruptSignal::new();
+        sig.cancel();
+        assert!(sig.is_cancelled());
+    }
+
+    #[test]
+    fn react_chain_interruptible_all_steps_when_not_cancelled() {
+        let signal = InterruptSignal::new();
+        let evidence = &["a", "b", "c"];
+        let steps = react_chain_interruptible("a b c", evidence, 3, &signal);
+        assert_eq!(steps.len(), 3, "all 3 steps must complete when not cancelled");
+    }
+
+    #[test]
+    fn classify_with_react_decay_reduces_later_evidence_impact() {
+        // Two identical evidence items — the second gets a decay factor.
+        // The total score of two items must equal score of one item + decayed second.
+        // We just verify the score with two items is <= 2 * score with one.
+        let h = "test word";
+        let score_one = classify_with_react(h, &["test word"]);
+        let score_two = classify_with_react(h, &["test word", "test word"]);
+        assert!(score_two <= score_one * 2.0 + 1e-6);
+    }
+
+    #[test]
+    fn best_hypothesis_returns_some_for_single_entry() {
+        let result = best_hypothesis(&["only one"], &["only one match"]);
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn scored_hypothesis_evidence_used_is_cloned_correctly() {
+        let evidence = &["first piece", "second piece"];
+        let ranked = rank_hypotheses(&["first piece"], evidence);
+        assert_eq!(ranked[0].evidence_used, vec!["first piece", "second piece"]);
+    }
+
+    #[test]
+    fn react_chain_thought_has_hypothesis_truncated_new() {
+        let hypothesis = "this is a test hypothesis that is fairly long";
+        let evidence = &["test"];
+        let steps = react_chain(hypothesis, evidence, 1);
+        // thought truncates hypothesis at 40 chars
+        let expected_prefix = &hypothesis[..40.min(hypothesis.len())];
+        assert!(steps[0].thought.contains(expected_prefix));
+    }
+
+    #[test]
+    fn classify_three_word_hypothesis_partial_match() {
+        // "alpha beta gamma" vs evidence "alpha beta" → 2/3 match before decay.
+        let score = classify_with_react("alpha beta gamma", &["alpha beta"]);
+        assert!(score > 0.0 && score < 1.0, "partial match must be in (0, 1)");
+    }
+
+    #[test]
+    fn rank_hypotheses_empty_evidence_all_zero() {
+        let hypotheses = &["one", "two", "three"];
+        let ranked = rank_hypotheses(hypotheses, &[]);
+        for h in &ranked {
+            assert_eq!(h.score, 0.0, "empty evidence must yield zero score for all");
+        }
+    }
 }

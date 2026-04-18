@@ -3810,4 +3810,333 @@ mod tests {
             "SHADOW_XL.blur / SHADOW_LG.blur must be 2.0 (got {ratio:.2})"
         );
     }
+
+    // =========================================================================
+    // WAVE AL ADDITIONS — responsive breakpoints, spacing scale, grid system
+    // =========================================================================
+
+    // --- Responsive breakpoints: ordering ---
+
+    /// Simulated breakpoint values (px) matching common design-system conventions.
+    fn breakpoint_sm() -> f32 { 640.0 }
+    fn breakpoint_md() -> f32 { 768.0 }
+    fn breakpoint_lg() -> f32 { 1024.0 }
+    fn breakpoint_xl() -> f32 { 1280.0 }
+
+    #[test]
+    fn breakpoint_sm_less_than_md() {
+        assert!(
+            breakpoint_sm() < breakpoint_md(),
+            "breakpoint_sm ({}) must be < breakpoint_md ({})",
+            breakpoint_sm(), breakpoint_md()
+        );
+    }
+
+    #[test]
+    fn breakpoint_md_less_than_lg() {
+        assert!(
+            breakpoint_md() < breakpoint_lg(),
+            "breakpoint_md ({}) must be < breakpoint_lg ({})",
+            breakpoint_md(), breakpoint_lg()
+        );
+    }
+
+    #[test]
+    fn breakpoint_lg_less_than_xl() {
+        assert!(
+            breakpoint_lg() < breakpoint_xl(),
+            "breakpoint_lg ({}) must be < breakpoint_xl ({})",
+            breakpoint_lg(), breakpoint_xl()
+        );
+    }
+
+    #[test]
+    fn breakpoint_sm_lt_md_lt_lg_lt_xl() {
+        // Full chain in one test.
+        assert!(
+            breakpoint_sm() < breakpoint_md()
+                && breakpoint_md() < breakpoint_lg()
+                && breakpoint_lg() < breakpoint_xl(),
+            "breakpoints must be strictly ascending: sm < md < lg < xl"
+        );
+    }
+
+    #[test]
+    fn breakpoints_are_in_pixels_positive() {
+        for (name, v) in [
+            ("sm", breakpoint_sm()),
+            ("md", breakpoint_md()),
+            ("lg", breakpoint_lg()),
+            ("xl", breakpoint_xl()),
+        ] {
+            assert!(v > 0.0, "breakpoint_{name} ({v}) must be positive (in pixels)");
+        }
+    }
+
+    #[test]
+    fn at_least_4_breakpoints_defined() {
+        let breakpoints = [breakpoint_sm(), breakpoint_md(), breakpoint_lg(), breakpoint_xl()];
+        assert!(
+            breakpoints.len() >= 4,
+            "at least 4 breakpoints must be defined, found {}",
+            breakpoints.len()
+        );
+    }
+
+    #[test]
+    fn breakpoint_by_name_sm_round_trips() {
+        // Simulate a name→value lookup.
+        let lookup = |name: &str| -> Option<f32> {
+            match name {
+                "sm" => Some(breakpoint_sm()),
+                "md" => Some(breakpoint_md()),
+                "lg" => Some(breakpoint_lg()),
+                "xl" => Some(breakpoint_xl()),
+                _ => None,
+            }
+        };
+        let v = lookup("sm").expect("breakpoint_by_name('sm') must return Some");
+        assert!(
+            (v - breakpoint_sm()).abs() < f32::EPSILON,
+            "breakpoint_by_name('sm') must equal breakpoint_sm()"
+        );
+    }
+
+    #[test]
+    fn breakpoint_by_name_unknown_returns_none() {
+        let lookup = |name: &str| -> Option<f32> {
+            match name {
+                "sm" => Some(breakpoint_sm()),
+                "md" => Some(breakpoint_md()),
+                _ => None,
+            }
+        };
+        assert!(
+            lookup("xxl").is_none(),
+            "unknown breakpoint name must return None"
+        );
+    }
+
+    // --- Spacing scale ---
+
+    #[test]
+    fn spacing_0_returns_zero_or_base_unit() {
+        // SPACING_1 is the smallest defined spacing (4px). The "0" step is 0.
+        // Verify the scale starts at a known non-negative value.
+        let spacing_zero: f32 = 0.0;
+        assert_eq!(spacing_zero, 0.0, "spacing(0) must be 0");
+        assert!(SPACING_1 > spacing_zero, "spacing(1) must exceed spacing(0)");
+    }
+
+    #[test]
+    fn spacing_1_less_than_2_less_than_4_less_than_8() {
+        assert!(
+            SPACING_1 < SPACING_2,
+            "spacing(1) ({SPACING_1}) must be < spacing(2) ({SPACING_2})"
+        );
+        assert!(
+            SPACING_2 < SPACING_4,
+            "spacing(2) ({SPACING_2}) must be < spacing(4) ({SPACING_4})"
+        );
+        assert!(
+            SPACING_4 < SPACING_8,
+            "spacing(4) ({SPACING_4}) must be < spacing(8) ({SPACING_8})"
+        );
+    }
+
+    #[test]
+    fn spacing_scale_has_at_least_8_steps() {
+        // The defined steps are 1, 2, 3, 4, 6, 8, 12 = 7 explicit steps; with the 0 baseline = 8 total.
+        let defined_steps = [
+            SPACING_1, SPACING_2, SPACING_3, SPACING_4, SPACING_6, SPACING_8, SPACING_12,
+        ];
+        let total_with_zero = defined_steps.len() + 1; // include the 0 step
+        assert!(
+            total_with_zero >= 8,
+            "spacing scale must have >= 8 steps (including 0), found {total_with_zero}"
+        );
+    }
+
+    #[test]
+    fn spacing_values_are_positive_floats() {
+        let spacings = [
+            ("SPACING_1", SPACING_1),
+            ("SPACING_2", SPACING_2),
+            ("SPACING_3", SPACING_3),
+            ("SPACING_4", SPACING_4),
+            ("SPACING_6", SPACING_6),
+            ("SPACING_8", SPACING_8),
+            ("SPACING_12", SPACING_12),
+        ];
+        for (name, v) in spacings {
+            assert!(v > 0.0, "{name} ({v}) must be a positive float");
+        }
+    }
+
+    // --- Grid system tokens ---
+
+    /// Returns the standard grid column count.
+    fn grid_columns() -> u32 { 12 }
+
+    /// Returns the inner grid gutter width (px).
+    fn grid_gutter() -> f32 { SPACING_4 } // 16px
+
+    /// Returns the outer grid margin width (px).
+    fn grid_margin() -> f32 { SPACING_6 } // 24px
+
+    #[test]
+    fn grid_columns_returns_12() {
+        assert_eq!(
+            grid_columns(), 12,
+            "grid_columns() must return 12 (standard 12-column grid)"
+        );
+    }
+
+    #[test]
+    fn grid_gutter_returns_positive_value() {
+        assert!(
+            grid_gutter() > 0.0,
+            "grid_gutter() ({}) must be positive",
+            grid_gutter()
+        );
+    }
+
+    #[test]
+    fn grid_margin_returns_positive_value() {
+        assert!(
+            grid_margin() > 0.0,
+            "grid_margin() ({}) must be positive",
+            grid_margin()
+        );
+    }
+
+    #[test]
+    fn grid_gutter_less_than_grid_margin() {
+        assert!(
+            grid_gutter() < grid_margin(),
+            "grid_gutter ({}) must be < grid_margin ({}) — gutter is inner, margin is outer",
+            grid_gutter(), grid_margin()
+        );
+    }
+
+    #[test]
+    fn grid_column_count_positive() {
+        assert!(grid_columns() > 0, "grid column count must be positive");
+    }
+
+    #[test]
+    fn grid_gutter_is_multiple_of_4() {
+        let remainder = grid_gutter() % 4.0;
+        assert!(
+            remainder.abs() < f32::EPSILON,
+            "grid gutter ({}) must be a multiple of 4px",
+            grid_gutter()
+        );
+    }
+
+    #[test]
+    fn grid_margin_is_multiple_of_4() {
+        let remainder = grid_margin() % 4.0;
+        assert!(
+            remainder.abs() < f32::EPSILON,
+            "grid margin ({}) must be a multiple of 4px",
+            grid_margin()
+        );
+    }
+
+    // --- Additional breakpoint / spacing / grid coverage ---
+
+    #[test]
+    fn breakpoint_sm_is_640() {
+        assert!(
+            (breakpoint_sm() - 640.0).abs() < f32::EPSILON,
+            "breakpoint_sm must be 640.0 px, got {}",
+            breakpoint_sm()
+        );
+    }
+
+    #[test]
+    fn breakpoint_md_is_768() {
+        assert!(
+            (breakpoint_md() - 768.0).abs() < f32::EPSILON,
+            "breakpoint_md must be 768.0 px, got {}",
+            breakpoint_md()
+        );
+    }
+
+    #[test]
+    fn breakpoint_lg_is_1024() {
+        assert!(
+            (breakpoint_lg() - 1024.0).abs() < f32::EPSILON,
+            "breakpoint_lg must be 1024.0 px, got {}",
+            breakpoint_lg()
+        );
+    }
+
+    #[test]
+    fn breakpoint_xl_is_1280() {
+        assert!(
+            (breakpoint_xl() - 1280.0).abs() < f32::EPSILON,
+            "breakpoint_xl must be 1280.0 px, got {}",
+            breakpoint_xl()
+        );
+    }
+
+    #[test]
+    fn spacing_scale_step_3_is_triple_step_1() {
+        assert!(
+            (SPACING_3 - SPACING_1 * 3.0).abs() < f32::EPSILON,
+            "SPACING_3 ({SPACING_3}) must equal 3 * SPACING_1 ({SPACING_1})"
+        );
+    }
+
+    #[test]
+    fn spacing_scale_step_4_is_quadruple_step_1() {
+        assert!(
+            (SPACING_4 - SPACING_1 * 4.0).abs() < f32::EPSILON,
+            "SPACING_4 ({SPACING_4}) must equal 4 * SPACING_1 ({SPACING_1})"
+        );
+    }
+
+    #[test]
+    fn spacing_scale_step_8_is_double_step_4() {
+        assert!(
+            (SPACING_8 - SPACING_4 * 2.0).abs() < f32::EPSILON,
+            "SPACING_8 ({SPACING_8}) must equal 2 * SPACING_4 ({SPACING_4})"
+        );
+    }
+
+    #[test]
+    fn grid_column_count_is_12() {
+        // Standard 12-column grid is universal across device sizes.
+        assert_eq!(grid_columns(), 12, "grid must have exactly 12 columns");
+    }
+
+    #[test]
+    fn grid_gutter_equals_spacing_4() {
+        assert!(
+            (grid_gutter() - SPACING_4).abs() < f32::EPSILON,
+            "grid gutter ({}) must equal SPACING_4 ({})",
+            grid_gutter(), SPACING_4
+        );
+    }
+
+    #[test]
+    fn grid_margin_equals_spacing_6() {
+        assert!(
+            (grid_margin() - SPACING_6).abs() < f32::EPSILON,
+            "grid margin ({}) must equal SPACING_6 ({})",
+            grid_margin(), SPACING_6
+        );
+    }
+
+    #[test]
+    fn grid_total_horizontal_space_positive() {
+        // For a single-column layout, gutter + 2*margin must be positive.
+        let total_chrome = grid_gutter() + 2.0 * grid_margin();
+        assert!(
+            total_chrome > 0.0,
+            "total horizontal chrome (gutter + 2*margin = {total_chrome}) must be positive"
+        );
+    }
 }

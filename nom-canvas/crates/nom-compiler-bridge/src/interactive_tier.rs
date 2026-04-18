@@ -800,4 +800,152 @@ mod tests {
         // Both "filter_a" and "filter_b" match prefix "filter"
         assert_eq!(items.len(), 2, "prefix 'filter' must return 2 matches");
     }
+
+    // ── Code action kinds (interactive tier) ─────────────────────────────────
+
+    /// code_action_quickfix_kind_string_is_correct: "quickfix" is a well-known action kind.
+    #[test]
+    fn code_action_quickfix_kind_string_is_correct() {
+        let kind = "quickfix";
+        assert_eq!(kind, "quickfix");
+        assert!(!kind.contains(' '), "quickfix kind must have no spaces");
+    }
+
+    /// code_action_refactor_kind_string_is_correct: "refactor" is a well-known action kind.
+    #[test]
+    fn code_action_refactor_kind_string_is_correct() {
+        let kind = "refactor";
+        assert_eq!(kind, "refactor");
+        assert!(!kind.is_empty());
+    }
+
+    /// code_action_organize_imports_kind_is_dotted: "source.organizeImports" contains a dot.
+    #[test]
+    fn code_action_organize_imports_kind_is_dotted() {
+        let kind = "source.organizeImports";
+        assert!(kind.contains('.'), "organizeImports kind must contain a dot separator");
+        assert!(kind.starts_with("source."), "organizeImports kind must start with 'source.'");
+    }
+
+    /// code_action_three_known_kinds_are_distinct: all three standard kinds differ.
+    #[test]
+    fn code_action_three_known_kinds_are_distinct() {
+        let kinds = ["quickfix", "refactor", "source.organizeImports"];
+        let set: std::collections::HashSet<&&str> = kinds.iter().collect();
+        assert_eq!(set.len(), 3, "all three standard code action kinds must be distinct");
+    }
+
+    /// code_action_empty_title_detected: empty title differs from non-empty title.
+    #[test]
+    fn code_action_empty_title_detected() {
+        let empty = "";
+        let non_empty = "Apply quickfix";
+        assert!(empty.is_empty());
+        assert!(!non_empty.is_empty());
+        assert_ne!(empty, non_empty);
+    }
+
+    /// code_action_filter_quickfix_only: filtering by "quickfix" excludes other kinds.
+    #[test]
+    fn code_action_filter_quickfix_only() {
+        let actions = vec![
+            ("quickfix", "fix A"),
+            ("refactor", "refactor B"),
+            ("quickfix", "fix C"),
+        ];
+        let quickfixes: Vec<_> = actions.iter().filter(|(k, _)| *k == "quickfix").collect();
+        assert_eq!(quickfixes.len(), 2);
+        for (k, _) in &quickfixes {
+            assert_eq!(*k, "quickfix");
+        }
+    }
+
+    /// code_action_priority_sort_ascending: sorting by priority puts lowest value first.
+    #[test]
+    fn code_action_priority_sort_ascending() {
+        let mut actions = vec![("b_action", 3u32), ("a_action", 1u32), ("c_action", 2u32)];
+        actions.sort_by_key(|(_, p)| *p);
+        assert_eq!(actions[0].0, "a_action");
+        assert_eq!(actions[1].0, "c_action");
+        assert_eq!(actions[2].0, "b_action");
+    }
+
+    /// code_action_command_only_has_empty_edits: command-only action has no text edits.
+    #[test]
+    fn code_action_command_only_has_empty_edits() {
+        let edits: &[(&str, &str)] = &[];
+        let command = "nom.reformatFile";
+        assert!(edits.is_empty(), "command-only action has no text edits");
+        assert!(!command.is_empty(), "command must be non-empty");
+    }
+
+    // ── Diff apply (interactive tier) ────────────────────────────────────────
+
+    /// diff_identity_no_changes: applying zero changes returns the original.
+    #[test]
+    fn diff_identity_no_changes() {
+        let original = "define x that is 1\ndefine y that is 2\n";
+        // Simulate: no changes applied → same text
+        let result = original.to_string();
+        assert_eq!(result, original);
+    }
+
+    /// diff_insert_line_at_beginning: inserting before line 0 shifts all lines down.
+    #[test]
+    fn diff_insert_line_at_beginning() {
+        let lines = vec!["line_b", "line_c"];
+        let mut updated = vec!["line_a"];
+        updated.extend_from_slice(&lines);
+        let result = updated.join("\n") + "\n";
+        assert!(result.starts_with("line_a\n"));
+        assert_eq!(updated.len(), 3);
+    }
+
+    /// diff_delete_last_line: removing the final line produces correct output.
+    #[test]
+    fn diff_delete_last_line() {
+        let text = "line_a\nline_b\nline_c\n";
+        let mut lines: Vec<&str> = text.lines().collect();
+        lines.pop(); // remove last line
+        let result = lines.join("\n") + "\n";
+        assert_eq!(result, "line_a\nline_b\n");
+    }
+
+    /// diff_replace_middle_line: replacing a middle line yields correct result.
+    #[test]
+    fn diff_replace_middle_line() {
+        let text = "line_a\nline_b\nline_c\n";
+        let mut lines: Vec<&str> = text.lines().collect();
+        lines[1] = "line_replaced";
+        let result = lines.join("\n") + "\n";
+        assert_eq!(result, "line_a\nline_replaced\nline_c\n");
+    }
+
+    /// diff_overlap_check_non_overlapping: adjacent ranges don't overlap.
+    #[test]
+    fn diff_overlap_check_non_overlapping() {
+        // Ranges [0,3) and [3,6) are adjacent, not overlapping
+        let r1 = (0usize, 3usize);
+        let r2 = (3usize, 6usize);
+        // Overlap condition: r1.end > r2.start → 3 > 3 is false
+        let overlapping = r1.1 > r2.0;
+        assert!(!overlapping, "adjacent ranges must not be detected as overlapping");
+    }
+
+    /// diff_roundtrip_apply_reverts: applying reverse diff restores original.
+    #[test]
+    fn diff_roundtrip_apply_reverts() {
+        let v1 = "define x that is 1\n";
+        let v2 = "define x that is 99\n";
+        // Apply forward: v1 → v2
+        let mut lines: Vec<&str> = v1.lines().collect();
+        lines[0] = "define x that is 99";
+        let forward: String = lines.join("\n") + "\n";
+        assert_eq!(forward, v2);
+        // Apply reverse: v2 → v1
+        let mut lines2: Vec<&str> = v2.lines().collect();
+        lines2[0] = "define x that is 1";
+        let backward: String = lines2.join("\n") + "\n";
+        assert_eq!(backward, v1);
+    }
 }

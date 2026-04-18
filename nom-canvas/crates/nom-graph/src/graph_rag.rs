@@ -1936,4 +1936,177 @@ mod tests {
         let sim = cosine_sim(&self_vec, &self_vec);
         assert!((sim - 1.0).abs() < 1e-5, "self cosine_sim must be 1.0, got {sim}");
     }
+
+    // -----------------------------------------------------------------------
+    // Query scoring penalizes distant nodes (score decreases with hop count)
+    // -----------------------------------------------------------------------
+    #[test]
+    fn query_scoring_penalizes_distant_nodes() {
+        // Linear chain: n0→n1→n2→n3.  Query with n0's vec.
+        // n0 (rank 0, cosine=1.0) must score higher than n3 (lower cosine rank).
+        let mut dag = Dag::new();
+        for n in &["n0", "n1", "n2", "n3"] {
+            dag.add_node(ExecNode::new(*n, "verb"));
+        }
+        dag.add_edge("n0", "out", "n1", "in");
+        dag.add_edge("n1", "out", "n2", "in");
+        dag.add_edge("n2", "out", "n3", "in");
+        let retriever = GraphRagRetriever::new(&dag);
+        let query = node_vec("n0");
+        let results = retriever.retrieve(&query, 4, 3);
+        assert_eq!(results.len(), 4);
+        let score_n0 = results.iter().find(|r| r.node_id == "n0").unwrap().score;
+        let score_n3 = results.iter().find(|r| r.node_id == "n3").unwrap().score;
+        assert!(
+            score_n0 > score_n3,
+            "n0 (rank 0) must score above n3 (distant): {} vs {}",
+            score_n0,
+            score_n3
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Top-K results limited to K even when more match
+    // -----------------------------------------------------------------------
+    #[test]
+    fn top_k_limited_to_k_even_when_more_match() {
+        // 10 nodes all connected in a chain; asking for top_k=4 must return exactly 4.
+        let mut dag = Dag::new();
+        for i in 0..10u32 {
+            dag.add_node(ExecNode::new(format!("m{i}"), "verb"));
+        }
+        for i in 0..9u32 {
+            dag.add_edge(format!("m{i}"), "out", format!("m{}", i + 1), "in");
+        }
+        let retriever = GraphRagRetriever::new(&dag);
+        let results = retriever.retrieve(&node_vec("m0"), 4, 9);
+        assert_eq!(
+            results.len(),
+            4,
+            "top_k=4 must return exactly 4 results even when 10 nodes exist"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Re-ranking on empty result set returns empty
+    // -----------------------------------------------------------------------
+    #[test]
+    fn reranking_empty_result_set_returns_empty() {
+        // An empty DAG always returns empty, regardless of top_k.
+        let dag = Dag::new();
+        let retriever = GraphRagRetriever::new(&dag);
+        let query = node_vec("rerank_test");
+        let results = retriever.retrieve(&query, 10, 5);
+        assert!(
+            results.is_empty(),
+            "re-ranking over empty result set must return empty"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Graph with 50 nodes: query returns ≤ K results
+    // -----------------------------------------------------------------------
+    #[test]
+    fn graph_50_nodes_query_returns_at_most_k() {
+        let mut dag = Dag::new();
+        for i in 0..50u32 {
+            dag.add_node(ExecNode::new(format!("g50_{i}"), "verb"));
+        }
+        // Connect as a linear chain so BFS can traverse.
+        for i in 0..49u32 {
+            dag.add_edge(format!("g50_{i}"), "out", format!("g50_{}", i + 1), "in");
+        }
+        let retriever = GraphRagRetriever::new(&dag);
+        // Request k=7 from 50-node graph.
+        let results = retriever.retrieve(&node_vec("g50_0"), 7, 10);
+        assert!(
+            results.len() <= 7,
+            "top_k=7 must return at most 7 results from 50-node graph, got {}",
+            results.len()
+        );
+        assert_eq!(
+            results.len(),
+            7,
+            "exactly 7 results expected when 50 nodes available"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Additional graph_rag edge-case tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn graph_rag_score_order_descending_invariant() {
+        // Results must always be sorted descending by score.
+        let mut dag = Dag::new();
+        for n in &["xa", "xb", "xc", "xd", "xe"] {
+            dag.add_node(ExecNode::new(*n, "verb"));
+        }
+        dag.add_edge("xa", "out", "xb", "in");
+        dag.add_edge("xb", "out", "xc", "in");
+        dag.add_edge("xc", "out", "xd", "in");
+        dag.add_edge("xd", "out", "xe", "in");
+        let retriever = GraphRagRetriever::new(&dag);
+        let results = retriever.retrieve(&node_vec("xa"), 5, 4);
+        for i in 0..results.len().saturating_sub(1) {
+            assert!(
+                results[i].score >= results[i + 1].score,
+                "results must be sorted descending: pos[{}]={} >= pos[{}]={}",
+                i,
+                results[i].score,
+                i + 1,
+                results[i + 1].score
+            );
+        }
+    }
+
+    #[test]
+    fn graph_rag_top_k_equals_node_count_returns_all() {
+        // top_k exactly equals node count: should return every node.
+        let mut dag = Dag::new();
+        for n in &["p1", "p2", "p3"] {
+            dag.add_node(ExecNode::new(*n, "verb"));
+        }
+        let retriever = GraphRagRetriever::new(&dag);
+        let results = retriever.retrieve(&node_vec("p1"), 3, 1);
+        assert_eq!(
+            results.len(),
+            3,
+            "top_k == node count must return all 3 nodes"
+        );
+    }
+
+    #[test]
+    fn graph_rag_hops_zero_returns_seed_only() {
+        // max_hops=0: BFS does not expand from seeds; each node only sees itself.
+        // All nodes still appear because every node is a BFS seed.
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("seed_a", "verb"));
+        dag.add_node(ExecNode::new("seed_b", "verb"));
+        dag.add_edge("seed_a", "out", "seed_b", "in");
+        let retriever = GraphRagRetriever::new(&dag);
+        let results = retriever.retrieve(&node_vec("seed_a"), 2, 0);
+        // Both nodes are their own seeds → both appear, hops=0.
+        assert_eq!(results.len(), 2, "max_hops=0 must still return all seeds");
+        for r in &results {
+            assert_eq!(r.hops, 0, "all nodes with max_hops=0 must report hops=0");
+        }
+    }
+
+    #[test]
+    fn graph_rag_pruned_edge_leaves_only_registered_nodes() {
+        // Edge confidence exactly at MIN_EDGE_CONFIDENCE (0.1) — the pruning rule
+        // is strictly below 0.1, so 0.1 must NOT be pruned.
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("src_at_thresh", "verb"));
+        dag.add_node(ExecNode::new("dst_at_thresh", "verb"));
+        dag.add_edge_weighted("src_at_thresh", "out", "dst_at_thresh", "in", 0.1);
+        let retriever = GraphRagRetriever::new(&dag);
+        let results = retriever.retrieve(&node_vec("src_at_thresh"), 2, 1);
+        // Both nodes are registered; dst must appear (edge at threshold is kept).
+        assert!(
+            results.iter().any(|r| r.node_id == "dst_at_thresh"),
+            "edge at MIN_EDGE_CONFIDENCE=0.1 must NOT be pruned (strictly below is pruned)"
+        );
+    }
 }

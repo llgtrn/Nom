@@ -818,4 +818,88 @@ mod tests {
         let stored = ws.blocks.get("upd").unwrap();
         assert_eq!(stored.entity.word, "updated");
     }
+
+    // ── wave AB: additional workspace tests ────────────────────────────────────
+
+    /// Workspace with 1000 blocks: block_count() returns 1000.
+    #[test]
+    fn workspace_1000_blocks_count() {
+        let mut ws = Workspace::new();
+        for i in 0..1000u32 {
+            ws.insert_block(BlockModel::new(
+                format!("blk-{i}"),
+                NomtuRef::new(format!("e{i}"), "w", "verb"),
+                "affine:paragraph",
+            ));
+        }
+        assert_eq!(ws.block_count(), 1000);
+    }
+
+    /// Workspace merge of two workspaces produces union of all blocks.
+    #[test]
+    fn workspace_merge_union_of_blocks() {
+        let mut ws1 = Workspace::new();
+        for i in 0..5u8 {
+            ws1.insert_block(BlockModel::new(
+                format!("a{i}"),
+                NomtuRef::new(format!("ea{i}"), "w", "verb"),
+                "affine:paragraph",
+            ));
+        }
+        let mut ws2 = Workspace::new();
+        for i in 0..5u8 {
+            ws2.insert_block(BlockModel::new(
+                format!("b{i}"),
+                NomtuRef::new(format!("eb{i}"), "w", "verb"),
+                "affine:paragraph",
+            ));
+        }
+        // Merge ws2 into ws1
+        for (id, block) in ws2.blocks {
+            ws1.blocks.insert(id.clone(), block);
+            ws1.doc_tree.push(id);
+        }
+        assert_eq!(ws1.block_count(), 10);
+        for i in 0..5u8 {
+            assert!(ws1.blocks.contains_key(&format!("a{i}")));
+            assert!(ws1.blocks.contains_key(&format!("b{i}")));
+        }
+    }
+
+    /// Workspace clear (remove all blocks and connectors) leaves workspace empty.
+    #[test]
+    fn workspace_clear_empties_all() {
+        let mut ws = Workspace::new();
+        for i in 0..3u8 {
+            ws.insert_block(BlockModel::new(
+                format!("b{i}"),
+                NomtuRef::new(format!("e{i}"), "w", "verb"),
+                "affine:paragraph",
+            ));
+        }
+        let dict = crate::stub_dict::StubDictReader::new();
+        for i in 0..2u8 {
+            let conn = Connector::new_with_validation(crate::connector::ConnectorValidation {
+                id: format!("c{i}"),
+                from_node: format!("n{i}"),
+                from_port: "output".into(),
+                to_node: format!("m{i}"),
+                to_port: "input".into(),
+                dict: &dict,
+                from_kind: "verb",
+                to_kind: "concept",
+            });
+            ws.insert_connector(conn);
+        }
+        assert_eq!(ws.block_count(), 3);
+        assert_eq!(ws.connector_count(), 2);
+        // Clear all blocks
+        ws.blocks.clear();
+        ws.doc_tree.clear();
+        // Clear all connectors
+        ws.connectors.clear();
+        assert_eq!(ws.block_count(), 0);
+        assert_eq!(ws.connector_count(), 0);
+        assert!(ws.doc_tree.is_empty());
+    }
 }

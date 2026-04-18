@@ -964,4 +964,76 @@ mod tests {
         let found = idx.query_in_bounds([0.0, 0.0], [30.0, 10.0]);
         assert_eq!(found.len(), 3, "all 3 re-inserted elements must be queryable");
     }
+
+    // ── Wave AL: additional spatial_index coverage ───────────────────────────
+
+    /// Query returns elements whose AABB intersects the query rect.
+    #[test]
+    fn query_returns_elements_intersecting_query_rect() {
+        let mut idx = SpatialIndex::new();
+        idx.insert(make_bounds(1, [0.0, 0.0], [40.0, 40.0]));
+        idx.insert(make_bounds(2, [50.0, 0.0], [90.0, 40.0]));
+        idx.insert(make_bounds(3, [200.0, 200.0], [300.0, 300.0]));
+        // Query rect overlaps elements 1 and 2 but not 3.
+        let found = idx.query_in_bounds([20.0, 0.0], [70.0, 40.0]);
+        assert!(found.contains(&1), "element 1 intersects query rect");
+        assert!(found.contains(&2), "element 2 intersects query rect");
+        assert!(!found.contains(&3), "element 3 does not intersect query rect");
+    }
+
+    /// Update element bounds (remove + re-insert) changes query results.
+    #[test]
+    fn update_element_bounds_changes_query_results() {
+        let mut idx = SpatialIndex::new();
+        idx.insert(make_bounds(7, [0.0, 0.0], [20.0, 20.0]));
+        // Element 7 is found at original location.
+        let before = idx.query_in_bounds([0.0, 0.0], [20.0, 20.0]);
+        assert!(before.contains(&7), "element must be at original location");
+        // Update: move element 7 to [500, 500]→[520, 520].
+        idx.remove(7, make_bounds(7, [0.0, 0.0], [20.0, 20.0]));
+        idx.insert(make_bounds(7, [500.0, 500.0], [520.0, 520.0]));
+        // Old location must be empty.
+        let at_old = idx.query_in_bounds([0.0, 0.0], [20.0, 20.0]);
+        assert!(!at_old.contains(&7), "element must not appear at old location");
+        // New location must contain the element.
+        let at_new = idx.query_in_bounds([500.0, 500.0], [520.0, 520.0]);
+        assert!(at_new.contains(&7), "element must appear at new location");
+    }
+
+    /// Remove element excludes it from all subsequent queries.
+    #[test]
+    fn remove_element_excludes_from_queries() {
+        let mut idx = SpatialIndex::new();
+        idx.insert(make_bounds(3, [10.0, 10.0], [30.0, 30.0]));
+        idx.insert(make_bounds(4, [50.0, 50.0], [70.0, 70.0]));
+        idx.remove(3, make_bounds(3, [10.0, 10.0], [30.0, 30.0]));
+        // Query the full space — element 3 must not appear.
+        let found = idx.query_in_bounds([0.0, 0.0], [100.0, 100.0]);
+        assert!(!found.contains(&3), "removed element must not appear in queries");
+        assert!(found.contains(&4), "remaining element must still appear");
+    }
+
+    /// Bulk insert 100 elements then query all — count matches.
+    #[test]
+    fn bulk_insert_100_elements_query_count_matches() {
+        let mut idx = SpatialIndex::new();
+        for i in 1_u64..=100 {
+            let base = i as f32 * 8.0;
+            idx.insert(make_bounds(i, [base, base], [base + 6.0, base + 6.0]));
+        }
+        assert_eq!(idx.len(), 100, "index must contain 100 elements after bulk insert");
+        let found = idx.query_in_bounds([0.0, 0.0], [900.0, 900.0]);
+        assert_eq!(found.len(), 100, "query must return all 100 elements");
+    }
+
+    /// Query with zero-size rect at a point not inside any element returns zero hits.
+    #[test]
+    fn query_zero_size_rect_no_match_returns_zero_hits() {
+        let mut idx = SpatialIndex::new();
+        idx.insert(make_bounds(1, [100.0, 100.0], [200.0, 200.0]));
+        idx.insert(make_bounds(2, [300.0, 300.0], [400.0, 400.0]));
+        // Zero-size query at a point between the two elements.
+        let found = idx.query_in_bounds([250.0, 250.0], [250.0, 250.0]);
+        assert!(found.is_empty(), "zero-size query between elements must return zero hits");
+    }
 }

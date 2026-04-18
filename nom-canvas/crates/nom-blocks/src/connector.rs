@@ -910,4 +910,111 @@ mod tests {
         let s = format!("{c:?}");
         assert!(s.contains("wire-kind-check"), "debug must contain connector id");
     }
+
+    // ── wave AB: additional connector tests ────────────────────────────────────
+
+    /// Two connectors between the same source/target are distinct objects (different IDs).
+    #[test]
+    fn connector_two_wires_same_endpoints_are_distinct() {
+        let dict = StubDictReader::new();
+        let c1 = Connector::new_with_validation(ConnectorValidation {
+            id: "dup-wire-1".into(),
+            from_node: "n1".into(),
+            from_port: "output".into(),
+            to_node: "n2".into(),
+            to_port: "input".into(),
+            dict: &dict,
+            from_kind: "verb",
+            to_kind: "concept",
+        });
+        let c2 = Connector::new_with_validation(ConnectorValidation {
+            id: "dup-wire-2".into(),
+            from_node: "n1".into(),
+            from_port: "output".into(),
+            to_node: "n2".into(),
+            to_port: "input".into(),
+            dict: &dict,
+            from_kind: "verb",
+            to_kind: "concept",
+        });
+        assert_ne!(c1.id, c2.id);
+        assert_eq!(c1.src, c2.src);
+        assert_eq!(c1.dst, c2.dst);
+    }
+
+    /// Connector label (reason) is preserved after clone.
+    #[test]
+    fn connector_label_preserved_after_clone() {
+        let c = valid_connector().with_reason("my label".into());
+        let c2 = c.clone();
+        assert_eq!(c2.reason_chain[0], "my label");
+    }
+
+    /// Connector with a very long label (>1000 chars) is accepted without truncation.
+    #[test]
+    fn connector_very_long_label_accepted() {
+        let long_label = "x".repeat(1001);
+        let c = valid_connector().with_reason(long_label.clone());
+        assert_eq!(c.reason_chain[0].len(), 1001);
+        assert_eq!(c.reason_chain[0], long_label);
+    }
+
+    /// Empty from_kind with any-type shapes produces a valid connector.
+    #[test]
+    fn connector_empty_kind_with_any_shapes_is_valid() {
+        // StubDictReader default shapes use "any" — empty kind still resolves to any/any
+        let dict = StubDictReader::new();
+        let c = Connector::new_with_validation(ConnectorValidation {
+            id: "empty-kind-any".into(),
+            from_node: "n1".into(),
+            from_port: "output".into(),
+            to_node: "n2".into(),
+            to_port: "input".into(),
+            dict: &dict,
+            from_kind: "",
+            to_kind: "concept",
+        });
+        // With default "any" shapes, empty from_kind still resolves the "output" port as "any"
+        assert!(c.is_valid());
+    }
+
+    /// Connector with empty to_port is invalid (no shape found for empty port name).
+    #[test]
+    fn connector_empty_to_port_is_invalid() {
+        let dict = StubDictReader::new()
+            .with_shapes("verb", vec![make_shape("output", "text")])
+            .with_shapes("concept", vec![make_shape("input", "text")]);
+        let c = Connector::new_with_validation(ConnectorValidation {
+            id: "empty-to-port".into(),
+            from_node: "n1".into(),
+            from_port: "output".into(),
+            to_node: "n2".into(),
+            to_port: "".into(),
+            dict: &dict,
+            from_kind: "verb",
+            to_kind: "concept",
+        });
+        assert!(!c.is_valid());
+        assert_eq!(c.confidence, 0.0);
+    }
+
+    /// Connector with empty from_port is invalid (no shape found for empty port name).
+    #[test]
+    fn connector_empty_from_port_is_invalid() {
+        let dict = StubDictReader::new()
+            .with_shapes("verb", vec![make_shape("output", "text")])
+            .with_shapes("concept", vec![make_shape("input", "text")]);
+        let c = Connector::new_with_validation(ConnectorValidation {
+            id: "empty-from-port".into(),
+            from_node: "n1".into(),
+            from_port: "".into(),
+            to_node: "n2".into(),
+            to_port: "input".into(),
+            dict: &dict,
+            from_kind: "verb",
+            to_kind: "concept",
+        });
+        assert!(!c.is_valid());
+        assert_eq!(c.confidence, 0.0);
+    }
 }

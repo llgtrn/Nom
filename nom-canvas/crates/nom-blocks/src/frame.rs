@@ -165,4 +165,35 @@ mod tests {
         f.remove_child("only");
         assert_eq!(f.child_count(), 0);
     }
+
+    // ── wave AB: additional frame tests ─────────────────────────────────────
+
+    /// FrameBlock with 100 children returns correct child_count().
+    #[test]
+    fn frame_100_children_correct_count() {
+        let mut f = FrameBlock::new(entity("f-big"), "large frame");
+        for i in 0..100u32 {
+            f.add_child(NomtuRef::new(format!("child-{i}"), "item", "concept"));
+        }
+        assert_eq!(f.child_count(), 100);
+    }
+
+    /// remove_child on a non-existent id is a no-op and does not panic.
+    #[test]
+    fn frame_remove_nonexistent_child_is_noop() {
+        let mut f = FrameBlock::new(entity("f-noop"), "label");
+        f.add_child(entity("c1"));
+        let result = f.remove_child("does-not-exist");
+        assert!(!result);
+        assert_eq!(f.child_count(), 1, "existing children must be untouched");
+    }
+
+    /// remove_child on empty frame returns false and does not panic.
+    #[test]
+    fn frame_remove_from_empty_is_noop() {
+        let mut f = FrameBlock::new(entity("f-empty"), "label");
+        let result = f.remove_child("anything");
+        assert!(!result);
+        assert_eq!(f.child_count(), 0);
+    }
 }

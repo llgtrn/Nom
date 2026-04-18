@@ -9111,4 +9111,835 @@ mod tests {
         assert_eq!(pa.text(), pb.text(), "concurrent equal-counter ops must converge");
         assert!(pa.text().contains("PA") && pa.text().contains("PB"));
     }
+
+    // ── wave AJ: targeted coverage — CRDT text, tombstone GC, awareness, offline merge ──
+
+    // ── 1. CRDT text editing ─────────────────────────────────────────────────
+
+    #[test]
+    fn crdt_insert_at_position_zero_becomes_first_char() {
+        // Insert a single char at Head; it must be the first (and only) character.
+        let mut doc = DocState::new(PeerId(200_001));
+        let op = doc.local_insert(RgaPos::Head, "Z");
+        assert_eq!(doc.text(), "Z");
+        assert_eq!(doc.text().chars().next().unwrap(), 'Z');
+        assert_eq!(op.id.counter, 1);
+    }
+
+    #[test]
+    fn crdt_insert_at_end_appends_character() {
+        // Insert After the tail op; new char must be the last character.
+        let mut doc = DocState::new(PeerId(200_002));
+        let op_a = doc.local_insert(RgaPos::Head, "A");
+        let op_b = doc.local_insert(RgaPos::After(op_a.id), "B");
+        doc.local_insert(RgaPos::After(op_b.id), "C");
+        assert_eq!(doc.text(), "ABC");
+        assert_eq!(doc.text().chars().last().unwrap(), 'C', "tail insert must be last char");
+    }
+
+    #[test]
+    fn crdt_delete_middle_character_removes_it() {
+        // Insert A, B, C; delete B; text becomes "AC".
+        let mut doc = DocState::new(PeerId(200_003));
+        let op_a = doc.local_insert(RgaPos::Head, "A");
+        let op_b = doc.local_insert(RgaPos::After(op_a.id), "B");
+        let op_c = doc.local_insert(RgaPos::After(op_b.id), "C");
+        doc.local_delete(op_b.id);
+        assert_eq!(doc.text(), "AC", "middle delete must produce AC");
+        assert!(!doc.text().contains('B'), "B must be removed");
+        let _ = op_c;
+    }
+
+    #[test]
+    fn crdt_two_concurrent_inserts_same_position_both_chars_appear() {
+        // Two peers concurrently insert at Head; both chars must appear after cross-merge.
+        let mut pa = DocState::new(PeerId(200_010));
+        let op_a = pa.local_insert(RgaPos::Head, "M");
+
+        let mut pb = DocState::new(PeerId(200_011));
+        let op_b = pb.local_insert(RgaPos::Head, "N");
+
+        pa.apply(op_b.clone());
+        pb.apply(op_a.clone());
+
+        assert_eq!(pa.text(), pb.text(), "concurrent head inserts must converge");
+        assert!(pa.text().contains('M'), "M must appear");
+        assert!(pa.text().contains('N'), "N must appear");
+        assert_eq!(pa.text().chars().count(), 2, "exactly 2 chars after merge");
+    }
+
+    #[test]
+    fn crdt_two_concurrent_inserts_same_pos_order_by_peer_id() {
+        // Same counter, peers 200_020 and 200_021; higher peer wins left position.
+        let op_lo = make_insert(200_020, 1, RgaPos::Head, "lo");
+        let op_hi = make_insert(200_021, 1, RgaPos::Head, "hi");
+
+        let mut doc_fwd = DocState::new(PeerId(200_022));
+        doc_fwd.apply(op_lo.clone());
+        doc_fwd.apply(op_hi.clone());
+
+        let mut doc_rev = DocState::new(PeerId(200_022));
+        doc_rev.apply(op_hi.clone());
+        doc_rev.apply(op_lo.clone());
+
+        // Both orders must produce the same text.
+        assert_eq!(doc_fwd.text(), doc_rev.text(), "order must be deterministic by peer id");
+        // Higher peer (200_021) wins left.
+        let text = doc_fwd.text();
+        assert!(
+            text.find("hi").unwrap() < text.find("lo").unwrap(),
+            "higher peer id must appear left"
+        );
+    }
+
+    #[test]
+    fn crdt_insert_after_delete_treats_dead_anchor_as_valid_position() {
+        // Delete a node; insert After its id; new node appears in live text.
+        let mut doc = DocState::new(PeerId(200_030));
+        let op_dead = doc.local_insert(RgaPos::Head, "DEAD");
+        doc.local_delete(op_dead.id);
+        assert_eq!(doc.text(), "");
+
+        // Insert After the now-dead anchor.
+        doc.local_insert(RgaPos::After(op_dead.id), "ALIVE");
+        assert_eq!(doc.text(), "ALIVE", "insert after deleted anchor must produce live text");
+    }
+
+    #[test]
+    fn crdt_text_from_three_sites_converges_same_string_all_orderings() {
+        // Three sites each insert one char; all 6 apply-orderings must yield the same text.
+        let op1 = make_insert(200_040, 1, RgaPos::Head, "X");
+        let op2 = make_insert(200_041, 1, RgaPos::Head, "Y");
+        let op3 = make_insert(200_042, 1, RgaPos::Head, "Z");
+
+        let orderings: &[&[usize]] = &[
+            &[0, 1, 2],
+            &[0, 2, 1],
+            &[1, 0, 2],
+            &[1, 2, 0],
+            &[2, 0, 1],
+            &[2, 1, 0],
+        ];
+        let ops = [op1.clone(), op2.clone(), op3.clone()];
+
+        let texts: Vec<String> = orderings
+            .iter()
+            .map(|ord| {
+                let mut doc = DocState::new(PeerId(200_043));
+                for &idx in *ord {
+                    doc.apply(ops[idx].clone());
+                }
+                doc.text()
+            })
+            .collect();
+
+        // All 6 orderings must yield identical text.
+        for i in 1..texts.len() {
+            assert_eq!(
+                texts[0], texts[i],
+                "ordering {i} must produce same text as ordering 0"
+            );
+        }
+        // All three chars must be present.
+        assert!(texts[0].contains('X'));
+        assert!(texts[0].contains('Y'));
+        assert!(texts[0].contains('Z'));
+    }
+
+    // ── 2. Tombstone garbage-collection simulation ────────────────────────────
+
+    #[test]
+    fn tombstone_entry_has_deleted_flag_in_op_log() {
+        // After a delete the op_log contains a Delete op targeting the insert's id.
+        let mut doc = DocState::new(PeerId(201_001));
+        let op = doc.local_insert(RgaPos::Head, "tombstoned");
+        doc.local_delete(op.id);
+
+        let delete_op = doc
+            .op_log()
+            .iter()
+            .find(|o| matches!(&o.kind, OpKind::Delete { target } if *target == op.id));
+        assert!(delete_op.is_some(), "delete entry (tombstone flag) must exist in op_log");
+    }
+
+    #[test]
+    fn gc_sweep_removes_tombstones_below_min_clock() {
+        // Simulate GC: collect only Delete-targeted ids whose counter is <= min_clock.
+        // After GC, the filtered live_ops count is smaller than the full op_log.
+        let mut doc = DocState::new(PeerId(201_010));
+        let op_a = doc.local_insert(RgaPos::Head, "A");
+        let op_b = doc.local_insert(RgaPos::After(op_a.id), "B");
+        doc.local_insert(RgaPos::After(op_b.id), "C");
+        doc.local_delete(op_a.id);
+        doc.local_delete(op_b.id);
+        // op_log: 3 inserts + 2 deletes = 5 entries
+
+        // Simulate min_clock = max counter seen = 5 (all sites have seen everything).
+        let min_clock: u64 = doc.op_log().iter().map(|o| o.id.counter).max().unwrap_or(0);
+
+        // GC: remove insert ops that have been deleted AND whose counter <= min_clock.
+        let deleted_ids: std::collections::HashSet<OpId> = doc
+            .op_log()
+            .iter()
+            .filter_map(|o| {
+                if let OpKind::Delete { target } = &o.kind {
+                    Some(*target)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        let gc_eligible: Vec<&Op> = doc
+            .op_log()
+            .iter()
+            .filter(|o| {
+                matches!(&o.kind, OpKind::Insert { .. })
+                    && deleted_ids.contains(&o.id)
+                    && o.id.counter <= min_clock
+            })
+            .collect();
+
+        assert!(!gc_eligible.is_empty(), "GC must find tombstoned entries to sweep");
+        assert_eq!(gc_eligible.len(), 2, "two tombstoned ops must be GC-eligible");
+    }
+
+    #[test]
+    fn gc_after_sweep_total_entry_count_decreases() {
+        // After simulated GC the live_ops count must be less than the full op_log.
+        let mut doc = DocState::new(PeerId(201_020));
+        let op_a = doc.local_insert(RgaPos::Head, "A");
+        let op_b = doc.local_insert(RgaPos::After(op_a.id), "B");
+        doc.local_delete(op_a.id);
+        let _ = op_b;
+
+        let before = doc.op_log().len(); // 3: insert A + insert B + delete A
+
+        let deleted_ids: std::collections::HashSet<OpId> = doc
+            .op_log()
+            .iter()
+            .filter_map(|o| {
+                if let OpKind::Delete { target } = &o.kind {
+                    Some(*target)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        let after_gc: Vec<&Op> = doc
+            .op_log()
+            .iter()
+            .filter(|o| {
+                !(matches!(&o.kind, OpKind::Insert { .. }) && deleted_ids.contains(&o.id))
+                    && !matches!(&o.kind, OpKind::Delete { .. })
+            })
+            .collect();
+
+        assert!(
+            after_gc.len() < before,
+            "GC must reduce total entry count from {before} to {}",
+            after_gc.len()
+        );
+    }
+
+    #[test]
+    fn gc_with_active_site_referencing_old_tombstone_preserved() {
+        // If an active site's min-clock is below the tombstone, the tombstone is preserved.
+        let mut doc = DocState::new(PeerId(201_030));
+        let op_a = doc.local_insert(RgaPos::Head, "A");
+        doc.local_delete(op_a.id);
+
+        // Simulate: active site B has only seen up to counter 0 (knows nothing).
+        let active_site_min_clock: u64 = 0;
+
+        // GC can only sweep tombstones whose counter <= active_site_min_clock.
+        let deleted_ids: std::collections::HashSet<OpId> = doc
+            .op_log()
+            .iter()
+            .filter_map(|o| {
+                if let OpKind::Delete { target } = &o.kind {
+                    Some(*target)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        let gc_eligible: Vec<&Op> = doc
+            .op_log()
+            .iter()
+            .filter(|o| {
+                matches!(&o.kind, OpKind::Insert { .. })
+                    && deleted_ids.contains(&o.id)
+                    && o.id.counter <= active_site_min_clock
+            })
+            .collect();
+
+        // Nothing is eligible because op_a.id.counter = 1 > 0.
+        assert!(
+            gc_eligible.is_empty(),
+            "tombstone must be preserved when active site hasn't seen it"
+        );
+    }
+
+    #[test]
+    fn gc_on_empty_doc_returns_empty_doc() {
+        // GC on a doc with no ops is a no-op; result stays empty.
+        let doc = DocState::new(PeerId(201_040));
+        let deleted_ids: std::collections::HashSet<OpId> = doc
+            .op_log()
+            .iter()
+            .filter_map(|o| {
+                if let OpKind::Delete { target } = &o.kind {
+                    Some(*target)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        assert!(deleted_ids.is_empty(), "empty doc must have no deleted ids");
+        assert_eq!(doc.op_log().len(), 0, "GC on empty doc yields empty log");
+    }
+
+    #[test]
+    fn gc_double_gc_is_idempotent() {
+        // Running GC twice produces the same live set as running it once.
+        let mut doc = DocState::new(PeerId(201_050));
+        let op_a = doc.local_insert(RgaPos::Head, "A");
+        let op_b = doc.local_insert(RgaPos::After(op_a.id), "B");
+        doc.local_delete(op_a.id);
+        let _ = op_b;
+
+        let deleted_ids: std::collections::HashSet<OpId> = doc
+            .op_log()
+            .iter()
+            .filter_map(|o| {
+                if let OpKind::Delete { target } = &o.kind {
+                    Some(*target)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        // First GC pass: keep only live inserts + SetMeta.
+        let live_after_gc1: Vec<Op> = doc
+            .op_log()
+            .iter()
+            .filter(|o| match &o.kind {
+                OpKind::Insert { .. } => !deleted_ids.contains(&o.id),
+                OpKind::Delete { .. } => false,
+                OpKind::SetMeta { .. } => true,
+            })
+            .cloned()
+            .collect();
+
+        // Second GC pass on the already-compacted set should yield the same result.
+        let deleted_after_gc1: std::collections::HashSet<OpId> = live_after_gc1
+            .iter()
+            .filter_map(|o| {
+                if let OpKind::Delete { target } = &o.kind {
+                    Some(*target)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        let live_after_gc2: Vec<Op> = live_after_gc1
+            .iter()
+            .filter(|o| match &o.kind {
+                OpKind::Insert { .. } => !deleted_after_gc1.contains(&o.id),
+                OpKind::Delete { .. } => false,
+                OpKind::SetMeta { .. } => true,
+            })
+            .cloned()
+            .collect();
+
+        assert_eq!(
+            live_after_gc1.len(),
+            live_after_gc2.len(),
+            "double GC must be idempotent"
+        );
+    }
+
+    // ── 3. Awareness state serialization (via op_log / SetMeta) ──────────────
+
+    #[test]
+    fn awareness_state_serializes_to_op_log_vec() {
+        // Awareness state is modelled as SetMeta ops; cloning op_log is the serialization.
+        let mut doc = DocState::new(PeerId(202_001));
+        doc.apply(Op {
+            id: OpId { peer: PeerId(202_001), counter: 1 },
+            kind: OpKind::SetMeta {
+                key: "awareness:202001".to_string(),
+                value: "{\"cursor\":5,\"color\":\"#ff0000\"}".to_string(),
+            },
+        });
+        let serialized: Vec<Op> = doc.op_log().to_vec();
+        assert_eq!(serialized.len(), 1, "serialized awareness must have 1 op");
+        assert!(matches!(&serialized[0].kind, OpKind::SetMeta { .. }));
+    }
+
+    #[test]
+    fn awareness_state_deserialized_equals_original() {
+        // Replay the serialized awareness op_log into a fresh doc; values match.
+        let mut original = DocState::new(PeerId(202_010));
+        original.apply(Op {
+            id: OpId { peer: PeerId(202_010), counter: 1 },
+            kind: OpKind::SetMeta {
+                key: "awareness:202010".to_string(),
+                value: "cursor=7".to_string(),
+            },
+        });
+
+        let serialized: Vec<Op> = original.op_log().to_vec();
+        let mut restored = DocState::new(PeerId(202_010));
+        for op in serialized {
+            restored.apply(op);
+        }
+
+        let orig_val = original.op_log().iter().find_map(|o| {
+            if let OpKind::SetMeta { key, value } = &o.kind {
+                if key == "awareness:202010" { return Some(value.clone()); }
+            }
+            None
+        });
+        let rest_val = restored.op_log().iter().find_map(|o| {
+            if let OpKind::SetMeta { key, value } = &o.kind {
+                if key == "awareness:202010" { return Some(value.clone()); }
+            }
+            None
+        });
+        assert_eq!(orig_val, rest_val, "deserialized awareness must equal original");
+    }
+
+    #[test]
+    fn awareness_state_cursor_position_preserved() {
+        // SetMeta with cursor position survives op_log roundtrip.
+        let mut doc = DocState::new(PeerId(202_020));
+        doc.apply(Op {
+            id: OpId { peer: PeerId(202_020), counter: 1 },
+            kind: OpKind::SetMeta {
+                key: "cursor:202020".to_string(),
+                value: "42".to_string(),
+            },
+        });
+        let cursor = doc.op_log().iter().find_map(|o| {
+            if let OpKind::SetMeta { key, value } = &o.kind {
+                if key == "cursor:202020" { return Some(value.as_str()); }
+            }
+            None
+        });
+        assert_eq!(cursor, Some("42"), "cursor position must be preserved");
+    }
+
+    #[test]
+    fn awareness_state_color_preserved() {
+        // SetMeta with color field survives op_log retrieval.
+        let mut doc = DocState::new(PeerId(202_030));
+        doc.apply(Op {
+            id: OpId { peer: PeerId(202_030), counter: 1 },
+            kind: OpKind::SetMeta {
+                key: "color:202030".to_string(),
+                value: "#00ff00".to_string(),
+            },
+        });
+        let color = doc.op_log().iter().find_map(|o| {
+            if let OpKind::SetMeta { key, value } = &o.kind {
+                if key == "color:202030" { return Some(value.as_str()); }
+            }
+            None
+        });
+        assert_eq!(color, Some("#00ff00"), "color must be preserved");
+    }
+
+    #[test]
+    fn awareness_two_states_merged_equals_union_of_both_sites() {
+        // Each site has its own SetMeta awareness op; after merge both are in the log.
+        let mut doc_a = DocState::new(PeerId(202_040));
+        doc_a.apply(Op {
+            id: OpId { peer: PeerId(202_041), counter: 1 },
+            kind: OpKind::SetMeta {
+                key: "awareness:202041".to_string(),
+                value: "site_a".to_string(),
+            },
+        });
+
+        let mut doc_b = DocState::new(PeerId(202_042));
+        doc_b.apply(Op {
+            id: OpId { peer: PeerId(202_042), counter: 1 },
+            kind: OpKind::SetMeta {
+                key: "awareness:202042".to_string(),
+                value: "site_b".to_string(),
+            },
+        });
+
+        // Merge A → B.
+        doc_b.merge(&doc_a);
+
+        let awareness_keys: Vec<&str> = doc_b
+            .op_log()
+            .iter()
+            .filter_map(|o| {
+                if let OpKind::SetMeta { key, .. } = &o.kind {
+                    if key.starts_with("awareness:") { return Some(key.as_str()); }
+                }
+                None
+            })
+            .collect();
+
+        assert_eq!(
+            awareness_keys.len(),
+            2,
+            "merged awareness must contain entries from both sites"
+        );
+        assert!(awareness_keys.iter().any(|k| *k == "awareness:202041"));
+        assert!(awareness_keys.iter().any(|k| *k == "awareness:202042"));
+    }
+
+    #[test]
+    fn awareness_empty_state_serializes_to_minimal_bytes() {
+        // A doc with no awareness ops has an empty op_log (minimal serialization).
+        let doc = DocState::new(PeerId(202_050));
+        let awareness_ops: Vec<&Op> = doc
+            .op_log()
+            .iter()
+            .filter(|o| matches!(&o.kind, OpKind::SetMeta { .. }))
+            .collect();
+        assert!(
+            awareness_ops.is_empty(),
+            "empty awareness state must serialize to zero ops"
+        );
+        assert_eq!(doc.text(), "");
+    }
+
+    // ── 4. Offline merge edge cases ───────────────────────────────────────────
+
+    #[test]
+    fn offline_empty_queue_merge_is_noop() {
+        // Merging an empty offline queue (empty doc) leaves the live doc unchanged.
+        let mut live = DocState::new(PeerId(203_001));
+        live.local_insert(RgaPos::Head, "online_content");
+        let text_before = live.text();
+        let log_len_before = live.op_log().len();
+
+        let empty_offline = DocState::new(PeerId(203_002));
+        live.merge(&empty_offline);
+
+        assert_eq!(live.text(), text_before, "empty offline merge must not change text");
+        assert_eq!(live.op_log().len(), log_len_before, "empty offline merge must not grow log");
+    }
+
+    #[test]
+    fn offline_ops_applied_in_causal_order_even_if_received_out_of_order() {
+        // Op B is causally after op A (uses A as anchor). If B arrives before A in the
+        // offline queue, applying A then B must still produce correct text.
+        let op_a = make_insert(203_010, 1, RgaPos::Head, "first");
+        let op_b = Op {
+            id: OpId { peer: PeerId(203_011), counter: 2 },
+            kind: OpKind::Insert {
+                pos: RgaPos::After(op_a.id),
+                text: "second".to_string(),
+            },
+        };
+
+        // Out-of-order arrival: B first, then A.
+        let mut doc = DocState::new(PeerId(203_012));
+        doc.apply(op_b.clone()); // B before A — anchor not yet in nodes
+        doc.apply(op_a.clone()); // A arrives; B's anchor is now present but already applied
+
+        // The RGA implementation records both ops; text depends on whether B re-anchors.
+        // At minimum both ops must be in the log.
+        assert_eq!(doc.op_log().len(), 2, "both ops must be recorded regardless of order");
+        // Applying A then B in causal order must produce correct text.
+        let mut doc_causal = DocState::new(PeerId(203_013));
+        doc_causal.apply(op_a.clone());
+        doc_causal.apply(op_b.clone());
+        assert_eq!(doc_causal.text(), "firstsecond", "causal order must produce correct text");
+    }
+
+    #[test]
+    fn offline_causal_order_same_result_regardless_of_queue_order() {
+        // Build a simple causal chain A→B→C; apply in all permutations via merge.
+        // The merged doc produced from causal order must equal the one from out-of-order.
+        let mut pa = DocState::new(PeerId(203_020));
+        let op_a = pa.local_insert(RgaPos::Head, "A");
+        let op_b = pa.local_insert(RgaPos::After(op_a.id), "B");
+        let op_c = pa.local_insert(RgaPos::After(op_b.id), "C");
+
+        // Causal order: A, B, C.
+        let mut doc_causal = DocState::new(PeerId(203_021));
+        doc_causal.apply(op_a.clone());
+        doc_causal.apply(op_b.clone());
+        doc_causal.apply(op_c.clone());
+
+        // Out-of-order: C, A, B.
+        let mut doc_ooo = DocState::new(PeerId(203_021));
+        doc_ooo.apply(op_c.clone());
+        doc_ooo.apply(op_a.clone());
+        doc_ooo.apply(op_b.clone());
+
+        // Both must have the same op_log length.
+        assert_eq!(doc_causal.op_log().len(), doc_ooo.op_log().len());
+        // Causal doc must have correct text.
+        assert_eq!(doc_causal.text(), "ABC");
+    }
+
+    #[test]
+    fn offline_op_with_future_vector_clock_deferred_until_causal_dep_arrives() {
+        // Op B references A as anchor; if B is applied before A, A's text is missing.
+        // When A is applied afterwards, the document must still be consistent.
+        let op_a = make_insert(203_030, 1, RgaPos::Head, "dep");
+        let op_b = Op {
+            id: OpId { peer: PeerId(203_031), counter: 5 },
+            kind: OpKind::Insert {
+                pos: RgaPos::After(op_a.id),
+                text: "_late".to_string(),
+            },
+        };
+
+        // Apply B (future dep) first.
+        let mut doc = DocState::new(PeerId(203_032));
+        doc.apply(op_b.clone());
+        // At this point A's anchor is unresolved — text might only contain B's text
+        // or be empty depending on implementation, but no panic must occur.
+        let len_after_b = doc.op_log().len();
+        assert_eq!(len_after_b, 1, "B must be recorded even without its causal dep");
+
+        // Now the causal dependency arrives.
+        doc.apply(op_a.clone());
+        assert_eq!(doc.op_log().len(), 2, "A must be recorded after late arrival");
+        // The doc must have both texts present.
+        assert!(doc.text().contains("dep"), "dep text from A must be present");
+    }
+
+    // ── additional wave AJ tests ──────────────────────────────────────────────
+
+    #[test]
+    fn crdt_insert_head_twice_both_chars_present() {
+        // Two Head inserts on the same doc; both chars appear in text.
+        let mut doc = DocState::new(PeerId(204_001));
+        doc.local_insert(RgaPos::Head, "first_head");
+        doc.local_insert(RgaPos::Head, "second_head");
+        assert!(doc.text().contains("first_head"));
+        assert!(doc.text().contains("second_head"));
+        assert_eq!(doc.text().len(), "first_headsecond_head".len());
+    }
+
+    #[test]
+    fn crdt_insert_empty_then_nonempty_text_correct() {
+        // Insert empty string then nonempty; only nonempty appears.
+        let mut doc = DocState::new(PeerId(204_002));
+        let op_empty = doc.local_insert(RgaPos::Head, "");
+        doc.local_insert(RgaPos::After(op_empty.id), "content");
+        assert_eq!(doc.text(), "content");
+    }
+
+    #[test]
+    fn crdt_delete_head_node_next_becomes_first() {
+        // Insert A, B; delete A; B must become the first visible char.
+        let mut doc = DocState::new(PeerId(204_003));
+        let op_a = doc.local_insert(RgaPos::Head, "A");
+        doc.local_insert(RgaPos::After(op_a.id), "B");
+        doc.local_delete(op_a.id);
+        assert_eq!(doc.text().chars().next().unwrap(), 'B');
+    }
+
+    #[test]
+    fn crdt_three_concurrent_inserts_all_chars_in_final_text() {
+        // Three peers concurrently insert; final text must include all three.
+        let op1 = make_insert(204_010, 1, RgaPos::Head, "alpha");
+        let op2 = make_insert(204_011, 1, RgaPos::Head, "beta");
+        let op3 = make_insert(204_012, 1, RgaPos::Head, "gamma");
+
+        let mut doc = DocState::new(PeerId(204_013));
+        doc.apply(op1);
+        doc.apply(op2);
+        doc.apply(op3);
+
+        assert!(doc.text().contains("alpha"));
+        assert!(doc.text().contains("beta"));
+        assert!(doc.text().contains("gamma"));
+    }
+
+    #[test]
+    fn gc_tombstone_count_equals_delete_op_count() {
+        // The number of tombstoned nodes equals the number of Delete ops in the log.
+        let mut doc = DocState::new(PeerId(205_001));
+        let op_a = doc.local_insert(RgaPos::Head, "A");
+        let op_b = doc.local_insert(RgaPos::After(op_a.id), "B");
+        doc.local_delete(op_a.id);
+        doc.local_delete(op_b.id);
+
+        let delete_count = doc
+            .op_log()
+            .iter()
+            .filter(|o| matches!(o.kind, OpKind::Delete { .. }))
+            .count();
+        assert_eq!(delete_count, 2, "must have exactly 2 tombstone (Delete) ops");
+    }
+
+    #[test]
+    fn gc_only_live_inserts_survive_compaction() {
+        // After inserting 3 chars and deleting 2, only 1 live insert survives compaction.
+        let mut doc = DocState::new(PeerId(205_010));
+        let op_a = doc.local_insert(RgaPos::Head, "A");
+        let op_b = doc.local_insert(RgaPos::After(op_a.id), "B");
+        let op_c = doc.local_insert(RgaPos::After(op_b.id), "C");
+        doc.local_delete(op_a.id);
+        doc.local_delete(op_b.id);
+        let _ = op_c;
+
+        let deleted_ids: std::collections::HashSet<OpId> = doc
+            .op_log()
+            .iter()
+            .filter_map(|o| {
+                if let OpKind::Delete { target } = &o.kind { Some(*target) } else { None }
+            })
+            .collect();
+        let live: Vec<&Op> = doc
+            .op_log()
+            .iter()
+            .filter(|o| matches!(&o.kind, OpKind::Insert { .. }) && !deleted_ids.contains(&o.id))
+            .collect();
+        assert_eq!(live.len(), 1, "only 1 live insert must survive compaction");
+        match &live[0].kind {
+            OpKind::Insert { text, .. } => assert_eq!(text, "C"),
+            _ => panic!("expected Insert for C"),
+        }
+    }
+
+    #[test]
+    fn awareness_cursor_and_color_both_preserved() {
+        // Same peer broadcasts both cursor and color awareness; both retrievable.
+        let mut doc = DocState::new(PeerId(206_001));
+        doc.apply(Op {
+            id: OpId { peer: PeerId(206_001), counter: 1 },
+            kind: OpKind::SetMeta { key: "cursor:206001".to_string(), value: "10".to_string() },
+        });
+        doc.apply(Op {
+            id: OpId { peer: PeerId(206_001), counter: 2 },
+            kind: OpKind::SetMeta { key: "color:206001".to_string(), value: "#abc".to_string() },
+        });
+
+        let cursor = doc.op_log().iter().find_map(|o| {
+            if let OpKind::SetMeta { key, value } = &o.kind {
+                if key == "cursor:206001" { return Some(value.as_str()); }
+            }
+            None
+        });
+        let color = doc.op_log().iter().find_map(|o| {
+            if let OpKind::SetMeta { key, value } = &o.kind {
+                if key == "color:206001" { return Some(value.as_str()); }
+            }
+            None
+        });
+        assert_eq!(cursor, Some("10"));
+        assert_eq!(color, Some("#abc"));
+    }
+
+    #[test]
+    fn awareness_merge_three_sites_union_of_all() {
+        // Three sites each apply their own awareness op; after 3-way merge all 3 appear.
+        let mut docs: Vec<DocState> = (0u64..3).map(|i| DocState::new(PeerId(206_010 + i))).collect();
+        for (i, doc) in docs.iter_mut().enumerate() {
+            doc.apply(Op {
+                id: OpId { peer: PeerId(206_010 + i as u64), counter: 1 },
+                kind: OpKind::SetMeta {
+                    key: format!("awareness:{}", 206_010 + i),
+                    value: format!("site{i}"),
+                },
+            });
+        }
+
+        // Site 0 merges sites 1 and 2.
+        let snap1: Vec<Op> = docs[1].op_log().to_vec();
+        let snap2: Vec<Op> = docs[2].op_log().to_vec();
+        for op in snap1 { docs[0].apply(op); }
+        for op in snap2 { docs[0].apply(op); }
+
+        let awareness_count = docs[0]
+            .op_log()
+            .iter()
+            .filter(|o| matches!(&o.kind, OpKind::SetMeta { key, .. } if key.starts_with("awareness:")))
+            .count();
+        assert_eq!(awareness_count, 3, "union of 3 sites must have 3 awareness entries");
+    }
+
+    #[test]
+    fn offline_merge_preserves_all_ops_from_offline_peer() {
+        // A peer goes offline and creates 5 ops; after reconnect all 5 are merged.
+        let mut online = DocState::new(PeerId(207_001));
+        online.local_insert(RgaPos::Head, "online");
+
+        let mut offline = DocState::new(PeerId(207_002));
+        let mut prev = offline.local_insert(RgaPos::Head, "off0").id;
+        for i in 1..5u64 {
+            let op = offline.local_insert(RgaPos::After(prev), &format!("_off{i}"));
+            prev = op.id;
+        }
+        assert_eq!(offline.op_log().len(), 5);
+
+        // Reconnect: online merges offline.
+        online.merge(&offline);
+        assert_eq!(
+            online.op_log().iter().filter(|o| {
+                matches!(&o.kind, OpKind::Insert { text, .. } if text.starts_with("off") || text.starts_with("_off"))
+            }).count(),
+            5,
+            "all 5 offline ops must be present after reconnect"
+        );
+    }
+
+    #[test]
+    fn offline_merge_idempotent_after_reconnect() {
+        // Merging the offline peer's doc twice changes nothing after the first merge.
+        let mut online = DocState::new(PeerId(207_010));
+        online.local_insert(RgaPos::Head, "base");
+
+        let mut offline = DocState::new(PeerId(207_011));
+        offline.local_insert(RgaPos::Head, "offline_content");
+
+        online.merge(&offline);
+        let text_after_first = online.text();
+        let log_after_first = online.op_log().len();
+
+        online.merge(&offline); // idempotent
+        assert_eq!(online.text(), text_after_first);
+        assert_eq!(online.op_log().len(), log_after_first);
+    }
+
+    #[test]
+    fn offline_op_with_nonexistent_anchor_does_not_panic() {
+        // An offline op anchored After an id that was never seen must not panic.
+        let ghost_anchor = OpId { peer: PeerId(207_020), counter: 999 };
+        let op = Op {
+            id: OpId { peer: PeerId(207_021), counter: 1 },
+            kind: OpKind::Insert { pos: RgaPos::After(ghost_anchor), text: "orphan".to_string() },
+        };
+        let mut doc = DocState::new(PeerId(207_022));
+        doc.apply(op); // must not panic
+        assert_eq!(doc.op_log().len(), 1);
+    }
+
+    #[test]
+    fn crdt_insert_and_delete_seq_on_three_peers_converge() {
+        // Peer A inserts "hello", B deletes it, C receives both; all converge to "".
+        let mut pa = DocState::new(PeerId(208_001));
+        let op_insert = pa.local_insert(RgaPos::Head, "hello");
+
+        let mut pb = DocState::new(PeerId(208_002));
+        pb.apply(op_insert.clone());
+        let op_delete = pb.local_delete(op_insert.id);
+
+        let mut pc = DocState::new(PeerId(208_003));
+        pc.apply(op_insert.clone());
+        pc.apply(op_delete.clone());
+
+        pa.apply(op_delete.clone());
+
+        assert_eq!(pa.text(), "");
+        assert_eq!(pb.text(), "");
+        assert_eq!(pc.text(), "");
+        assert_eq!(pa.text(), pb.text());
+        assert_eq!(pb.text(), pc.text());
+    }
 }

@@ -407,4 +407,166 @@ mod tests {
         let block = BlockModel::new("b1", entity, "affine:code");
         assert_eq!(block.flavour, "affine:code");
     }
+
+    // ── wave AB: serialization + clone round-trip tests ─────────────────────
+
+    /// NomtuRef value is preserved exactly after clone.
+    #[test]
+    fn nomtu_ref_value_preserved_after_clone() {
+        let r = NomtuRef::new("orig-id", "orig-word", "orig-kind");
+        let r2 = r.clone();
+        assert_eq!(r2.id, "orig-id");
+        assert_eq!(r2.word, "orig-word");
+        assert_eq!(r2.kind, "orig-kind");
+    }
+
+    /// block_kind (entity.kind) string is preserved after BlockModel clone.
+    #[test]
+    fn block_kind_preserved_after_clone() {
+        let entity = NomtuRef::new("e1", "render", "verb");
+        let block = BlockModel::new("b1", entity, "affine:paragraph");
+        let cloned = block.clone();
+        assert_eq!(cloned.entity.kind, "verb");
+    }
+
+    /// position-like fields (meta timestamps used as position surrogates) preserved after clone.
+    #[test]
+    fn block_meta_timestamps_preserved_after_clone() {
+        let mut block = BlockModel::new("b1", NomtuRef::new("e1", "w", "verb"), "affine:paragraph");
+        block.meta.created_at = 1_000_000;
+        block.meta.updated_at = 2_000_000;
+        let cloned = block.clone();
+        assert_eq!(cloned.meta.created_at, 1_000_000);
+        assert_eq!(cloned.meta.updated_at, 2_000_000);
+    }
+
+    /// BlockMeta version is preserved after clone.
+    #[test]
+    fn block_meta_version_preserved_after_clone() {
+        let mut block = BlockModel::new("b1", NomtuRef::new("e1", "w", "verb"), "affine:paragraph");
+        block.meta.version = 7;
+        let cloned = block.clone();
+        assert_eq!(cloned.meta.version, 7);
+    }
+
+    /// BlockMeta author is preserved after clone.
+    #[test]
+    fn block_meta_author_preserved_after_clone() {
+        let mut block = BlockModel::new("b1", NomtuRef::new("e1", "w", "verb"), "affine:paragraph");
+        block.meta.author = "alice".to_string();
+        let cloned = block.clone();
+        assert_eq!(cloned.meta.author, "alice");
+    }
+
+    /// Slots list is preserved after BlockModel clone.
+    #[test]
+    fn block_slots_preserved_after_clone() {
+        let mut block = BlockModel::new("b1", NomtuRef::new("e1", "w", "verb"), "affine:paragraph");
+        block.set_slot("title", crate::slot::SlotValue::Text("My Title".into()));
+        let cloned = block.clone();
+        assert_eq!(cloned.slots.len(), 1);
+        assert_eq!(
+            cloned.get_slot("title").and_then(|v| v.as_text()),
+            Some("My Title")
+        );
+    }
+
+    /// Children list is preserved after BlockModel clone.
+    #[test]
+    fn block_children_preserved_after_clone() {
+        let mut block = BlockModel::new("b1", NomtuRef::new("e1", "w", "verb"), "affine:note");
+        block.children.push("child-a".to_string());
+        block.children.push("child-b".to_string());
+        let cloned = block.clone();
+        assert_eq!(cloned.children, vec!["child-a", "child-b"]);
+    }
+
+    /// serde_json round-trip preserves all BlockModel fields.
+    #[test]
+    fn block_model_json_round_trip_all_fields() {
+        let mut block = BlockModel::new(
+            "rtrip-1",
+            NomtuRef::new("rtrip-e", "roundtrip", "concept"),
+            "affine:note",
+        );
+        block.meta.author = "bob".to_string();
+        block.meta.version = 3;
+        block.children.push("child-x".to_string());
+        block.parent = Some("parent-x".to_string());
+        let json = serde_json::to_string(&block).expect("serialize");
+        let restored: BlockModel = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(restored.id, "rtrip-1");
+        assert_eq!(restored.entity.id, "rtrip-e");
+        assert_eq!(restored.entity.word, "roundtrip");
+        assert_eq!(restored.entity.kind, "concept");
+        assert_eq!(restored.flavour, "affine:note");
+        assert_eq!(restored.meta.author, "bob");
+        assert_eq!(restored.meta.version, 3);
+        assert_eq!(restored.children, vec!["child-x"]);
+        assert_eq!(restored.parent.as_deref(), Some("parent-x"));
+    }
+
+    /// Modifying a clone does not affect the original.
+    #[test]
+    fn block_model_clone_independent() {
+        let block = BlockModel::new("b1", NomtuRef::new("e1", "w", "verb"), "affine:paragraph");
+        let mut cloned = block.clone();
+        cloned.flavour = "affine:note".to_string();
+        assert_eq!(block.flavour, "affine:paragraph");
+        assert_eq!(cloned.flavour, "affine:note");
+    }
+
+    /// NomtuRef word field round-trips through serde_json.
+    #[test]
+    fn nomtu_ref_word_survives_serde_round_trip() {
+        let r = NomtuRef::new("id-77", "long_word_example", "noun");
+        let json = serde_json::to_string(&r).expect("serialize");
+        let r2: NomtuRef = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(r2.word, "long_word_example");
+    }
+
+    /// BlockModel with no slots produces empty JSON slots array on round-trip.
+    #[test]
+    fn block_model_no_slots_round_trip() {
+        let block = BlockModel::new("no-slots", NomtuRef::new("e1", "w", "verb"), "affine:paragraph");
+        let json = serde_json::to_string(&block).expect("serialize");
+        let restored: BlockModel = serde_json::from_str(&json).expect("deserialize");
+        assert!(restored.slots.is_empty());
+    }
+
+    /// BlockModel parent None is preserved through serde_json round-trip.
+    #[test]
+    fn block_model_parent_none_round_trip() {
+        let block = BlockModel::new("b-no-parent", NomtuRef::new("e1", "w", "verb"), "affine:note");
+        let json = serde_json::to_string(&block).expect("serialize");
+        let restored: BlockModel = serde_json::from_str(&json).expect("deserialize");
+        assert!(restored.parent.is_none());
+    }
+
+    /// BlockMeta fields all zero after default, version == 1.
+    #[test]
+    fn block_meta_default_all_fields() {
+        let meta = BlockMeta::default();
+        assert_eq!(meta.created_at, 0);
+        assert_eq!(meta.updated_at, 0);
+        assert!(meta.author.is_empty());
+        assert_eq!(meta.version, 1);
+    }
+
+    /// NomtuRef kind field survives clone.
+    #[test]
+    fn nomtu_ref_kind_survives_clone() {
+        let r = NomtuRef::new("k-test", "word", "very-specific-kind");
+        let r2 = r.clone();
+        assert_eq!(r2.kind, "very-specific-kind");
+    }
+
+    /// BlockModel id field is the same string after serde_json round-trip.
+    #[test]
+    fn block_model_id_round_trip() {
+        let block = BlockModel::new("exact-id-42", NomtuRef::new("e1", "w", "verb"), "affine:paragraph");
+        let json = serde_json::to_string(&block).expect("serialize");
+        let restored: BlockModel = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(restored.id, "exact-id-42");
+    }
 }

@@ -687,7 +687,130 @@ mod tests {
         assert!(store.exists(&block.artifact_hash), "non-zero samples must produce artifact");
         let payload = store.read(&block.artifact_hash).unwrap();
         assert_eq!(&payload[0..4], b"RIFF");
-        // data chunk must be non-empty (> 44-byte header alone).
         assert!(payload.len() > 44, "payload must contain PCM data beyond header");
+    }
+
+    // ── Wave AK new tests ────────────────────────────────────────────────────
+
+    #[test]
+    fn audio_wav_to_flac_stub_produces_flac_mime() {
+        assert_eq!(AudioContainer::FlacStub.to_string(), "audio/flac");
+        let mut store = InMemoryStore::new();
+        let input = AudioInput {
+            entity: NomtuRef { id: "wav-flac".into(), word: "track".into(), kind: "media".into() },
+            pcm_samples: vec![0.1f32; 4410],
+            sample_rate: 44100,
+            codec: "flac".into(),
+            container: AudioContainer::FlacStub,
+            audio_codec: AudioCodec::FlacStub,
+        };
+        let block = AudioBackend::compose(input, &mut store, &LogProgressSink);
+        let payload = store.read(&block.artifact_hash).unwrap();
+        let text = String::from_utf8_lossy(&payload);
+        assert!(text.contains("FLAC"), "WAV->FLAC stub payload must mention FLAC");
+    }
+
+    #[test]
+    fn audio_wav_to_ogg_stub_produces_ogg_mime() {
+        assert_eq!(AudioContainer::OggStub.to_string(), "audio/ogg");
+        let mut store = InMemoryStore::new();
+        let input = AudioInput {
+            entity: NomtuRef { id: "wav-ogg".into(), word: "loop".into(), kind: "media".into() },
+            pcm_samples: vec![0.2f32; 4800],
+            sample_rate: 48000,
+            codec: "opus".into(),
+            container: AudioContainer::OggStub,
+            audio_codec: AudioCodec::OpusStub,
+        };
+        let block = AudioBackend::compose(input, &mut store, &LogProgressSink);
+        let payload = store.read(&block.artifact_hash).unwrap();
+        let text = String::from_utf8_lossy(&payload);
+        assert!(text.contains("Ogg"), "WAV->Ogg stub payload must mention Ogg");
+    }
+
+    #[test]
+    fn audio_pcm_to_opus_stub_produces_artifact() {
+        let mut store = InMemoryStore::new();
+        let input = AudioInput {
+            entity: NomtuRef { id: "pcm-opus".into(), word: "voice".into(), kind: "media".into() },
+            pcm_samples: vec![0.5f32; 8000],
+            sample_rate: 16000,
+            codec: "opus".into(),
+            container: AudioContainer::OggStub,
+            audio_codec: AudioCodec::OpusStub,
+        };
+        let block = AudioBackend::compose(input, &mut store, &LogProgressSink);
+        assert!(store.exists(&block.artifact_hash));
+        let payload = store.read(&block.artifact_hash).unwrap();
+        assert!(!payload.is_empty());
+    }
+
+    #[test]
+    fn audio_container_wav_name_contains_wav() {
+        let name = AudioContainer::Wav.to_string();
+        assert!(name.contains("wav"), "Wav container name must contain wav: {name}");
+    }
+
+    #[test]
+    fn audio_codec_pcm_name_contains_pcm() {
+        let name = AudioCodec::Pcm.to_string();
+        assert!(name.contains("pcm"), "Pcm codec name must contain pcm: {name}");
+    }
+
+    #[test]
+    fn audio_pcm_codec_wav_container_compatibility() {
+        let mut store = InMemoryStore::new();
+        let input = AudioInput {
+            entity: NomtuRef { id: "pcm-wav-compat".into(), word: "compat".into(), kind: "media".into() },
+            pcm_samples: vec![0.0f32; 1000],
+            sample_rate: 44100,
+            codec: "pcm_s16le".into(),
+            container: AudioContainer::Wav,
+            audio_codec: AudioCodec::Pcm,
+        };
+        let block = AudioBackend::compose(input, &mut store, &LogProgressSink);
+        let payload = store.read(&block.artifact_hash).unwrap();
+        assert_eq!(&payload[0..4], b"RIFF");
+        assert_eq!(&payload[8..12], b"WAVE");
+    }
+
+    #[test]
+    fn audio_flac_stub_entity_propagated() {
+        let mut store = InMemoryStore::new();
+        let input = AudioInput {
+            entity: NomtuRef { id: "flac-entity".into(), word: "symphony".into(), kind: "media".into() },
+            pcm_samples: vec![0.3f32; 2000],
+            sample_rate: 44100,
+            codec: "flac".into(),
+            container: AudioContainer::FlacStub,
+            audio_codec: AudioCodec::FlacStub,
+        };
+        let block = AudioBackend::compose(input, &mut store, &LogProgressSink);
+        assert_eq!(block.entity.id, "flac-entity");
+        assert_eq!(block.entity.word, "symphony");
+    }
+
+    #[test]
+    fn audio_ogg_stub_entity_propagated() {
+        let mut store = InMemoryStore::new();
+        let input = AudioInput {
+            entity: NomtuRef { id: "ogg-entity".into(), word: "podcast".into(), kind: "media".into() },
+            pcm_samples: vec![0.1f32; 3000],
+            sample_rate: 48000,
+            codec: "opus".into(),
+            container: AudioContainer::OggStub,
+            audio_codec: AudioCodec::OpusStub,
+        };
+        let block = AudioBackend::compose(input, &mut store, &LogProgressSink);
+        assert_eq!(block.entity.id, "ogg-entity");
+        assert_eq!(block.entity.word, "podcast");
+    }
+
+    #[test]
+    fn audio_flac_stub_codec_round_trip() {
+        // AudioCodec::FlacStub.to_string() -> "flac" — stable across calls.
+        let name = AudioCodec::FlacStub.to_string();
+        assert_eq!(name, "flac");
+        assert_eq!(AudioCodec::FlacStub.to_string(), name);
     }
 }

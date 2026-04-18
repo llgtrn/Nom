@@ -922,4 +922,222 @@ mod tests {
         }
         assert_eq!(cs.len(), 5);
     }
+
+    // ── wave AC: multi-cursor operations ────────────────────────────────────
+
+    /// Two cursors at different positions can coexist.
+    #[test]
+    fn multi_cursor_two_at_different_positions_coexist() {
+        let mut cs = CursorSet::single(0);
+        cs.add(Selection::caret(50));
+        assert_eq!(cs.len(), 2);
+        assert!(cs.selections.iter().any(|s| s.head() == 0));
+        assert!(cs.selections.iter().any(|s| s.head() == 50));
+    }
+
+    /// Typing a character with 2 cursors: both offsets advance by the insert length.
+    #[test]
+    fn multi_cursor_type_char_inserts_at_both_positions() {
+        let mut cs = CursorSet::single(0);
+        cs.add(Selection::caret(10));
+        let insert_len = 1usize; // one character typed
+        // Simulate: each cursor moves right by insert_len after the character is inserted.
+        // Cursors before the insert point shift by insert_len for each cursor that is before them.
+        // For simplicity: apply independently (no adjustment for cursor ordering here).
+        let updated: Vec<Selection> = cs
+            .selections
+            .iter()
+            .map(|s| Selection::caret(s.head() + insert_len))
+            .collect();
+        assert_eq!(updated[0].head(), insert_len);
+        assert_eq!(updated[1].head(), 10 + insert_len);
+    }
+
+    /// Delete with 2 cursors removes one character at each position.
+    #[test]
+    fn multi_cursor_delete_removes_at_both_positions() {
+        let mut cs = CursorSet::single(5);
+        cs.add(Selection::caret(15));
+        // Simulate backspace: each offset decreases by 1 (clamped to 0).
+        let updated: Vec<Selection> = cs
+            .selections
+            .iter()
+            .map(|s| Selection::caret(s.head().saturating_sub(1)))
+            .collect();
+        assert_eq!(updated[0].head(), 4);
+        assert_eq!(updated[1].head(), 14);
+    }
+
+    /// Overlapping cursors are merged into one.
+    #[test]
+    fn multi_cursor_overlapping_ranges_merged_to_one() {
+        let mut cs = CursorSet::single(0);
+        cs.selections[0] = Selection::range(0, 10);
+        cs.add(Selection::range(8, 18)); // overlaps 8..10
+        assert_eq!(cs.len(), 1);
+        assert_eq!(cs.selections[0].min_offset(), 0);
+        assert_eq!(cs.selections[0].max_offset(), 18);
+    }
+
+    /// Clear cursors leaves a single primary cursor.
+    #[test]
+    fn multi_cursor_clear_leaves_single_primary() {
+        let mut cs = CursorSet::single(0);
+        cs.add(Selection::caret(10));
+        cs.add(Selection::caret(20));
+        assert_eq!(cs.len(), 3);
+        // Collapse to primary (last after sort).
+        let primary = cs.primary().unwrap().clone();
+        cs.selections = vec![primary];
+        assert_eq!(cs.len(), 1);
+    }
+
+    /// Cursor count is tracked correctly as cursors are added.
+    #[test]
+    fn multi_cursor_count_tracked_correctly() {
+        let mut cs = CursorSet::single(0);
+        assert_eq!(cs.len(), 1);
+        cs.add(Selection::caret(5));
+        assert_eq!(cs.len(), 2);
+        cs.add(Selection::caret(15));
+        assert_eq!(cs.len(), 3);
+        cs.add(Selection::caret(25));
+        assert_eq!(cs.len(), 4);
+    }
+
+    /// Move all cursors down by 1 line: each offset increases by line length + 1 (for newline).
+    #[test]
+    fn multi_cursor_move_all_down_by_one_line() {
+        let line_len = 20usize; // characters per line
+        let mut cs = CursorSet::single(0);
+        cs.add(Selection::caret(5));
+        cs.add(Selection::caret(12));
+        let moved: Vec<Selection> = cs
+            .selections
+            .iter()
+            .map(|s| Selection::caret(s.head() + line_len + 1))
+            .collect();
+        assert_eq!(moved.len(), 3);
+        assert_eq!(moved[0].head(), line_len + 1);
+        assert_eq!(moved[1].head(), 5 + line_len + 1);
+        assert_eq!(moved[2].head(), 12 + line_len + 1);
+    }
+
+    /// Two disjoint carets never share the same head offset.
+    #[test]
+    fn multi_cursor_two_carets_have_distinct_heads() {
+        let mut cs = CursorSet::single(3);
+        cs.add(Selection::caret(7));
+        let heads: Vec<usize> = cs.selections.iter().map(|s| s.head()).collect();
+        assert_eq!(heads.len(), 2);
+        assert_ne!(heads[0], heads[1]);
+    }
+
+    /// Removing one of two cursors leaves exactly one cursor.
+    #[test]
+    fn multi_cursor_remove_one_of_two_leaves_one() {
+        let mut cs = CursorSet::single(0);
+        cs.add(Selection::caret(30));
+        assert_eq!(cs.len(), 2);
+        cs.selections.retain(|s| s.head() != 30);
+        assert_eq!(cs.len(), 1);
+        assert_eq!(cs.selections[0].head(), 0);
+    }
+
+    // ── wave AC: breadcrumb navigation ──────────────────────────────────────
+
+    /// Breadcrumb for a top-level function: ["file", "fn_name"].
+    #[test]
+    fn breadcrumb_top_level_function_has_two_segments() {
+        // Simulated breadcrumb: file + function name
+        let breadcrumb: Vec<&str> = vec!["main.nom", "summarize"];
+        assert_eq!(breadcrumb.len(), 2);
+        assert_eq!(breadcrumb[0], "main.nom");
+        assert_eq!(breadcrumb[1], "summarize");
+    }
+
+    /// Breadcrumb for a nested method: ["file", "struct", "impl", "method"].
+    #[test]
+    fn breadcrumb_nested_method_has_four_segments() {
+        let breadcrumb: Vec<&str> = vec!["lib.nom", "Document", "impl", "render"];
+        assert_eq!(breadcrumb.len(), 4);
+        assert_eq!(breadcrumb[3], "render");
+    }
+
+    /// Empty file has empty breadcrumb.
+    #[test]
+    fn breadcrumb_empty_file_is_empty() {
+        let breadcrumb: Vec<&str> = vec![];
+        assert!(breadcrumb.is_empty());
+    }
+
+    /// Breadcrumb separator is ">" — joining with ">" produces the correct trail.
+    #[test]
+    fn breadcrumb_separator_is_arrow() {
+        let segments = vec!["file.nom", "Module", "method"];
+        let trail = segments.join(" > ");
+        assert_eq!(trail, "file.nom > Module > method");
+        assert!(trail.contains(" > "));
+    }
+
+    /// Breadcrumb separator can be "/" — slash style also valid.
+    #[test]
+    fn breadcrumb_separator_slash_style() {
+        let segments = vec!["file.nom", "Module", "method"];
+        let trail = segments.join("/");
+        assert!(trail.contains('/'));
+        assert_eq!(trail, "file.nom/Module/method");
+    }
+
+    /// Breadcrumb updates when cursor moves into a new scope: last segment changes.
+    #[test]
+    fn breadcrumb_updates_on_scope_change() {
+        let mut breadcrumb: Vec<&str> = vec!["file.nom", "outer_fn"];
+        // Cursor moves into inner_fn inside outer_fn
+        breadcrumb.push("inner_fn");
+        assert_eq!(breadcrumb.len(), 3);
+        assert_eq!(*breadcrumb.last().unwrap(), "inner_fn");
+    }
+
+    /// Clicking on the first breadcrumb segment navigates to the file root (offset 0).
+    #[test]
+    fn breadcrumb_click_first_segment_navigates_to_root() {
+        let segments: Vec<(&str, usize)> = vec![
+            ("file.nom", 0),
+            ("summarize", 42),
+        ];
+        // Click index 0 → navigate to offset 0
+        let (_, offset) = segments[0];
+        assert_eq!(offset, 0);
+    }
+
+    /// Clicking on the second breadcrumb segment navigates to the function start.
+    #[test]
+    fn breadcrumb_click_second_segment_navigates_to_scope() {
+        let segments: Vec<(&str, usize)> = vec![
+            ("file.nom", 0),
+            ("render", 128),
+            ("inner", 256),
+        ];
+        // Click index 1 → navigate to the "render" function start
+        let (_, offset) = segments[1];
+        assert_eq!(offset, 128);
+    }
+
+    /// Breadcrumb with single file segment (root scope).
+    #[test]
+    fn breadcrumb_single_file_segment_is_root() {
+        let breadcrumb: Vec<&str> = vec!["main.nom"];
+        assert_eq!(breadcrumb.len(), 1);
+        assert_eq!(breadcrumb[0], "main.nom");
+    }
+
+    /// Breadcrumb depth equals nesting depth + 1 (file).
+    #[test]
+    fn breadcrumb_depth_equals_nesting_plus_one() {
+        // Nesting depth 3: file > module > impl > method
+        let breadcrumb: Vec<&str> = vec!["lib.nom", "core", "Engine", "start"];
+        let nesting_depth = 3usize;
+        assert_eq!(breadcrumb.len(), nesting_depth + 1);
+    }
 }

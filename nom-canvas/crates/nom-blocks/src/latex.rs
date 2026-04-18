@@ -190,4 +190,38 @@ mod tests {
         let b = LatexBlock::new(entity("l17"), "{a{b}c}");
         assert!(b.validate_balanced_braces().is_ok());
     }
+
+    // ── wave AB: additional latex tests ─────────────────────────────────────
+
+    /// line_count of a single-line formula is 1.
+    #[test]
+    fn latex_line_count_single_line_is_1() {
+        let b = LatexBlock::new(entity("l-sl"), r"\frac{a}{b}");
+        assert_eq!(b.line_count(), 1);
+    }
+
+    /// Balanced braces in \frac{a}{b} pass validation.
+    #[test]
+    fn latex_frac_balanced_braces_pass() {
+        let b = LatexBlock::new(entity("l-frac"), r"\frac{a}{b}");
+        assert!(b.validate_balanced_braces().is_ok());
+    }
+
+    /// Unbalanced braces in {unclosed fail validation.
+    #[test]
+    fn latex_unclosed_brace_fails() {
+        let b = LatexBlock::new(entity("l-unc"), "{unclosed");
+        assert!(b.validate_balanced_braces().is_err());
+    }
+
+    /// Clone of LatexBlock preserves source, display_mode, and entity.
+    #[test]
+    fn latex_clone_preserves_all_fields() {
+        let mut b = LatexBlock::new(entity("l-clone"), r"\alpha + \beta");
+        b.set_display_mode(true);
+        let b2 = b.clone();
+        assert_eq!(b2.source, r"\alpha + \beta");
+        assert!(b2.display_mode);
+        assert_eq!(b2.entity.id, "l-clone");
+    }
 }

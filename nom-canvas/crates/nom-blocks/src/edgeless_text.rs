@@ -166,4 +166,31 @@ mod tests {
         let b = EdgelessTextBlock::new(entity("e14"), "hello");
         assert!(!b.is_empty());
     }
+
+    // ── wave AB: additional edgeless_text tests ──────────────────────────────
+
+    /// Rotating 90 degrees three times results in 270 degrees total.
+    #[test]
+    fn edgeless_rotate_90_three_times_is_270() {
+        let mut b = EdgelessTextBlock::new(entity("e-rot3"), "text");
+        b.rotate(90.0);
+        b.rotate(90.0);
+        b.rotate(90.0);
+        assert!((b.rotation_deg - 270.0).abs() < 0.001);
+    }
+
+    /// word_count of a 5-word sentence is 5.
+    #[test]
+    fn edgeless_word_count_five_words() {
+        let b = EdgelessTextBlock::new(entity("e-5w"), "the quick brown fox jumps");
+        assert_eq!(b.word_count(), 5);
+    }
+
+    /// Rotating 360 degrees results in 0 degrees (full wrap).
+    #[test]
+    fn edgeless_rotate_360_wraps_to_zero() {
+        let mut b = EdgelessTextBlock::new(entity("e-360"), "text");
+        b.rotate(360.0);
+        assert!(b.rotation_deg.abs() < 0.001);
+    }
 }
