@@ -1,6 +1,6 @@
 # Nom — Implementation Plan
 
-**Date:** 2026-04-19 | **HEAD:** `6b34390` | **Tests:** 10391 | **Workspace:** clean — Waves ABT→ABAN complete, Wave ABAO planned
+**Date:** 2026-04-19 | **HEAD:** `48340be` | **Tests:** 10436 | **Workspace:** dirty with unrelated archive/submodule changes — Waves ABT→ABAO complete
 **Canonical:** spec `docs/superpowers/specs/2026-04-17-nomcanvas-gpui-design.md` · state `nom_state_machine_report.md` · tasks `task.md` · entry `INIT.md`
 
 ## Current State (Wave AP complete, Iteration 61 audited, 2026-04-18)

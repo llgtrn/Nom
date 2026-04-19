@@ -1,8 +1,22 @@
 # Nom State Machine Report
 
-**Date:** 2026-04-19 | **HEAD:** `6b34390` | **Tests:** 10391 (canvas:10350 + compiler:41) | **Workspace:** clean — Waves AX→ABAN complete. 0 clippy warnings. A 72%, B 95%, C 95%, D 100%.
+**Date:** 2026-04-19 | **HEAD:** `48340be` | **Tests:** 10436 (canvas:10395 + compiler:41) | **Workspace:** dirty with unrelated archive/submodule changes — Waves AX→ABAO complete. 0 clippy warnings. A 72%, B 95%, C 95%, D 100%.
 
 ---
+
+## Iteration 82 — Wave ABAO COMPLETE (HEAD 48340be, 10436 tests)
+
+**Wave ABAO:** five crate-local coverage primitives landed: TableBlock in nom-blocks, ConflictResolver in nom-collab, TypeMap in nom-compiler-bridge, WorkflowComposer in nom-compose, and LayerStack in nom-gpui.
+
+| Module | Pattern Source | Crate | Tests |
+|--------|---------------|-------|-------|
+| table_block.rs | structured table/cell primitives with CSV serialization | nom-blocks | 9 |
+| conflict_resolver.rs | conflict severity, strategy, and resolution-rate accounting | nom-collab | 9 |
+| type_map.rs | type IDs, concrete filtering, builtin counting, name resolution | nom-compiler-bridge | 9 |
+| workflow_compose.rs | typed workflow node/edge graph composition | nom-compose | 9 |
+| layer_stack.rs | compositor layer ordering and top-visible lookup | nom-gpui | 9 |
+
+Targeted verification: 46 matching tests passed, 0 failed. The extra match was a pre-existing `scenario_workflow` test selected by the `workflow_compose` filter.
 
 ## Iteration 81 — Wave ABJ+ABK COMPLETE (HEAD 0880564, 9245 tests, 0 warnings)
 

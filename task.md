@@ -494,13 +494,20 @@
 - ✅ SearchIndex — SearchTokenKind+Token+Index+Query+Result (9 tests)
 - ✅ MemoGraph — MemoKeyKind+Key+Entry+Graph+Invalidator (9 tests)
 
-## Open Items — Wave ABAK targets (B-axis push to 95%+)
+## Wave ABAO — COMPLETE (2026-04-19, 10436 tests)
 
-- ❌ **nom-gpui scene_diff** — SceneDiff + ScenePatch + DiffRenderer + PatchApplier (GPUI scene diffing)
-- ❌ **nom-compose font_compose** — FontFamily + FontWeight + FontSpec + FontComposer (typography composition)
-- ❌ **nom-canvas-core motion_path** — MotionKeyframe + MotionPath + PathInterpolator + MotionAnimator (motion along path)
-- ❌ **nom-editor format_range** — FormatKind + FormatRange + FormatMap + FormatApplier (text formatting ranges)
-- ❌ **nom-ux skill_map** — SkillCategory + SkillEntry + SkillMap + SkillRecommender (UX skill mapping)
+- ✅ TableBlock — CellAlign+TableCell+TableRow+TableBlock+TableSerializer (9 tests)
+- ✅ ConflictResolver — ConflictKind+ConflictSide+Conflict+ResolutionStrategy+ConflictResolver (9 tests)
+- ✅ TypeMap — TypeKind+TypeId+TypeInfo+TypeMap+TypeResolver (9 tests)
+- ✅ WorkflowComposer — NodeType+WorkflowNode+WorkflowEdge+WorkflowGraph+WorkflowComposer (9 tests)
+- ✅ LayerStack — LayerKind+LayerId+Layer+LayerStack+LayerCompositor (9 tests)
+- ✅ Results doc — docs/superpowers/specs/2026-04-19-wave-abao-results.md
+
+## Open Items — Wave ABAP targets
+
+- ❌ Bootstrap fixpoint proof
+- ❌ Real LLVM parser/resolver/codegen.nom path
+- ✅ Full `nom-canvas` workspace verification after ABAO tracking update (`cargo test --workspace`)
 
 ---
 

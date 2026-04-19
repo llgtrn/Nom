@@ -54,6 +54,15 @@ cargo test -p nom-gpui layer_stack
 
 Total verification observed: 46 matching tests passed, 0 failed.
 
+Follow-up verification after the ABAO implementation commit:
+
+```text
+cargo test --workspace
+passed
+```
+
+The workspace pass still emits pre-existing warnings in `nom-canvas-core`, `nom-theme`, and `nom-compose`; no test failures were observed.
+
 ## Design Trace
 
 Wave ABAO keeps the design intent from the active specs:
@@ -67,4 +76,3 @@ Wave ABAO keeps the design intent from the active specs:
 ## Follow-Up
 
 The code slice itself remains uncommitted in this workspace. This document intentionally commits only the collected ABAO results so the implementation can be reviewed or committed independently.
-
