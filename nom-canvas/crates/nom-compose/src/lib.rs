@@ -28,6 +28,7 @@ pub mod streaming;
 pub mod task_queue;
 pub mod timeline;
 pub mod vendor_trait;
+pub mod workflow_compose;
 
 pub use backends::{
     ad_creative::{AdCreativeSpec, AdFormat},
@@ -126,6 +127,7 @@ pub mod audio_encode;
 pub use audio_encode::{AudioBuffer, AudioEncoder, AudioFormat, RodioBackend};
 pub mod n8n_workflow;
 pub use n8n_workflow::{NodeStatus, WorkflowGraph, WorkflowNode, WorkflowRunner};
+pub use workflow_compose::{NodeType as WorkflowNodeType, WorkflowEdge, WorkflowComposer, WorkflowGraph as WorkflowGraphCompose, WorkflowNode as WorkflowNodeCompose};
 pub mod pdf_compose;
 pub use pdf_compose::{PageSize, PdfComposer, PdfDocument, PdfExportOptions, PdfPage};
 pub mod video_encode;

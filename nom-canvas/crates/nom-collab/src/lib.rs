@@ -7,6 +7,7 @@ pub mod presence;
 pub mod presence_map;
 pub mod session;
 pub mod sync_protocol;
+pub mod conflict_resolver;
 pub use sync_protocol::{SyncMessageKind, SyncMessage, SyncState, SyncSession, SyncProtocol};
 pub use merge::{MergeRecord, MergeStrategy};
 pub use presence::{CursorPosition, PresenceMap, PresenceStatus};
@@ -17,6 +18,7 @@ pub use presence_map::PresenceBroadcaster;
 pub use presence_map::PeerId as CollabPeerId;
 pub use presence_map::PresenceStatus as CollabPresenceStatus;
 pub use presence_map::PresenceMap as CollabPresenceMap;
+pub use conflict_resolver::{ConflictKind, ConflictSide, Conflict, ResolutionStrategy, ConflictResolver};
 
 /// Unique identifier for a peer in the collaborative session.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

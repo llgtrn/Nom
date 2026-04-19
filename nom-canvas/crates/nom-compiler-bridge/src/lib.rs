@@ -27,8 +27,10 @@ pub use repo_inspector::{RepoFile, RepoInspector, RepoLanguage, RepoProfile};
 pub mod ui_tier;
 pub mod lsp_position_bridge;
 pub mod lsp_diagnostics;
+pub mod type_map;
 
 pub use adapters::lsp::CompilerLspProvider;
+pub use type_map::{TypeKind, TypeId, TypeInfo, TypeMap, TypeResolver};
 pub use background_tier::BackgroundTierOps;
 pub use kind_query::{list_kinds_stub, KindQueryClient, KindResult};
 pub use promote_kind::KindPromotion;

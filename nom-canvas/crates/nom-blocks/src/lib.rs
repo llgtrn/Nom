@@ -54,6 +54,7 @@ pub mod slot;
 /// In-memory stub implementation of [`DictReader`] for tests and Wave B.
 pub mod stub_dict;
 pub mod table;
+pub mod table_block;
 pub mod validators;
 pub mod workspace;
 /// WorkspaceSchema, SchemaVersion, SchemaMigration, and MigrationPlan for workspace versioning.
@@ -98,6 +99,7 @@ pub use block_tree::{BlockNodeKind, BlockNode, BlockTree, BlockTreeWalker, TreeD
 #[allow(missing_docs)]
 pub mod rich_text;
 pub use rich_text::{MarkupTag, RichSpan, RichParagraph, RichTextBlock, RichTextSerializer};
+pub use table_block::{CellAlign, TableCell, TableRow as BlockTableRow, TableBlock, TableSerializer};
 
 #[cfg(test)]
 mod integration_tests {
@@ -117,7 +119,7 @@ mod integration_tests {
     }
 
     /// Creates a Connector via new_with_validation() using StubDictReader,
-    /// verifies can_wire returns true for known ports ("output" → "input").
+    /// verifies can_wire returns true for known ports ("output" -> "input").
     #[test]
     fn block_with_stub_dict_can_wire_validated() {
         let dict = StubDictReader::new();
@@ -150,7 +152,7 @@ mod integration_tests {
         };
         assert!(
             !block.entity.id.is_empty(),
-            "entity.id must be non-empty — NomtuRef is non-optional on blocks"
+            "entity.id must be non-empty - NomtuRef is non-optional on blocks"
         );
         assert_eq!(block.entity.id, "heading-entity-01");
     }
@@ -159,8 +161,6 @@ mod integration_tests {
     /// verifies clause_shapes has at least one entry.
     #[test]
     fn block_schema_validates_required_fields() {
-        // BlockSchema is represented by the shapes returned by the DictReader for a kind.
-        // We build a dict seeded with heading-specific shapes to confirm at least one entry.
         let dict = StubDictReader::new().with_shapes(
             "heading",
             vec![make_shape("text", "prose"), make_shape("level", "integer")],
@@ -170,7 +170,6 @@ mod integration_tests {
             !clause_shapes.is_empty(),
             "BlockSchema (clause_shapes) for 'heading' must have at least one entry"
         );
-        // Verify the required shape is present
         assert!(
             clause_shapes.iter().any(|s| s.name == "text"),
             "heading BlockSchema must contain a 'text' clause shape"

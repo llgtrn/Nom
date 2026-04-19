@@ -6,6 +6,7 @@ pub mod render_batch;
 pub mod element;
 pub mod event;
 pub mod focus;
+pub mod layer_stack;
 pub mod layout;
 pub mod pixel_diff;
 pub mod platform;
@@ -26,6 +27,7 @@ pub use scene_diff::{DiffKind, PatchApplier, SceneDiff, SceneNodeId, ScenePatch}
 pub use text_layout::{GlyphRun, TextAlign, TextLayoutEngine, TextStyle};
 pub use texture_atlas::{AtlasAllocator, AtlasRegion, AtlasShelf, TextureAtlas};
 pub use types::*;
+pub use layer_stack::{LayerKind, LayerId, Layer, LayerStack, LayerCompositor};
 
 #[cfg(test)]
 mod tests {
