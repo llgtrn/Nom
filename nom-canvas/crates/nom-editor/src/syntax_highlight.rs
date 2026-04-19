@@ -102,7 +102,7 @@ impl SyntaxHighlighter {
         tokens
             .iter()
             .filter(|t| !t.kind.is_trivia())
-            .map(|t| Self::token_to_range(t))
+            .map(Self::token_to_range)
             .collect()
     }
 }

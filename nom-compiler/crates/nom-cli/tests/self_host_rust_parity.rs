@@ -208,3 +208,11 @@ fn ast_decl_kind_tags_match_rust_consts() {
     assert_returns_literal(&src, tags::PRIM_TYPE_TEXT, "ast.nom::prim_type_text");
     assert_returns_literal(&src, tags::PRIM_TYPE_BOOL, "ast.nom::prim_type_bool");
 }
+
+#[test]
+fn typechecker_primitive_tags_match_rust_consts() {
+    let src = self_host_file("typechecker.nom");
+    assert_returns_literal(&src, tags::PRIM_TYPE_INTEGER, "typechecker.nom::prim_integer");
+    assert_returns_literal(&src, tags::PRIM_TYPE_TEXT, "typechecker.nom::prim_text");
+    assert_returns_literal(&src, tags::PRIM_TYPE_BOOL, "typechecker.nom::prim_bool");
+}

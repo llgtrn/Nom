@@ -1,4 +1,6 @@
 use crate::event::*;
+use crate::renderer::Renderer;
+use crate::scene::Scene;
 use crate::types::*;
 use std::sync::Arc;
 
@@ -73,6 +75,9 @@ pub trait ApplicationHandler {
     fn resumed(&mut self, window: &mut Window);
     fn window_event(&mut self, window: &mut Window, event: WindowEvent);
     fn about_to_wait(&mut self, window: &mut Window);
+    /// Build the scene for the current frame. Called during `RedrawRequested`.
+    /// Default implementation does nothing.
+    fn draw(&mut self, _window: &mut Window, _scene: &mut Scene) {}
 }
 
 /// GPU-side window configuration — surface dimensions, MSAA, and vsync.
@@ -141,6 +146,8 @@ pub struct Window {
     pub wgpu_queue: Option<Arc<wgpu::Queue>>,
     /// Negotiated surface format.
     pub surface_format: Option<wgpu::TextureFormat>,
+    /// GPU renderer — present only after GPU init.
+    pub renderer: Option<Renderer>,
 }
 
 impl Window {
@@ -163,6 +170,7 @@ impl Window {
             wgpu_device: None,
             wgpu_queue: None,
             surface_format: None,
+            renderer: None,
         }
     }
 
@@ -288,11 +296,15 @@ fn run_native_application<H: ApplicationHandler + 'static>(options: WindowOption
     };
     surface.configure(&device, &config);
 
+    let device_arc = Arc::new(device);
+    let queue_arc = Arc::new(queue);
     window.wgpu_surface = Some(surface);
-    window.wgpu_device = Some(Arc::new(device));
-    window.wgpu_queue = Some(Arc::new(queue));
+    window.wgpu_device = Some(Arc::clone(&device_arc));
+    window.wgpu_queue = Some(Arc::clone(&queue_arc));
     window.surface_format = Some(surface_format);
     window.gpu_ready = true;
+    let renderer = Renderer::with_gpu(device_arc, queue_arc, surface_format);
+    window.renderer = Some(renderer);
 
     handler.resumed(&mut window);
 
@@ -326,6 +338,35 @@ fn run_native_application<H: ApplicationHandler + 'static>(options: WindowOption
                 }
                 WinitWindowEvent::RedrawRequested => {
                     let _ = window.take_frame_pending();
+                    let mut scene = Scene::new();
+                    handler.draw(&mut window, &mut scene);
+                    if scene.is_empty() {
+                        scene.push_quad(crate::scene::Quad {
+                            bounds: crate::types::Bounds {
+                                origin: crate::types::Point {
+                                    x: crate::types::Pixels(50.0),
+                                    y: crate::types::Pixels(50.0),
+                                },
+                                size: crate::types::Size {
+                                    width: crate::types::Pixels(100.0),
+                                    height: crate::types::Pixels(100.0),
+                                },
+                            },
+                            background: Some(crate::types::Hsla::new(0.0, 1.0, 0.5, 1.0)),
+                            ..Default::default()
+                        });
+                    }
+                    if let Some(ref mut renderer) = window.renderer {
+                        if let (Some(surface), Some(device), Some(queue)) = (
+                            window.wgpu_surface.as_ref(),
+                            window.wgpu_device.as_ref(),
+                            window.wgpu_queue.as_ref(),
+                        ) {
+                            let _ = renderer.begin_frame();
+                            renderer.draw(&mut scene);
+                            let _ = renderer.end_frame_render(surface, device, queue);
+                        }
+                    }
                 }
                 _ => {}
             },

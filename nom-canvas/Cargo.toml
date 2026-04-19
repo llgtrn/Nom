@@ -9,16 +9,14 @@ members = [
   "crates/nom-compiler-bridge",
   "crates/nom-panels",
   "crates/nom-compose",
-  "crates/nom-graph",
+  "crates/nom-canvas-graph",
   "crates/nom-memoize",
   "crates/nom-telemetry",
   "crates/nom-collab",
   "crates/nom-lint",
-  "crates/nom-cli",
-  "crates/nom-intent",
+  "crates/nom-canvas-cli",
+  "crates/nom-canvas-intent",
   "crates/nom-canvas-tests",
-  "crates/nom-ux",
-  "crates/nom-media",
 ]
 
 [workspace.dependencies]

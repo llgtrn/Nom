@@ -1,0 +1,87 @@
+# Nom Self-Host: Resolver (bridge phase between parser and verifier/planner)
+#
+# This file is the Nom-in-Nom mirror of the module/name-resolution pass.
+# The Rust reference lives primarily in:
+#   - nom-compiler/crates/nom-resolver/src/lib.rs
+#   - nom-compiler/crates/nom-resolver/src/v2.rs
+#
+# Status: SCAFFOLD. The goal of this stage is to pin the surface area
+# for import resolution, local binding discovery, and unresolved-symbol
+# reporting so the parser/verifier/bootstrap work can converge on a
+# shared hand-off type.
+
+nom self_host_resolver
+
+struct ModuleRef {
+  path: text
+  alias: text
+}
+
+struct ResolvedBinding {
+  name: text
+  target_path: text
+  binding_kind: text
+  is_resolved: bool
+}
+
+struct ResolvedProgram {
+  module_name: text
+  import_count: integer
+  binding_count: integer
+  unresolved_count: integer
+}
+
+# Entry point. Real implementation does:
+#   1. Walk `use` / import declarations and load reachable modules.
+#   2. Build lexical scopes for parameters, lets, and top-level decls.
+#   3. Resolve each identifier to a local binding or imported symbol.
+#   4. Record unresolved references for verifier diagnostics.
+fn nom_resolve(module_name: text, imports: list[ModuleRef]) -> ResolvedProgram {
+  let import_total = import_count(imports)
+  return ResolvedProgram {
+    module_name: module_name,
+    import_count: import_total,
+    # Bridge-phase approximation: every import creates one reachable
+    # binding shell, but none are unresolved until identifier-walk
+    # logic actually records a miss.
+    binding_count: import_total,
+    unresolved_count: 0,
+  }
+}
+
+# Empty sentinel used by downstream structural tests and bootstrap glue.
+fn empty_program() -> ResolvedProgram {
+  return ResolvedProgram {
+    module_name: "",
+    import_count: 0,
+    binding_count: 0,
+    unresolved_count: 0,
+  }
+}
+
+# Canonical binding-kind tags. The resolver eventually emits only these
+# strings until a typed enum becomes representable in the self-host subset.
+fn binding_kind_local() -> text {
+  return "local"
+}
+
+fn binding_kind_import() -> text {
+  return "import"
+}
+
+fn binding_kind_unresolved() -> text {
+  return "unresolved"
+}
+
+# Helper: true iff the binding carries a concrete target.
+fn binding_is_ready(binding: ResolvedBinding) -> bool {
+  if binding.binding_kind == binding_kind_unresolved() {
+    return false
+  }
+  return binding.is_resolved
+}
+
+# Count helper while the self-host subset still lacks richer list folds.
+fn import_count(imports: list[ModuleRef]) -> integer {
+  return imports.length
+}

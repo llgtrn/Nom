@@ -79,7 +79,9 @@ mod tests {
             matches!(result.tier_used, ComposeTier::AiLeading),
             "unregistered kind must use AiLeading tier"
         );
-        assert_eq!(result.artifact, "artifact:unknown_kind");
+        // With empty dispatcher, the chain falls through to LLM → Validate,
+        // which returns the LLM response (StubLlmFn returns "ai-glue-code").
+        assert_eq!(result.artifact, "ai-glue-code");
     }
 
     #[test]

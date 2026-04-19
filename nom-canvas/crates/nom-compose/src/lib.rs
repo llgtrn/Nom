@@ -29,6 +29,22 @@ pub mod task_queue;
 pub mod timeline;
 pub mod vendor_trait;
 pub mod workflow_compose;
+pub mod chain;
+pub mod crew;
+pub mod harness;
+pub mod memory;
+pub mod engine;
+pub mod storage;
+#[cfg(feature = "polars")]
+pub mod data_query;
+pub mod media_pipeline;
+pub mod durable;
+pub mod voice;
+pub mod wasm;
+pub use media_pipeline::{MediaPipeline, MediaArtifact};
+pub use durable::{HistoryEvent, HistoryStore, Workflow, Activity, WorkflowExecutor};
+pub use voice::{Speaker, SynthesisParams, TtsBackend, StubTtsBackend, HttpTtsBackend, VoiceError};
+pub use wasm::{WasmModule, WasmSandbox, WasmValue, HostFunc, WasmError};
 
 pub use backends::{
     ad_creative::{AdCreativeSpec, AdFormat},
@@ -99,15 +115,15 @@ pub use pipeline::{ComponentOutput, ComponentPipeline, DocumentRetriever, TextSp
 pub mod video;
 pub use video::{FrameCapture, PipelineStage, TwoStagePipeline};
 pub mod video_capture;
-pub use video_capture::{FfmpegConfig, FfmpegEncoder, FrameCapture as VideoCaptureFrame, VideoCapturePipeline};
+pub use video_capture::{ExternalEncoder, VideoEncoderConfig, FrameCapture as VideoCaptureFrame, VideoCapturePipeline};
 pub mod reverse;
 pub use reverse::{DetectedComponent, ReverseInput, ReverseOrchestrator, ReverseResult};
 pub mod inspector;
 pub use inspector::{InspectFinding, InspectReport, InspectTarget, NomInspector};
-pub mod sherlock;
-pub use sherlock::{SherlockAdapter, SherlockResult, SherlockSite, SherlockStatus};
+pub mod osint_adapter;
+pub use osint_adapter::{OsintAdapter, OsintResult, OsintSite, OsintStatus};
 pub mod segmentation;
-pub mod sherlock_native;
+pub mod osint_native;
 pub mod vision;
 pub mod layout;
 pub mod vision_orchestrator;
@@ -125,13 +141,21 @@ pub mod image_pipeline;
 pub use image_pipeline::{ImageStageKind, ImageStage, ImagePipeline, PipelineResult as ImagePipelineResult, ImagePipelineRunner};
 pub mod audio_encode;
 pub use audio_encode::{AudioBuffer, AudioEncoder, AudioFormat, RodioBackend};
-pub mod n8n_workflow;
-pub use n8n_workflow::{NodeStatus, WorkflowGraph, WorkflowNode, WorkflowRunner};
+pub mod workflow_runner;
+pub use workflow_runner::{NodeStatus, WorkflowGraph, WorkflowNode, WorkflowRunner};
 pub use workflow_compose::{NodeType as WorkflowNodeType, WorkflowEdge, WorkflowComposer, WorkflowGraph as WorkflowGraphCompose, WorkflowNode as WorkflowNodeCompose};
 pub mod pdf_compose;
 pub use pdf_compose::{PageSize, PdfComposer, PdfDocument, PdfExportOptions, PdfPage};
 pub mod video_encode;
-pub use video_encode::{GpuVideoEncoder, VideoCodec as VideoEncodeCodec, VideoEncoder, VideoFrame};
+pub use video_encode::{
+    FfmpegArgsBuilder, FfmpegPipeEncoder, FfmpegProgress, FfmpegProgressParser,
+    GpuVideoEncoder, VideoCodec as VideoEncodeCodec, VideoEncoder, VideoFrame,
+};
+pub mod ollama;
+pub use ollama::{
+    ChatRequest, ChatResponse, GenerateRequest, GenerateResponse, OllamaClient, OllamaError,
+    OllamaMessage, PullProgress, PullRequest,
+};
 pub mod web_compose;
 pub use web_compose::{ComponentKind, WebAppSpec, WebComponent, WebComposer};
 pub mod ad_creative;

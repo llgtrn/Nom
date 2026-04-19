@@ -1,0 +1,103 @@
+# Nom Self-Host: Typechecker (bridge phase between resolver and verifier)
+#
+# This file is the Nom-in-Nom mirror of the type-checking pass. The Rust
+# references live primarily in:
+#   - nom-compiler/crates/nom-concept/src/type_check.rs
+#   - nom-compiler/crates/nom-verifier/src/lib.rs
+#
+# Status: SCAFFOLD. This pins the self-host hand-off shape for typed
+# bindings and accumulated type errors so later bootstrap work can grow
+# from a stable contract instead of ad-hoc text comments.
+
+nom self_host_typechecker
+
+struct TypedBinding {
+  name: text
+  inferred_type: text
+  is_mutable: bool
+}
+
+struct TypeError {
+  message: text
+  binding_name: text
+}
+
+struct TypedProgram {
+  binding_count: integer
+  error_count: integer
+  entry_type: text
+}
+
+# Entry point. Real implementation does:
+#   1. Seed the environment with resolver output and builtin types.
+#   2. Infer expression/result types for each declaration.
+#   3. Unify declared and inferred types.
+#   4. Accumulate mismatch diagnostics for verifier consumption.
+fn nom_typecheck(binding_count: integer) -> TypedProgram {
+  return TypedProgram {
+    binding_count: binding_count,
+    error_count: 0,
+    entry_type: default_entry_type(),
+  }
+}
+
+fn empty_typed_program() -> TypedProgram {
+  return TypedProgram {
+    binding_count: 0,
+    error_count: 0,
+    entry_type: default_entry_type(),
+  }
+}
+
+fn default_entry_type() -> text {
+  return prim_integer()
+}
+
+fn has_type_errors(program: TypedProgram) -> bool {
+  return program.error_count != 0
+}
+
+# Canonical primitive strings. Mirror nom_types::self_host_tags so the
+# self-host AST/codegen/typechecking vocabulary stays aligned.
+fn prim_integer() -> text {
+  return "integer"
+}
+
+fn prim_text() -> text {
+  return "text"
+}
+
+fn prim_bool() -> text {
+  return "bool"
+}
+
+fn is_supported_primitive(name: text) -> bool {
+  if name == prim_integer() {
+    return true
+  }
+  if name == prim_text() {
+    return true
+  }
+  if name == prim_bool() {
+    return true
+  }
+  return false
+}
+
+# Compatibility check for the currently supported primitive domain.
+fn types_compatible(left: text, right: text) -> bool {
+  if !is_supported_primitive(left) {
+    return false
+  }
+  if !is_supported_primitive(right) {
+    return false
+  }
+  if left == right {
+    return true
+  }
+  return false
+}
+
+fn mismatch_error() -> text {
+  return "type mismatch"
+}

@@ -110,6 +110,237 @@ impl GpuVideoEncoder {
     }
 }
 
+use std::io::{BufRead, BufReader, Write};
+use std::process::{Child, ChildStdin, Command, Stdio};
+use std::thread::{self, JoinHandle};
+
+/// Builder for constructing FFmpeg command-line arguments.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FfmpegArgsBuilder {
+    fps: u32,
+    width: u32,
+    height: u32,
+    codec: VideoCodec,
+    output_path: String,
+    pixel_format: String,
+    input_format: String,
+    extra_args: Vec<String>,
+}
+
+impl FfmpegArgsBuilder {
+    /// Start a new builder targeting `output_path`.
+    pub fn new(output_path: impl Into<String>) -> Self {
+        Self {
+            fps: 30,
+            width: 1920,
+            height: 1080,
+            codec: VideoCodec::H264,
+            output_path: output_path.into(),
+            pixel_format: "yuv420p".into(),
+            input_format: "mjpeg".into(),
+            extra_args: Vec::new(),
+        }
+    }
+
+    /// Set output frame rate.
+    pub fn fps(mut self, fps: u32) -> Self {
+        self.fps = fps;
+        self
+    }
+
+    /// Set frame resolution.
+    pub fn resolution(mut self, width: u32, height: u32) -> Self {
+        self.width = width;
+        self.height = height;
+        self
+    }
+
+    /// Set video codec.
+    pub fn codec(mut self, codec: VideoCodec) -> Self {
+        self.codec = codec;
+        self
+    }
+
+    /// Set output pixel format (e.g. `"yuv420p"`).
+    pub fn pixel_format(mut self, fmt: impl Into<String>) -> Self {
+        self.pixel_format = fmt.into();
+        self
+    }
+
+    /// Set the expected input image format for `image2pipe`
+    /// (e.g. `"mjpeg"` or `"png"`).
+    pub fn input_format(mut self, fmt: impl Into<String>) -> Self {
+        self.input_format = fmt.into();
+        self
+    }
+
+    /// Append an arbitrary flag or value.
+    pub fn arg(mut self, arg: impl Into<String>) -> Self {
+        self.extra_args.push(arg.into());
+        self
+    }
+
+    /// Build the full argument vector for `ffmpeg`.
+    ///
+    /// The returned list does **not** include the `"ffmpeg"` binary name.
+    pub fn build(self) -> Vec<String> {
+        let mut args = vec![
+            "-y".to_string(),
+            "-f".to_string(),
+            "image2pipe".to_string(),
+            "-vcodec".to_string(),
+            self.input_format.clone(),
+            "-r".to_string(),
+            self.fps.to_string(),
+            "-s".to_string(),
+            format!("{}x{}", self.width, self.height),
+            "-i".to_string(),
+            "-".to_string(),
+        ];
+        match self.codec {
+            VideoCodec::H264 => {
+                args.push("-c:v".to_string());
+                args.push("libx264".to_string());
+            }
+            VideoCodec::H265 => {
+                args.push("-c:v".to_string());
+                args.push("libx265".to_string());
+            }
+            VideoCodec::Vp9 => {
+                args.push("-c:v".to_string());
+                args.push("libvpx-vp9".to_string());
+            }
+            VideoCodec::Av1 => {
+                args.push("-c:v".to_string());
+                args.push("libaom-av1".to_string());
+            }
+        }
+        args.push("-pix_fmt".to_string());
+        args.push(self.pixel_format);
+        args.extend(self.extra_args);
+        args.push(self.output_path);
+        args
+    }
+}
+
+/// A parsed progress line from FFmpeg stderr.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct FfmpegProgress {
+    /// Current output frame number.
+    pub frame: Option<u64>,
+    /// Encoding speed in frames-per-second.
+    pub fps: Option<f64>,
+    /// Timestamp of the last encoded frame.
+    pub time: Option<String>,
+    /// Current bitrate string, e.g. `"1200kbits/s"`.
+    pub bitrate: Option<String>,
+    /// Speed multiplier, e.g. `"2.0x"`.
+    pub speed: Option<String>,
+}
+
+/// Parses FFmpeg stderr progress lines.
+#[derive(Debug, Clone, Copy)]
+pub struct FfmpegProgressParser;
+
+impl FfmpegProgressParser {
+    /// Create a new parser.
+    pub fn new() -> Self {
+        Self
+    }
+
+    /// Attempt to parse a single line of FFmpeg stderr output.
+    ///
+    /// Returns `None` if the line does not contain progress fields.
+    pub fn parse_line(line: &str) -> Option<FfmpegProgress> {
+        if !line.contains("frame=") && !line.contains("time=") {
+            return None;
+        }
+        // Normalize spaces around '=' so "frame=  123" becomes "frame=123"
+        let mut normalized = line.to_string();
+        while normalized.contains("= ") {
+            normalized = normalized.replace("= ", "=");
+        }
+        let mut progress = FfmpegProgress::default();
+        for part in normalized.split_whitespace() {
+            if let Some((key, val)) = part.split_once('=') {
+                match key {
+                    "frame" => {
+                        progress.frame = val.trim().parse().ok();
+                    }
+                    "fps" => {
+                        progress.fps = val.trim().parse().ok();
+                    }
+                    "time" => {
+                        progress.time = Some(val.trim().to_string());
+                    }
+                    "bitrate" => {
+                        progress.bitrate = Some(val.trim().to_string());
+                    }
+                    "speed" => {
+                        progress.speed = Some(val.trim().to_string());
+                    }
+                    _ => {}
+                }
+            }
+        }
+        Some(progress)
+    }
+}
+
+/// Spawns FFmpeg with `image2pipe` input and writes encoded frames to its stdin.
+#[derive(Debug)]
+pub struct FfmpegPipeEncoder {
+    stdin: ChildStdin,
+    child: Child,
+    stderr_handle: JoinHandle<Vec<FfmpegProgress>>,
+}
+
+impl FfmpegPipeEncoder {
+    /// Spawn FFmpeg with the given argument list.
+    ///
+    /// The first element of `args` should **not** be `"ffmpeg"`.
+    pub fn spawn(args: &[String]) -> Result<Self, std::io::Error> {
+        let mut child = Command::new("ffmpeg")
+            .args(args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()?;
+        let stdin = child.stdin.take().expect("stdin was piped");
+        let stderr = child.stderr.take().expect("stderr was piped");
+        let stderr_handle = thread::spawn(move || {
+            let reader = BufReader::new(stderr);
+            let mut progress = Vec::new();
+            for line in reader.lines().map_while(Result::ok) {
+                if let Some(p) = FfmpegProgressParser::parse_line(&line) {
+                    progress.push(p);
+                }
+            }
+            progress
+        });
+        Ok(Self {
+            stdin,
+            child,
+            stderr_handle,
+        })
+    }
+
+    /// Write one encoded frame (e.g. JPEG or PNG bytes) to FFmpeg's stdin.
+    pub fn write_frame(&mut self, bytes: &[u8]) -> Result<(), std::io::Error> {
+        self.stdin.write_all(bytes)
+    }
+
+    /// Close stdin, wait for FFmpeg to finish, and collect parsed progress.
+    pub fn finish(mut self) -> Result<Vec<FfmpegProgress>, std::io::Error> {
+        drop(self.stdin);
+        let _status = self.child.wait()?;
+        match self.stderr_handle.join() {
+            Ok(progress) => Ok(progress),
+            Err(_) => Ok(Vec::new()),
+        }
+    }
+}
+
 #[cfg(test)]
 mod video_encode_tests {
     use super::*;
@@ -183,5 +414,78 @@ mod video_encode_tests {
         let multi = GpuVideoEncoder::new(VideoEncoder::new(VideoCodec::H264, 30), 2);
         assert!(!single.is_parallel());
         assert!(multi.is_parallel());
+    }
+
+    #[test]
+    fn ffmpeg_args_builder_defaults() {
+        let args = FfmpegArgsBuilder::new("out.mp4").build();
+        assert!(args.contains(&"-y".to_string()));
+        assert!(args.contains(&"image2pipe".to_string()));
+        assert!(args.contains(&"out.mp4".to_string()));
+        assert!(args.contains(&"libx264".to_string()));
+    }
+
+    #[test]
+    fn ffmpeg_args_builder_custom_codec() {
+        let args = FfmpegArgsBuilder::new("out.webm")
+            .codec(VideoCodec::Vp9)
+            .fps(24)
+            .resolution(1280, 720)
+            .build();
+        assert!(args.contains(&"libvpx-vp9".to_string()));
+        assert!(args.contains(&"24".to_string()));
+        assert!(args.contains(&"1280x720".to_string()));
+    }
+
+    #[test]
+    fn ffmpeg_args_builder_extra_args_before_output() {
+        let args = FfmpegArgsBuilder::new("out.mp4")
+            .arg("-preset")
+            .arg("fast")
+            .build();
+        let out_idx = args.iter().position(|a| a == "out.mp4").unwrap();
+        let preset_idx = args.iter().position(|a| a == "-preset").unwrap();
+        assert!(preset_idx < out_idx, "flags must appear before output path");
+    }
+
+    #[test]
+    fn ffmpeg_progress_parser_parses_frame_line() {
+        let line = "frame=  123 fps= 60 q=28.0 time=00:00:05.12 bitrate=1200kbits/s speed=2.0x";
+        let p = FfmpegProgressParser::parse_line(line).unwrap();
+        assert_eq!(p.frame, Some(123));
+        assert_eq!(p.fps, Some(60.0));
+        assert_eq!(p.time, Some("00:00:05.12".to_string()));
+        assert_eq!(p.bitrate, Some("1200kbits/s".to_string()));
+        assert_eq!(p.speed, Some("2.0x".to_string()));
+    }
+
+    #[test]
+    fn ffmpeg_progress_parser_ignores_non_progress() {
+        assert!(FfmpegProgressParser::parse_line("Input #0, image2pipe").is_none());
+        assert!(FfmpegProgressParser::parse_line("  Duration: N/A").is_none());
+    }
+
+    #[test]
+    fn ffmpeg_progress_parser_handles_partial_lines() {
+        let line = "frame=0 fps=0.0 time=00:00:00.00 bitrate=N/A speed=N/A";
+        let p = FfmpegProgressParser::parse_line(line).unwrap();
+        assert_eq!(p.frame, Some(0));
+        assert_eq!(p.time, Some("00:00:00.00".to_string()));
+    }
+
+    #[test]
+    fn ffmpeg_pipe_encoder_api_exists() {
+        // We cannot assume `ffmpeg` is on PATH in every test environment,
+        // so this test only verifies that the `spawn` API is callable and
+        // returns an error when the binary is missing.
+        if std::process::Command::new("ffmpeg")
+            .arg("-version")
+            .output()
+            .is_err()
+        {
+            let args = FfmpegArgsBuilder::new("out.mp4").build();
+            let result = FfmpegPipeEncoder::spawn(&args);
+            assert!(result.is_err());
+        }
     }
 }

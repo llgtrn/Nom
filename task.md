@@ -1,539 +1,166 @@
-# Nom — Task Execution Checklist
+# Nom — Executor Task Checklist
 
-**Date:** 2026-04-19 | **HEAD:** `0880564` | **Tests:** 9245 (canvas:9204 + compiler:41) | **Workspace:** clean — Waves AX→ABK complete. A-axis ~72%, B-axis ~85%, C-axis ~90%, D-axis ~100%.
+**Date:** 2026-04-19 | **HEAD:** `2da0748` | **Tests:** ~10,630 (canvas:~10,548 + compiler:~82)
 
-## DB-Driven Architecture (Wave AE/AC verified PASS)
-
-| Check | Verdict | Evidence |
-|---|---|---|
-| `Connector::new_with_validation()` only constructor | PASS | `nom-blocks/src/connector.rs:88` |
-| NodePalette live DB SELECT | PASS | `nom-panels/src/left/node_palette.rs:26` |
-| LibraryPanel live DB SELECT | PASS | `nom-panels/src/left/library.rs:28` |
-| `DictReader` isolation | PASS | `Connection::open` only in `sqlite_dict.rs:23,27` |
-| `entity: NomtuRef` non-optional | PASS | `block_model.rs:46`, `graph_node.rs:12` |
-| `production_kind: String` (not enum) | PASS | `graph_node.rs:13` |
-| Cross-workspace path deps | PASS | Feature-gated optional deps in `Cargo.toml` |
-| BackendKind enum | PASS — Wave AP deleted closed enum; all dispatch via runtime `&str` |
+**Current:** Wave AD ✅ COMPLETE (4/5 demos) | **Next:** Wave AE 🔲 OPEN | **Wave AF** 🆕 LAUNCHED (16-repo parallel audit)
 
 ---
 
-## Wave AP (2026-04-18) — COMMITTED ✅ (HEAD ~679ce6b, 8391 tests) — ALL CRITICALS FIXED
+## Per-Crate Test Counts
 
-### Fixed (21 items)
-- ✅ AL-RENDER-2 — real wgpu::Surface/Device/Queue fields + full wgpu 0.19 init chain; pollster=0.3 added
-- ✅ AL-RENDER-1 — end_frame_render(): CommandEncoder + begin_render_pass + set_pipeline + draw + submit + present
-- ✅ AL-RENDER-3 — VertexBufferLayout (stride=80, 5×Float32x4, Instance); real WGSL QuadIn + GlobalUniforms + NDC transform
-- ✅ AL-BACKEND-KIND — BackendKind closed enum DELETED; UnifiedDispatcher+ComposeContext re-exported as primary dispatch
-- ✅ AL-GRAMMAR-STATUS — `pub status: KindStatus` added to GrammarKind; list_kinds() + promote_kind() SQL helpers
-- ✅ AM-ATLAS-LRU — evict_lru() calls allocator.deallocate(alloc) per entry; no more allocator.clear()
-- ✅ AL-LAYOUT-TAFFY — LayoutEngine replaced with real taffy::TaffyTree + node_map
-- ✅ AM-UITIER-DIVERGE — score_atom_impl() extracted; UiTier + UiTierOps both delegate
-- ✅ AL-DEEPTHINK-CONFIDENCE — edge_color_for_confidence(card.confidence) wired
-- ✅ AL-TOOLBAR-HEIGHT — TOOLBAR_H=48.0 deleted; all callers use TOOLBAR_HEIGHT=36.0
-- ✅ AL-FONTS — libre_baskerville_regular, eb_garamond_regular, berkeley_mono_regular added to FontRegistry
-- ✅ AL-THEME-SYSTEM oled — Theme::oled() constructor added
-- ✅ AN-WORKSPACE-DUP — insert_block() dedup guard; entity() returns Option; remove_node()+remove_connector()
-- ✅ AN-FRAME-SPATIAL rotation+cycle — rotation: f32 field; add_child() returns Result with cycle guard
-- ✅ AN-BLOCKDIFF-WORD — diff_blocks() emits Modified{field:"word"} diffs
-- ✅ AM-SPATIAL-WIRE hit_test — CanvasHitTester with R-tree broadphase in production
-- ✅ NOM-EDITOR-POINT — Point{row,column} type + Buffer::point_at() + Buffer::offset_from_point()
-- ✅ NOM-GRAPH-EXEC — ExecutionEngine::execute() runs plan, calls node logic, stores results
-- ✅ AL-ATOMIC-ORDERING — fixed in Wave AN
-- ✅ AL-SQL-INJECT — fixed in Wave AO
-- ✅ AM-CRDT-IDEMPOTENT — fixed in Wave AN
-
-### Per-crate actuals (Wave AP)
 | Crate | Tests |
 |---|---|
-| nom-gpui | 790 |
+| nom-gpui | 864 |
+| nom-canvas-core | 795 |
+| nom-compose | 1,351 |
+| nom-canvas-intent | 591 |
+| nom-canvas-graph | 570 |
+| nom-lint | 519 |
 | nom-blocks | 560 |
-| nom-canvas-core | 575 |
-| nom-cli | 400 |
 | nom-collab | 546 |
-| nom-compiler-bridge | 553 |
-| nom-compose | 685 |
 | nom-editor | 620 |
-| nom-graph | 570 |
-| nom-intent | 470 |
-| nom-lint | 485 |
-| nom-memoize | 468 |
+| nom-compiler-bridge | 553 |
 | nom-panels | 601 |
+| nom-theme | 556 |
+| nom-memoize | 468 |
 | nom-telemetry | 500 |
-| nom-theme | 556 + 12 integration |
-| **TOTAL** | **8391** |
+| nom-canvas-cli | 482 |
+| **Canvas Total** | **~10,619** |
+| nom-concept | 60+ |
+| nom-llvm | 15+ |
+| nom-grammar | 7+ |
+| **Compiler Total** | **~82** |
+| **GRAND TOTAL** | **~10,701** |
 
 ---
 
-## Wave AQ (2026-04-18) — COMMITTED ✅ (HEAD c30f2a0)
-- ✅ NOM-GRAPH-ANCESTRY — collect_ancestors() DFS transitive cache key walk in ExecutionEngine
-- ✅ NOM-BACKEND-SELF-DESCRIBE — BackendDescriptor struct + describe() on Backend trait + list_backends() on UnifiedDispatcher
-- ✅ AM-INTENT-STRUCT — bm25_index field; bm25_score() helper; 3-pass resolve() (substring→BM25→classify_with_react)
-- ✅ AL-COSMIC — cosmic_text::FontSystem initialized; load_font_data() for each font in FontRegistry
-- ✅ AM-SPATIAL-WIRE viewport.rs — SpatialIndex field on Viewport; insert_element() + elements_in_view()
-- ✅ UC-SERVE — POST /compose axum endpoint in nom-cli/src/serve.rs; streaming + non-streaming modes; 2 integration tests
+## Open Items — Wave AD (End-to-End Demos)
 
-## Wave AR (2026-04-18) — COMMITTED ✅ (HEAD fc67aa9)
-- ✅ B4 46 kinds — 28 extended kinds + 9 skills seeded in grammar.kinds baseline.sql; no_foreign_brand_names test
-- ✅ B5 side-tables — entry_benchmarks + flow_steps schemas in nom-dict; insert_benchmark() + insert_flow_step() helpers
-- ✅ B7 9 skills — author_nom_app/compose_from_dict/debug_nom_closure/extend_nom_compiler/ingest_new_ecosystem/use_ai_loop/compose_brutalist_webpage/compose_generative_art_piece/compose_lofi_audio_loop
-- ✅ C3 compiler feature=default — `default = ["compiler"]` in nom-compiler-bridge/Cargo.toml
-- ✅ C7 interrupt — InterruptSignal field + trigger_interrupt() in DeepThinkPanel
-- ✅ A3 EdgeKind — 22 variants with display_name() + is_structural() in nom-types
-- ✅ D4 clippy+fmt — workspace lints section; cargo fmt clean
-- ✅ D6 foreign names — all "affine:*" → "nom:*" across nom-blocks; brand names in comments → neutral pattern descriptions
+- [x] **AD-RENDER-DEMO** — `cargo run --example window_first_paint` shows red quad on GPU ✅
+- [x] **AD-VIDEO-DEMO** — `nom compose video hello.nomx` produces real `.mp4` with valid `ftyp` header ✅
+- [x] **AD-DB-DEMO** — `nom dict list-kinds` returns real rows from `nomdict.db` ✅
+- [x] **AD-CHAIN-DEMO** — `nom compose intent "make a logo"` runs full Chain → `.nomx` output ✅
+- [ ] **AD-NOMX-EXEC** — CB3: `.nomx` files execute via AST bridge to `nom-ast::Expr` (deferred)
 
-## Wave AS (2026-04-18) — COMMITTED ✅ (HEAD 050b1e9)
-- ✅ C1 run_composition — run_composition(&self, input) on BackgroundTierOps; run_composition_command() in terminal panel
-- ✅ B9 bench CLI — nom bench run/compare/regress/curate in nom-cli/src/bench.rs
-- ✅ B9 flow CLI — nom flow record/show/diff/middleware in nom-cli/src/flow.rs
-- ✅ B9 media CLI — nom media import/import-dir/render/transcode/diff/similar in nom-cli/src/media.rs
-- ✅ CI matrix — .github/workflows/ci.yml 3-OS (ubuntu+windows+macos)
-- ✅ B1 define/that — Tok::Define + Tok::That variants + lexer arms in nom-concept; highlight arms
-- ✅ B2 NomxFormat — NomxFormat{Typed,Natural,Standard} enum + detect_format() + 5 B2 tests
+## Open Items — Wave AE (Polish)
 
-## Wave AT (2026-04-18) — COMMITTED ✅ (HEAD ced46fc, +37 tests)
-- ✅ AL-PALETTE-SEARCH-UI — 32px search box + category headers; filtered_entries/grouped_items; 3 tests
-- ✅ AL-TEST-FRAUD — ArtifactDiff out of cfg(test); 5 real SQL injection edge-case tests
-- ✅ AL-FEATURE-TESTS — 3 #[cfg(all(test,feature="compiler"))] tests for nom_score/bm25/can_wire
-- ✅ AH-CTX — ComposeContext/ComposeResult/ComposeTier in nom-compose/src/context.rs
-- ✅ AH-DICTW — DictWriter insert_partial_entry() + promote_to_complete()
-- ✅ AH-GLUE — ReActLlmFn trait + 4 adapters + AiGlueOrchestrator + GlueBlueprint
-- ✅ AH-HYBRID — HybridResolver 3-tier (DbDriven→Provider→AiLeading)
-- ✅ UC-FLOWGRAPH — FlowGraph + FlowNode + FlowEdge + Kahn sort
+- [ ] **AE-LSP-REAL** — Replace hardcoded stubs: hover, completion, definition
+- [ ] **AE-GOLDEN-E2E** — 4 real end-to-end tests (render pixel, video encode, DB query, chain output)
+- [ ] **AE-CLIPPING** — `cargo clippy --workspace --all-targets` 0 warnings
 
-## Wave AU (2026-04-18) — COMMITTED ✅ (HEAD f38224c)
-- ✅ AH-CACHE — GlueCache + GlueStatus Transient/Partial/Complete lifecycle
-- ✅ AH-ORCH — ComposeOrchestrator wrapping HybridResolver; run/run_parallel
-- ✅ AH-DB-KINDS — 14 composition grammar.kinds seed rows (video_compose/picture_compose/…)
+## Medium-Term Open Items
 
-## Wave AV (2026-04-18) — COMMITTED ✅ (HEAD 34f222e)
-- ✅ C5-V1 — CompositionConfig + CompositionRegistry (Remotion composition metadata pattern)
-- ✅ C5-V2 — SequenceContext + current_frame_in_sequence + is_frame_active
-- ✅ C5-V3 — interpolate() with ExtrapolateMode (Clamp/Extend/Identity/Wrap)
-- ✅ C5-V4 — spring() underdamped+overdamped physics + SpringConfig
-
-## Wave AW (2026-04-18) — COMMITTED ✅ (HEAD 7716377, 8947 tests, 0 clippy warnings)
-- ✅ C5-V5 — VideoRenderConfig + RenderProgress{rendered_frames,encoded_frames,stage,elapsed_ms}
-- ✅ C5-V6 — ComposeEvent::Progress extended + all 49 construction sites updated
-- ✅ C5-V7 — CancelSignal + make_cancel_signal() via AtomicBool
-- ✅ C5-V8 — VideoConfigContext + thread-local push/pop/get_video_config() stack
-- ✅ C5-V9 — validate_codec_pixel_format(codec, format, w, h)
-- ✅ UC-MIDDLEWARE — StepMiddleware + MiddlewareRegistry + LoggingMiddleware + LatencyMiddleware
-- ✅ UC-STREAM — SwitchableStream + StreamToken (word-by-word streaming via AiGlueOrchestrator)
-- ✅ UC-PROMOTE — POST /promote/:glue_hash axum endpoint
-- ✅ UC-CANDLE — CandleAdapter + BackendDevice{Cpu,Cuda} + InferenceFn trait
-- ✅ A6-LSP — LspRequest/LspResponse + dispatch_lsp_request (6 methods)
-- ✅ B1 parse — DefineThatExpr + parse_define_that() using Tok::Define+Word+That
-- ✅ B2 migrate — migrate_typed_to_natural() fn→define, ->→that
-- ✅ B8 100 translations — +16 tests (lazy eval, tail-call, monadic bind, dependent types, etc.)
-- ✅ D1 Dify — TypedNode trait + NodeOutputPort + NodeEvent (Started/Progress/Completed/Failed)
-- ✅ D1 ToolJet — palette_kind_count() reflecting 46+ seeded kinds
-- ✅ D1 Refly — SkillRouter + SkillDefinition (register/find_by_id/find_by_query)
-- ✅ B9 ux/app CLI — nom ux seed, nom app new/import/build/build-report/explain-selection
-- ✅ B9 corpus — nom corpus ingest-pypi/ingest-github/pause/resume/report
-- ✅ D4 clippy — 0 warnings, 0 errors workspace-wide
-- ✅ D5 README — Wave history, Composition API + Video Pipeline sections
+- [ ] CB3 — `.nomx` evaluator: bridge `parse_define_that()` to `nom-ast::Expr`
+- [ ] Bootstrap fixpoint proof
+- [ ] Real LLVM parser/resolver/codegen.nom path
+- [ ] Parser-backed Nomx validation
+- [ ] `cargo build --workspace --release` Windows/Linux/macOS
+- [ ] CI green on PR
+- [ ] Settings panel full-screen overlay
+- [ ] Theme toggle `Cmd/Ctrl+K T`
+- [ ] API reference (`cargo doc --no-deps`)
 
 ---
 
-## Wave AX (2026-04-19) — COMMITTED ✅ (HEAD partial, merged into 761c3eb)
-- ✅ C5-V10 — VideoEncoder + FrameBuffer two-stage pipeline in nom-compose
-- ✅ AH-UI — IntentPreviewCard + AiReviewCard in nom-panels/right
-- ✅ D3 golden paths — 5 end-to-end integration tests in nom-canvas-tests crate
-- ✅ D2 audit — ThemeTokenAudit + 3 audit tests
-- ✅ AN-TEST-DEDUP — -20 duplicate tests nom-intent, -4 nom-compose
-
-## Wave AY (2026-04-19) — COMMITTED ✅ (HEAD 761c3eb, 8785 tests, 0 warnings)
-- ✅ D8 AF-TITLEBAR — TitleBarPanel + with_traffic_lights + title truncation
-- ✅ D8 AF-HEADER — HeaderPanel + HeaderAction enum
-- ✅ D8 AF-STATUS — StatusBar + StatusItem + StatusKind
-- ✅ D8 AF-LEFT — IconRail + LeftPanelLayout
-- ✅ D8 AF-CENTER — TabManager + CenterLayout + SplitDirection
-- ✅ D8 AF-RIGHT — ChatPanel + HypothesisTree + PropertiesPanel
-- ✅ D2 visual — FrostedGlassToken + BezierCurve Newton + ThemeMode/Registry
-- ✅ D10 UC-POLARS — DataFrame query abstraction (QueryDataFrame)
-- ✅ D10 UC-API-TESTS — API integration tests for serve.rs endpoints
-- ✅ C7 — AnimatedReasoningCard FSM + HypothesisTreeNav DFS
-- ✅ C8 — WebGpuRenderer stub + wasm feature gate + .cargo/config.toml + build_wasm.sh
-- ✅ A3 nom-ux — UxPattern/Screen/UserFlow crate (7 tests)
-- ✅ A3 nom-media — MediaUnit/Codec/Container crate (6 tests)
-- ✅ D5 docs — docs/user-manual.md + docs/api-reference.md + CONTRIBUTING.md
-
-## Wave AZ (2026-04-19) — COMMITTED ✅ (HEAD 07ab271, 8827 tests, 0 warnings)
-- ✅ C4-LSP visual — DiagnosticSquiggle + HoverTooltip + CompletionPopup + LspOverlay (+10)
-- ✅ A6 LSP real — LspTransport JSON-RPC framing + AuthoringProtocol event stream (+8)
-- ✅ B6 MECE — MeceValidator + DreamScore EPIC_SCORE_THRESHOLD=95 (+8)
-- ✅ B1 full parse — ConceptNode + parse_concept_source pipeline (+6)
-- ✅ C5 audio — AudioSource + AudioPlayback + AudioMixer (+8)
-- ✅ C5 image — ImageLayer + ImageComposite + BlendMode (+11)
-- ✅ C5 storyboard — StoryboardPanel + Storyboard (+storyboard)
-- ✅ D3 demo — DemoRunner + DemoKind + DemoResult golden sequences (+5)
-- ✅ D2 render — FrostedPassConfig + FrostedRenderPass state machine (+7)
-- ✅ A10 corpus — CorpusStats + report_stats() (+4)
-- ✅ AN-TEST-DEDUP — -9 duplicates across nom-gpui/nom-lint/nom-memoize
-
-## Wave ABA (2026-04-19) — COMMITTED ✅ (HEAD 6a41b2b, 8891 tests)
-
-- ✅ D2 render wired — FrostedRenderPass integrated into WebGpuRenderer.begin_frame() (+4)
-- ✅ A6 LSP loop — LspLoopState + LspServerLoop state machine wired (+6)
-- ✅ B2 migration tool — ConvertDirection/Options/Result + convert_source/convert_file (+5)
-- ✅ A7 bootstrap stubs — BootstrapStage/StageBuild/BootstrapProof + check_fixpoint() (+7)
-- ✅ A11 LLVM IR — IrType/IrValue/IrInstr/IrFunction/IrModule typed IR (+8)
-- ✅ B2 corpus — 10 .nomx golden examples in examples/ (define-that syntax)
-- ✅ C5 DataLoader — DataSourceKind/LoadStrategy/DataBatch/DataLoader stub (+7)
-- ✅ Telemetry — TraceSpan + TraceCollector (+4)
-- ✅ Collab — VectorClock + happened_before (+4)
-- ✅ Graph dispatch — NodeHandler trait + PassThroughHandler + NodeHandlerRegistry (+6)
-- ✅ Editor — SyntaxHighlight spans + LineFoldRegion/LineDisplayMap (+8)
-
-## Wave ABB (2026-04-19) — COMMITTED ✅ (HEAD 8b11241, 8957 tests)
-
-- ✅ A11 codegen — NomParser + AstToIr + IrPrinter in nom-concept (+8)
-- ✅ C5-V10 — FrameCapture + TwoStagePipeline video pipeline (+6)
-- ✅ B2 corpus — 40/100 .nomx golden examples (+30 files)
-- ✅ C7/C4 visual — DeepThinkRenderer + EditorView in nom-panels (+8)
-- ✅ D5 README — README.md rewritten, fmt clean
-- ✅ D3 golden paths — 14 golden path tests in nom-canvas-tests (+9)
-- ✅ D1 Haystack — ComponentPipeline + TextSplitter + DocumentRetriever (+14)
-- ✅ C6 RAG — BM25Retriever + CosineSimilarityRetriever (+8)
-- ✅ B1 parse — FullParser + BlockExpr implicit return (+8)
-- ✅ nom-blocks — deeper workspace tests (+6)
-- ✅ nom-graph — real dispatch integration tests (+5)
-
-## Wave ABC (2026-04-19) — COMMITTED ✅ (HEAD ed86222, 9045 tests)
-
-- ✅ D2 visual tokens — ColorSet dark/light/oled + ThemeTokens (nom-theme +16)
-- ✅ D2 typography — FontFamily/FontSize/TypographyScale (nom-theme shared)
-- ✅ D1 WidgetRegistry — 35 WidgetKind variants, 6 categories (+8)
-- ✅ C7 graphify charts — ChartType/DataSeries/ChartConfig/Chart (+8)
-- ✅ B3 ingestion — IngestionPipeline + LifecycleManager (+8)
-- ✅ A6 kind query — KindQueryClient + KindPromotion/KindStatus (+8)
-- ✅ C1 scene builder — SceneLayer + SceneBuilder (+8, nom-gpui)
-- ✅ C9 eviction — EvictionPolicy (Lru/Lfu/Fifo) + PolicyConfig (+6)
-- ✅ D4 naming lint — NamingLinter check_snake_case/no_foreign_brand (+8)
-- ✅ D4 merge CRDT — MergeStrategy + MergeRecord (+6, nom-collab)
-- ✅ D5 telemetry OTel — Counter/Histogram/MetricsRegistry (+13)
-- ✅ D3 golden +4 — 18 golden path tests total
-- ✅ B2 corpus 70/100 — 30 more .nomx files (archive_entry→websocket_connect)
-
-## Wave ABD (2026-04-19) — COMMITTED ✅ (HEAD d0d56df, 9121 tests)
-
-- ✅ B2 corpus 100/100 — COMPLETE (30 more .nomx, all topics covered)
-- ✅ AM-SPATIAL-WIRE — ViewportSnap + SnapGrid + AabbIndex (+10)
-- ✅ AL-COSMIC text — TextLayoutEngine + GlyphRun + TextAlign (+8)
-- ✅ D4 collab session — CollabSession + SessionRole (+6)
-- ✅ NOM-GRAPH-ANCESTRY — AncestryCache depth cache (+6)
-- ✅ UC-GRAPH-TRAVERSE — GraphTraversal dfs/bfs (+6)
-- ✅ AM-INTENT-STRUCT — IntentClassifier + MecePartition (+8)
-- ✅ D1 ToolJet 51 — WidgetRegistry 51 kinds (+4)
-- ✅ A11 bitcode — BitcodeModule + IrToBitcode (+8, nom-concept)
-- ✅ B7 editor cursor — EditorCursor + BufferHistory (+8)
-- ✅ C5 reverse — ReverseOrchestrator media→nomx pipeline (+8)
-- ✅ D3 golden +4 — 22 total golden path tests
-
-## Wave ABE (2026-04-19) — COMMITTED ✅ (HEAD 7dc8dd3, 9217 tests)
-
-- ✅ Chat AI dispatch — ChatAttachment + CanvasMode + AiChatSession (+10)
-- ✅ UC-SERVE POST — ComposeRequest/Response + compose_logic (+8)
-- ✅ A6 LSP I/O — LspFrame + LspIoBuffer + LspAsyncLoop (+8)
-- ✅ D2 RenderPipeline — DrawCommand/FrameGraph/Coordinator (+10)
-- ✅ A7 bootstrap depth — FixpointAttempt + BootstrapRunner (+4)
-- ✅ A3 ingest — IngestSource + IngestPipeline events (+4)
-- ✅ D3 BlockDiffer — BlockDiffKind + BlockDiffer (+6)
-- ✅ C7 WeightGraph — WeightedGraph + WeightGraph (+8 total)
-- ✅ D5 CacheStats + StructureLinter (+12)
-- ✅ D5 MetricsExporter + AnimationRegistry (+12)
-- ✅ D4 PresenceMap + AnimationClip (+14)
-- ✅ D3 golden 26 — 26 total golden path tests
-
-## Wave ABF (2026-04-19) — COMMITTED ✅ (HEAD 5a525e5, 9315 tests)
-
-- ✅ NomInspector — 7 InspectTarget kinds + InspectFinding/InspectReport + detect_target/inspect_url (+10)
-- ✅ Sherlock adapter — SherlockStatus/SherlockSite/SherlockResult + parse_json_output + to_inspect_findings (+8)
-- ✅ StrategyExtractor — BusinessModel/StrategySignal/StrategyReport keyword extraction (+8)
-- ✅ RepoInspector — RepoLanguage/RepoFile/RepoProfile (nom-compiler-bridge) (+8)
-- ✅ ContentHash/ContentDag — FNV-1a ContentHash + ContentStore + DagNode/DagEdge/ContentDag (+12)
-- ✅ NativeCodegen stub — TargetArch/TargetOs/NativeBinary/NativeCodegen lower_to_native() (+6)
-- ✅ FixpointVerifier — verify_fixpoint() in nom-concept bootstrap (+4)
-- ✅ InspectPanel (internal) — InspectKind/InspectRequest/InspectResult routing logic (+10)
-- ✅ EventQueue — KeyModifiers + InputEvent + EventQueue (nom-gpui) (+8)
-- ✅ SelectionManager — SelectionAnchor + SelectionRange + SelectionManager (nom-editor) (+8)
-- ✅ OpLog — OpKind + Op + OpLog CRDT log (nom-collab) (+6)
-- ✅ ActiveSpan — SpanKind + SpanEvent + duration_ns (nom-telemetry) (+6)
-- ✅ D3 golden 30 — 30 total golden path tests in nom-canvas-tests
-- ✅ NomInspector design spec — docs/superpowers/specs/2026-04-19-nom-inspector-design.md
-
-## Wave ABG+ABH (2026-04-19) — COMMITTED ✅ (HEAD de66f18, ~9415 tests)
-
-- ✅ ChatDispatch → InspectDispatch wired (WebUrl/FilePath routing, 8 tests)
-- ✅ LlmQualityGate + inspect_with_quality() DreamScore≥95 (6 tests)
-- ✅ LspSyncDriver std::io Content-Length framing (5 tests)
-- ✅ CorpusOrchestrator 4-ecosystem ingestion planner (6 tests)
-- ✅ CompilePipeline parse→IR→codegen (8 tests)
-- ✅ B8 +20 paradigm translations (actor, CSP, lenses, free monad, session types…)
-- ✅ AudioRenderer PlaybackEntry + rodio-pattern (8 tests)
-- ✅ D3 golden 35 total tests
-- ✅ ContentDag + ContentHash 16 integration tests
-- ✅ SherlockNative — SiteEntry + ErrorDetect + CheckStatus native Rust (8 tests)
-- ✅ VisionProvider — UiComponentType + ScreenshotAnalyzer (10 tests)
-- ✅ C9 build --all-features passes cleanly (7,258 nom-canvas tests)
-- ✅ 8 vision repos cloned (SAM, YOLOv8, unilm, screenshot-to-code, gpt-engineer, donut, AnimateDiff, stable-video-diffusion)
-
-## Wave ABI (2026-04-19) — COMMITTED ✅ (HEAD 2b453b0, ~9458 tests)
-
-- ✅ BBoxDetector — LetterBox + IoU + NMS (YOLOv8 pattern, 9 tests)
-- ✅ SegmentPipeline — SAM BinaryMask + PointGrid + SamPipeline (9 tests)
-- ✅ LayoutAnalyzer — DocBBox + SpatialFeatures + reading-order (9 tests)
-- ✅ AnimationPipeline — LatentState + VideoFrame + LCG noise + CFG guidance (9 tests)
-- ✅ VisionOrchestrator — detect→segment→layout→.nomx (7 tests)
-
-## Wave ABK (2026-04-19) — COMMITTED ✅ (HEAD 0880564, +38 tests)
-
-- ✅ DonutPipeline — DonutToken markup, DocStructure, DocTask, 3 pipeline modes (9 tests)
-- ✅ CodeGenPipeline — FilesDict, PrepromptHolder, GenerationMode, CodeGenPipeline (9 tests)
-- ✅ TypeInferencer — TypeEnv + TypeConstraint + TypeInferencer using IrValue::type_of() (12 tests)
-- ✅ ReAct+BM25 integration — 8 real integration tests (no stubs), BM25 top-k + ReAct loop
-
-## Wave ABL (2026-04-19) — COMMITTED ✅ (HEAD 7341c05, +35 tests)
-
-- ✅ VideoCapture real — FrameCapture + FfmpegEncoder + real ffmpeg arg construction (9 tests)
-- ✅ LspAsyncLoop — LspAsyncConfig + LspAsyncMessage + parse/format/process_batch (8 tests)
-- ✅ VisionBridge — VisionOutput→InspectFinding enrich_report() wired (8 tests)
-- ✅ Pipeline+Ingest integration — 10 CompilePipeline + CorpusOrchestrator integration tests
-- ✅ D-axis: 100% COMPLETE
-
-## Wave ABM (2026-04-19) — COMMITTED ✅ (HEAD 828bd8e, +48 tests)
-
-- ✅ SkillRouter — SkillEntry + SkillRouter case-insensitive + SkillDispatch (9 tests)
-- ✅ LifecycleManager — EntryState + merge/eliminate/evolve transitions (11 tests)
-- ✅ MeceValidator — MeceObjective + AppScore EPIC_SCORE_THRESHOLD≥95 (10 tests)
-- ✅ DreamTree — DreamNode + DreamTree + ParetoFront (9 tests)
-- ✅ LspPositionBridge — LspPositionBridge + BoundedLspBridge roundtrip (9 tests)
-
-## Wave ABN (2026-04-19) — COMMITTED ✅ (HEAD 6584bde, +45 tests)
-
-- ✅ UxExtractor — CorpusSource×4 Motion/Dioxus/ToolJet/DeerFlow + 12 seeded patterns (9 tests)
-- ✅ IngestPartial — IngestQuality + IngestPromoter Partial→Complete (9 tests)
-- ✅ DreamCLI — DreamEngine run_until_epic() score≥95 + DreamReport (9 tests)
-- ✅ HybridRetrieval — BM25+vector merge + RRF + top_k (9 tests)
-- ✅ SelfHostRegistry — SelfHostStage×5 + seed + SelfHostBootstrapProof fixpoint (9 tests)
-
-## Wave ABO (2026-04-19) — COMMITTED ✅ (HEAD 092b161, +46 tests)
-
-- ✅ AuthorSession — AuthorPhase×5 brainstorm→nomx motion pipeline (9 tests)
-- ✅ SkillCLI — SkillCliRunner 8 seeds + case-insensitive route dispatch (10 tests)
-- ✅ BootstrapCLI — 5-stage bootstrap report + fixpoint check (9 tests)
-- ✅ StreamIngest — StreamConfig + IngestCheckpoint + StreamIngestor + SkipList (9 tests)
-- ✅ AestheticRegistry — AestheticDomain×5 + 9 seeded aesthetic skills (9 tests)
-
-## Wave ABP (2026-04-19) — COMMITTED ✅ (HEAD fd58825, +45 tests)
-
-- ✅ AiCompilerLoop — verify→build→bench→flow 4-stage loop (9 tests)
-- ✅ MediaComposePipeline — MediaKind×6 + ComposeOp×3 Nom operators (9 tests)
-- ✅ AppManifest — FNV-1a dep hash + ManifestGraph (9 tests)
-- ✅ Reranker — RerankStrategy×3 + PostProcessor dedup (9 tests)
-- ✅ LlvmEmit — LlvmOp×10 dispatch + LlvmBlock + LlvmFunction IR (9 tests)
-
-## Wave ABQ (2026-04-19) — COMMITTED ✅ (HEAD cd4484d, +46 tests)
-
-- ✅ PlanCache — ExecutionCache LRU + Kahn topological sort + cycle detection (10 tests)
-- ✅ CrdtHistory — CrdtOp + CrdtHistory + ConflictResolver last-write-wins (9 tests)
-- ✅ MetricsDeep — Histogram p50 buckets + SpanTracer (9 tests)
-- ✅ LintRules — LintSeverity×4 + LintRule pattern check + auto-fix (9 tests)
-- ✅ LruCache — CacheStats hit-rate + CacheEntry TTL + capacity eviction (9 tests)
-
-## Wave ABR (2026-04-19) — COMMITTED ✅ (HEAD 01b1c7e, +45 tests)
-
-- ✅ MultiCursor — CursorAnchor + CursorRange + MultiCursor dedup/move (9 tests)
-- ✅ SceneGraph — SceneNodeKind + DFS traversal + AtlasSlot fit (9 tests)
-- ✅ LayoutState — PanelSide + ResizeHandle drag + LayoutSnapshot restore (9 tests)
-- ✅ TokenSystem — ColorToken luminance/contrast + SpacingToken scale (9 tests)
-- ✅ BlockHistory — BlockEvent inverse + HistoryStack undo/redo (9 tests)
-
-## Wave ABS (2026-04-19) — COMMITTED ✅ (HEAD 5840d44, +45 tests)
-
-- ✅ SnapGrid — GridConfig snap + BoundsRect union/intersect + BoundsUnion (9 tests)
-- ✅ PipelineContext — PipelineStatus + StreamChunk streaming pipeline (9 tests)
-- ✅ LspDiagnostics — DiagnosticSeverity + publishDiagnostics notification (9 tests)
-- ✅ SSA — SsaVar + PhiNode + SsaBlock + SsaForm basic block stubs (9 tests)
-- ✅ Accessibility — A11yRole + A11yAuditor violations + KeyboardNav (9 tests)
-
-## Wave ABT — COMPLETE (2026-04-19, 9519 tests)
-
-- ✅ SyntaxHighlighter — TokenKind×8 + SyntaxToken + HighlightRange (9 tests)
-- ✅ GraphTraversal — GraphEdge + SimpleGraph BFS/DFS + edge filter (9 tests)
-- ✅ WorkspaceSchema — SchemaVersion + SchemaMigration + MigrationPlan (9 tests)
-- ✅ TypeChecker — CheckedType + TypeContext + constraint unification (9 tests)
-- ✅ RenderFrame — DirtyRegion + DirtyTracker + dirty state tracking (9 tests)
-
-## Wave ABU — COMPLETE (2026-04-19, 9555 tests)
-
-- ✅ StreamingResult — PartialResult+StreamingOutput+ResultBuffer pipeline (9 tests)
-- ✅ WorkspaceRename — RenameOp+WorkspaceRenamer+RenamePreview (nom-editor) (9 tests)
-- ✅ Canonicalize — CanonicalForm+CanonicalizationChecker+PartialLifter §5.10 (9 tests)
-- ✅ NomxManifest — NomxManifest+NomxDep+NomxModuleGraph .nomx workspace (9 tests)
-- ✅ DreamHistory — DreamHistoryEntry+DreamHistoryStore+DreamJournal (9 tests)
-
-## Wave ABV — COMPLETE (2026-04-19, 9582 tests)
-
-- ✅ RegressionChecker — BenchmarkBaseline+RegressAlert, nom bench regress (9 tests)
-- ✅ ViewportMap — ElementBounds+ViewportMap+VisibilityQuery spatial index (9 tests)
-- ✅ BenchmarkSideTable — EntryBenchmark+BenchmarkAggregation side-table (9 tests)
-- ✅ FeatureStack — WordIdMap+FeatureWeight+FeatureStack word IDs (9 tests)
-- ✅ Storyboard — StoryboardPhase×5+StoryboardPlan+StoryboardExecutor (9 tests)
-
-## Wave ABW — COMPLETE (2026-04-19, 9618 tests)
-
-- ✅ BipartiteSolver — CostMatrix+BipartiteAssignment+MinCostSolver §5.15 (9 tests)
-- ✅ ImageDispatch — ModelDescriptor+ModelRegistry+ImageDispatcher (9 tests)
-- ✅ Ancestry — AncestryChain+ParentMap+AncestorQuery+DescendantIter (9 tests)
-- ✅ CrdtMerge — VectorClock+CrdtMergeOp+MergeStrategy (9 tests)
-- ✅ SpanAggregator — SpanSample+P95Calculator+SpanAggregator+TraceReport (9 tests)
-
-## Wave ABX — COMPLETE (2026-04-19, 9663 tests)
-
-- ✅ AudioEncode — AudioFormat+AudioBuffer+AudioEncoder+RodioBackend (9 tests)
-- ✅ RagPipeline — RagQuery+RagDocument+RagRetriever+RagPipeline (9 tests)
-- ✅ Bezier — BezierPoint+BezierCurve de Casteljau+AnimatedBezier (9 tests)
-- ✅ ContentAddress — ContentHash FNV-1a+CrossAppStore specialization sharing (9 tests)
-- ✅ BlockSchemaV2 — BlockSchemaV2+MigrationTool+RoundTripValidator (9 tests)
-
-## Wave ABY — COMPLETE (2026-04-19, 9708 tests)
-
-- ✅ N8nWorkflow — NodeStatus+WorkflowGraph+WorkflowRunner topo-sort (9 tests)
-- ✅ Postproc — PostDoc FNV-1a+DeduplicateFilter+ScoreThresholdFilter+PostPipeline (9 tests)
-- ✅ FrostedGlass — BlurLayer+FrostedGlassEffect+LayerCompositor (9 tests)
-- ✅ TextureAtlas — AtlasRegion+TextureAtlas+AtlasShelf+AtlasAllocator (9 tests)
-- ✅ PdfCompose — PdfElement+PdfPage+PdfDocument+PdfComposer prose→PDF (9 tests)
-
-## Wave ABZ — COMPLETE (2026-04-19, 9753 tests)
-
-- ✅ WebCompose — ComponentKind+WebAppSpec+WebComposer spec→web app (9 tests)
-- ✅ HaystackPipeline — HaystackComponent+ComponentPipeline+PipelineRanker (9 tests)
-- ✅ AffineTokens — AffineToken×9+TokenResolver+DesignTokenApplier (9 tests)
-- ✅ TabBar — TabEntry+TabBar+TabBarState UI navigation (9 tests)
-- ✅ VideoEncode — VideoCodec+VideoFrame+VideoEncoder+GpuVideoEncoder stub (9 tests)
-
-## Wave ABAA — COMPLETE (2026-04-19, 9798 tests)
-
-- ✅ AdCreative — AdFormat+AdDimension+AdCreativeSpec+AdComposer (9 tests)
-- ✅ Theme — ThemeMode+ThemeTokenMap 4-token+ThemeToggle dark/light (9 tests)
-- ✅ HypothesisTree — HypothesisNodeState+ReasoningNode+HypothesisTree+BeliefPropagator (9 tests)
-- ✅ MobileCompose — MobilePlatform+MobileScreen+MobileAppSpec+MobileComposer (9 tests)
-- ✅ TraceExport — SpanStatus+OpenTelemetrySpan+JaegerSpan+TraceExporter (9 tests)
-
-## Wave ABAB — COMPLETE (2026-04-19, 9843 tests)
-
-- ✅ MeshCompose — MeshVertex+MeshFace+Mesh+MeshComposer (9 tests)
-- ✅ WasmBridge — WasmTarget+WasmModule+WasmFeatureGate+WasmBridge (9 tests)
-- ✅ GraphifyChart — ChartType+ChartAxis+ChartSeries+ChartSpec+GraphifyComposer (9 tests)
-- ✅ AnimationCard — CardState+AnimationCard+CardKeyframe+CardTimeline+CardAnimator (9 tests)
-- ✅ Presence — PresenceUserStatus+PresenceUser+PresenceUserMap+PresenceBroadcast (9 tests)
-
-## Wave ABAC — COMPLETE (2026-04-19, 9891 tests)
-
-- ✅ DiagnosticSquiggle — DiagnosticSeverity+DiagnosticSpan+SquiggleStyle+DiagnosticOverlay (9 tests, C4)
-- ✅ HoverTooltip — TooltipKind+TooltipContent+TooltipAnchor+HoverTooltip+TooltipRenderer (9 tests, C4)
-- ✅ LlamaCompose — PipelineStage+LlamaPipelineNode+LlamaPipeline+PipelineCombinator+PipelineOutput (9 tests, C6)
-- ✅ PropertyPanel — PropertyKind+PropertyValue+PropertyField+PropertyGroup+PropertyPanel (10 tests, UI)
-- ✅ EventLog — EventKind+LoggedEvent+EventLog+EventLogStore (9 tests, telemetry)
-
-## Wave ABAD — COMPLETE (2026-04-19, 9939 tests)
-
-- ✅ FlowReplay — ReplaySpeed+FlowReplayEntry+FlowReplay+ReplayController+ReplaySnapshot (9 tests)
-- ✅ AppBundle — BundleTarget×6+BundleManifest+BundleArtifact+BundleBuilder+BundleOutput (9 tests)
-- ✅ FrostedPipeline — FrostedLayerConfig+PassInput+PassOutput+Runner+PipelineStats (9 tests)
-- ✅ GoToDef — DefinitionKind+Location+Target+GoToDefRequest+GoToDefResolver (9 tests, C4)
-- ✅ FlowStepTable — StepStatus+FlowStepRow+FlowStepTable+FlowStepQuery+StepTimeline (9 tests, A9)
-
-## Wave ABAE — COMPLETE (2026-04-19, 9988 tests)
-
-- ✅ RenamePreview — RenamePreviewKind+Change+Model+Conflict+Applier (9 tests, C4)
-- ✅ CompletionEngine — CompletionKind+Item+List+Query+Engine (11 tests, C4)
-- ✅ SemanticCache — SemanticKey+Entry+CacheEviction+Cache+CacheStats (9 tests)
-- ✅ PixelDiff — PixelRegion+PixelDiff+DiffThreshold+DiffReport+RegionDiffer (11 tests)
-- ✅ PerfCounter — CounterKind+PerfCounter+CounterSnapshot+Registry+RateCalc (9 tests)
-
-## Wave ABAF — COMPLETE (2026-04-19, 10035 tests)
-
-- ✅ DeltaCompress — DeltaKind+Frame+Encoder+Decoder+DeltaStream (9 tests)
-- ✅ NativeScreen — ScreenTarget+CaptureResolution+CaptureBuffer+ScreenCapture+Backend (9 tests)
-- ✅ SnapAlign — AlignAxis+AlignGuide+SnapTarget+AlignResult+AlignmentEngine (9 tests)
-- ✅ MultiFileEdit — EditScope+MultiFileChange+Session+MultiFileDiff+SessionApplier (9 tests)
-- ✅ EmbedRegistry — EmbedKind+Entry+EmbedRegistry+EmbedResolver (9 tests)
-
-## Wave ABAG — COMPLETE (2026-04-19, 10080 tests)
-
-- ✅ IntentGraph — IntentKind+Node+Edge+IntentGraph+IntentGraphQuery (9 tests)
-- ✅ VideoTimeline — ClipKind+TimelineClip+VideoTimeline+ClipOverlap+TimelineRenderer (9 tests)
-- ✅ LayoutGrid — TrackSize+GridTrack+GridCell+LayoutGrid+GridPlacement (9 tests)
-- ✅ CodeLens — CodeLensKind+CodeLens+Provider+Overlay+LensResolver (9 tests)
-- ✅ AuditLog — AuditCategory+AuditEvent+AuditFilter+AuditLog+AuditReporter (9 tests)
-
-## Wave ABAH — COMPLETE (2026-04-19, 10125 tests)
-
-- ✅ SchemaVersion — SchemaVersionId+VersionEdge+SchemaVersionGraph+VersionDiff+MigrationPlan (9 tests)
-- ✅ ExportBundle — ExportFormat×6+Target+Job+Queue+ExportResult (9 tests)
-- ✅ ViewportClip — ClipRect+ClipStack+ViewportClipper+ClipResult+ClipBatch (9 tests)
-- ✅ Breadcrumb — BreadcrumbKind+Segment+Path+Nav+Renderer (9 tests)
-- ✅ SyncProtocol — SyncMessageKind+Message+SyncState+SyncSession+SyncProtocol (9 tests)
-
-## Wave ABAI — COMPLETE (2026-04-19, 10171 tests)
-
-- ✅ RouteTable — RouteKind+Key+Entry+RouteTable+RouteResolver (9 tests)
-- ✅ ImagePipeline — ImageStageKind+Stage+Pipeline+PipelineResult+Runner (9 tests)
-- ✅ HitZone — HitZoneKind+HitZone+HitZoneMap+HitTestResult+ZoneHitTester (10 tests)
-- ✅ OutlineView — OutlineItemKind+Item+Section+OutlineTree+Renderer (9 tests)
-- ✅ BlockTree — BlockNodeKind+BlockNode+BlockTree+Walker+TreeDiff (9 tests)
-
-## Wave ABAJ — COMPLETE (2026-04-19, 10216 tests) ✨ 10k+ milestone
-
-- ✅ MemoryGraph — MemoryTier+Node+Edge+Graph+MemoryQuery (9 tests)
-- ✅ DataCompose — DataSourceKind+Source+Query+Result+DataComposer (9 tests)
-- ✅ TransformStack — Transform2D+Stack+Inverse+Result+Composer (9 tests)
-- ✅ SearchIndex — SearchTokenKind+Token+Index+Query+Result (9 tests)
-- ✅ MemoGraph — MemoKeyKind+Key+Entry+Graph+Invalidator (9 tests)
-
-## Wave ABAO — COMPLETE (2026-04-19, 10436 tests)
-
-- ✅ TableBlock — CellAlign+TableCell+TableRow+TableBlock+TableSerializer (9 tests)
-- ✅ ConflictResolver — ConflictKind+ConflictSide+Conflict+ResolutionStrategy+ConflictResolver (9 tests)
-- ✅ TypeMap — TypeKind+TypeId+TypeInfo+TypeMap+TypeResolver (9 tests)
-- ✅ WorkflowComposer — NodeType+WorkflowNode+WorkflowEdge+WorkflowGraph+WorkflowComposer (9 tests)
-- ✅ LayerStack — LayerKind+LayerId+Layer+LayerStack+LayerCompositor (9 tests)
-- ✅ Results doc — docs/superpowers/specs/2026-04-19-wave-abao-results.md
-
-## Open Items — Wave ABAP targets
-
-- ❌ Bootstrap fixpoint proof
-- ❌ Real LLVM parser/resolver/codegen.nom path
-- ❌ Parser-backed Nomx validation for reverse-engineered function output (current validation checks prose-English function shape only)
-- ✅ Full `nom-canvas` workspace verification after ABAO tracking update (`cargo test --workspace`)
-- ✅ Full `nom-canvas` workspace verification after upstream cleanup / reverse Nomx function commit (`cargo test --workspace`)
+## Recently Completed (Last 5 Waves)
+
+- **Wave AD** — 4 end-to-end demos (render, video, DB, chain) + P0 renames + workspace compiles clean
+- **Wave Critical** — CB1/2/4/5 fixed + AI orchestration + data engine + media pipeline + brand scrub
+- **Wave ABAO** — TableBlock, ConflictResolver, TypeMap, WorkflowComposer, LayerStack
+- **Wave ABJ+ABK** — DonutPipeline, CodeGenPipeline, TypeInferencer, ReAct+BM25
+- **Wave ABI** — Vision pipeline (YOLOv8, SAM, LayoutLMv3, AnimateDiff)
+- **Wave ABG+ABH** — ChatDispatch, LlmQualityGate, LspSyncDriver, CorpusOrchestrator, CompilePipeline
 
 ---
 
-## Compiler Parallel Track (nom-compiler — UNCHANGED as infra)
+## Future Waves
 
-- [x] GAP-1c body_bytes · GAP-2 embeddings · GAP-3 corpus ingest
-- [x] GAP-4 nom-intent 9router pattern · GAP-5 deep_think backing op
-- [ ] Bootstrap fixpoint proof (Wave future)
+- [x] **Wave AD** — End-to-End Demos (4/5 complete, CB3 deferred)
+- [ ] **Wave AE** — Polish: real LSP, golden E2E, clippy clean
+- [ ] **Wave AF** — Massive Parallel Repo Pattern Audit & Adoption (16 repos)
+- [ ] **Wave AG** — UI hardening: settings, theme toggle, font wiring
+- [ ] **Wave AH+** — Bootstrap fixpoint, LLVM path, release builds
 
 ---
 
-## Non-Negotiable Rules
+## Wave AF — Massive Parallel Repo Pattern Audit & Adoption
 
-1. Read source repos end-to-end before any code borrowing the pattern
-2. Always use `ui-ux-pro-max` skill for UI work
-3. Zero foreign identities in public API
-4. nom-compiler is CORE — direct workspace path deps, zero IPC
-5. DB IS the workflow engine — no external orchestrator
-6. Every canvas object = DB entry — `entity: NomtuRef` non-optional
-7. Canvas = AFFiNE-for-RAG (frosted glass + confidence edges)
-8. Doc mode = Zed + Rowboat + AFFiNE
-9. Deep thinking = compiler op streamed to right dock
-10. GPUI fully Rust — one binary, no webview
-11. Spawn parallel subagents for multi-file work
-12. Run `gitnexus_impact` before editing any symbol
+**Objective:** Extract actionable patterns from 12 untapped high-value reference repos + 4 future-wave repos. Each repo analyzed by a dedicated subagent. Findings written to `.archive/audits/2026-04-19-{repo}-pattern.md`.
 
-**Sibling docs:** `implementation_plan.md` · `nom_state_machine_report.md` · `docs/superpowers/specs/2026-04-17-nomcanvas-gpui-design.md` · `INIT.md`
+### P0 Critical (adopt immediately)
+- [ ] **AF-FFMPEG** — Filter graph DSL + format negotiation → `nom-compose/src/video_encode.rs` | Analysis ✅ | Effort: 3–5 weeks | Blocker: build-system integration, hwaccel context
+- [x] **AF-POLARS** — LazyFrame + pushdown optimizer → `nom-compose/src/data_query.rs` | Analysis ✅ | Effort: 1–2 weeks (Level B) | Rec: real `PolarsEngine` behind `QueryEngine` trait
+- [x] **AF-LANGCHAIN** — Runnable composition + tool use → `nom-compose/src/chain.rs` | Analysis ✅ | Effort: tiny–large | Gap: untyped, sync-only, string-based vs LangChain's typed async streaming
+
+### P1 High (adopt in this wave)
+- [x] **AF-CREWAI** — Multi-agent Flow/Crew orchestration → `nom-compose/src/crew.rs` | Analysis ✅ | Effort: 3–4 wk MVP, 13 wk full | Gap: no Flow DAG, no unified memory, no schema-first tools
+- [ ] **AF-SPIDER** — Builder-pattern API client + retry + streaming → `nom-compose/src/vendors/*.rs` | Analysis ✅ | Effort: ~24–41 hr | Note: `website.rs` is 13k lines, highly `#[cfg]` gated
+- [ ] **AF-OPENHARNESS** — 43+ tool skill library + memory → `nom-compose/src/harness.rs` | Analysis ✅ | Effort: 15–25 dev-days | Gap: 11 stub tools with raw `&str` closures, no schemas/async/permissions/memory
+- [x] **AF-OLLAMA** — Zero-config local LLM serving → `nom-compose/src/ollama.rs` | Analysis ✅ | Effort: 1–2 wk HTTP wrapper, 8–12 wk native port | Rec: start with HTTP client against external binary
+- [x] **AF-OPENDAL** — Universal storage (S3/GCS/Azure/HDFS) → `nom-compose/src/storage.rs` | Analysis ✅ | Effort: 0.5–1 day (add layers) | Win: add `RetryLayer` + `LoggingLayer` to existing `UniversalStorage`
+
+### P2 Medium (adopt in this wave)
+- [x] **AF-TEMPORAL** — Durable workflow execution → `nom-compose/src/durable.rs` | Analysis ✅ | Effort: 28–40 eng-days | Gap: `durable.rs` does not exist; needs history-driven replay FSMs
+- [ ] **AF-VELLO** — GPU vector renderer (Rust) → `nom-canvas-core/src/vector.rs` | Analysis ✅ | Effort: 3–4 weeks full, 1–2 weeks incremental | Rec: full integration (Option A)
+- [x] **AF-MEMPALACE** — Long-context verbatim memory → `nom-compose/src/memory.rs` | Analysis ✅ | Effort: 1 week baseline (96.6%), 4–6 weeks full | Gap: lacks embeddings, layering, hybrid retrieval
+- [x] **AF-VOXCPM** — Controllable voice cloning/TTS → `nom-compose/src/voice.rs` | Analysis ✅ | Effort: Medium–High | Rec: Python inference server (FastAPI/gRPC) called from Rust short-term
+
+### Future-Wave Analysis (scheduled for Wave AG+)
+- [ ] **AF-VLLM** — PagedAttention high-throughput inference analysis | Analysis ✅ | Effort: 5–7 mo single-GPU, 9–12 mo multi-GPU | Rec: treat as external executor, do not port GPU kernels
+- [ ] **AF-DENO** — Secure JS/TS sandbox analysis | Analysis ✅ | Effort: Low–Very High (4 options) | Alt: `rquickjs` for lighter sandbox
+- [ ] **AF-WASMTIME** — WASM sandbox for polyglot plugins analysis | Analysis ✅ | Effort: 1.5–2 wk minimal, 3–4 wk production | Gap: `wasm.rs` absent; `wasm_bridge.rs` is compile-time only
+- [ ] **AF-NATS** — Event streaming for distributed agents analysis | Analysis ✅ | Effort: 1–2 wk subject router, 6–12 mo full Raft | Gap: `stream.rs` absent; `streaming.rs` is AI-token streaming
+
+---
+
+## Wave AF-2 — Already Referenced Repo Gap Analysis & Closure
+
+**Objective:** Deep-dive the "already referenced" repos that are actually partial/stubbed, plus the not-yet-adopted D1 repos. 10 subagents dispatched.
+
+### Partial References (gap analysis complete)
+- [ ] **AF2-ZED** — GPUI integration gaps | Analysis ✅ | Effort: 2–3 days for CB1/CB2 closure, 8–10 weeks full parity | Top gaps: layout engine stub, 6 GPU pipelines no-ops, no atlas wiring, no uniform buffer upload
+- [ ] **AF2-AFFiNE** — Frosted glass + block editor + theming | Analysis ✅ | Effort: 2 weeks frosted GPU pass, 8–10 weeks full | Top gaps: frosted glass draws plain quads (zero blur), tokens compile-time only, no CRDT block schema
+- [ ] **AF2-ROWBOAT** — Real LLM integration + tool cards + deep-think | Analysis ✅ | Effort: 3–4 weeks minimal, 6–7 weeks full | Top gaps: zero real LLM adapters, ToolCard 20px strip, deep-think hypotheses are synthetic strings
+- [ ] **AF2-N8N** — Sandbox wiring + credential encryption + execution context | Analysis ✅ | Effort: 2.5–3 weeks P0, 4–5 weeks full | Top gaps: no parser bridge, plaintext credentials, no VM isolation, no runtime injection
+- [x] **AF2-WRENAI** — SemanticModel + MDL semantic layer | Analysis ✅ | Effort: 5–6 weeks single eng, 2–3 weeks with 2-person team | Top gaps: no manifest, relationships, calculated fields, views, metrics, DDL builders
+
+### Not Yet Adopted (pattern extraction complete)
+- [ ] **AF2-REMOTION** — FFmpeg image2pipe + frame sequencer + progress parser | Analysis ✅ | Effort: 3–5 days pipe/args/progress, 2–3 weeks E2E | ⚠️ **License alert:** custom two-tier (not MIT/Apache) — clean-room only
+- [ ] **AF2-HAYSTACK** — Graph pipeline + typed sockets + priority scheduler | Analysis ✅ | Effort: 9–13 dev-days MVP, 17–25 full | Nom gap: sequential Vec<Box<dyn>> with untyped String I/O vs Haystack's networkx graph + typed sockets
+- [ ] **AF2-TOOLJET** — Widget schema registry + dependency graph + event dispatcher | Analysis ✅ | Effort: 6–8 weeks MVP, 12–16 weeks full | ⚠️ **License alert:** AGPL-3.0 — study patterns only
+- [x] **AF2-CANDLE** — Real CandleAdapter with Device::Cpu + model loading | Analysis ✅ | Effort: 1–2 dev-days | Rec: feature-gate `candle-cpu` / `candle-cuda` / `candle-metal`
+- [x] **AF2-ARCREEL** — 5-phase video orchestration | Analysis ✅ | Effort: 3–5 weeks | Gap: `media_pipeline.rs` does not exist; closest analog is `author_session.rs` (5-phase `AuthorPhase`)
+
+---
+
+## Structural Debt (from 2026-04-19 audit)
+
+### P0 — Duplicate crate names (blocks workspace unification) ✅ COMPLETE
+- [x] Rename `nom-cli` (canvas) → `nom-canvas-cli`
+- [x] Rename `nom-graph` (canvas) → `nom-canvas-graph`
+- [x] Rename `nom-intent` (canvas) → `nom-canvas-intent`
+- [x] Delete `nom-media` (canvas stub) — 351 lines removed
+- [x] Delete `nom-ux` (canvas stub) — 625 lines removed
+- [x] Delete `nom-canvas/nom-canvas/` stale build artifacts
+- [x] Delete `nom-canvas/tests/` superseded by `nom-canvas-tests`
+
+### P1 — God crate splits
+- [ ] Split `nom-compose` (28,607 lines) → orchestrator + backends + output
+- [ ] Split `nom-canvas-core` (16,902 lines) → render + input + viewport
+- [ ] Split `nom-blocks` (11,672 lines) → core + tree + registry
+- [ ] Split `nom-graph` (canvas, 15,542 lines) → execution + rag + infra
+- [ ] Merge `nom-memoize` (5,926 lines) into `nom-graph`
+
+### P2 — Compiler cleanup
+- [ ] Split `nom-concept` (~13K lines) → lexer + parser + ir + validate + bootstrap
+- [ ] Modularize `nom-cli` (compiler) subcommands into per-group modules
+
+---
+
+## Single Source of Truth
+
+| Data | Canonical Location |
+|---|---|
+| Test counts | **This file** — updated per-wave |
+| Axis percentages | `ROADMAP_TO_100.md` |
+| Wave history | `nom_state_machine_report.md` |

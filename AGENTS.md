@@ -60,7 +60,7 @@ You are an agent working on the Nom compiler project. Follow these rules.
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Nom** (21510 symbols, 55711 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Nom** (31470 symbols, 74472 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 
@@ -166,6 +166,24 @@ When you are a Ruflo-spawned agent:
 - Store reusable patterns via `memory_store({key, value})`
 - Check sibling agents via `agent_list()` to avoid duplicate work
 - Mark completion via `task_complete({id, result})`
+
+## Single Source of Truth (MANDATORY — prevents doc drift)
+
+Before updating ANY tracking document, read ALL THREE canonical docs for consistency.
+
+| Data | Canonical Location | Update Rule |
+|------|-------------------|-------------|
+| **Test counts** | `task.md` | Updated per-wave only |
+| **Axis percentages** | `ROADMAP_TO_100.md` | Updated post-audit or major milestone only |
+| **Wave history** | `nom_state_machine_report.md` | Append-only. Never edit past entries. |
+| **Audit reports** | `.archive/audits/` | Dated, immutable after creation |
+| **Plans** | `.kimi/plans/` | Archive after execution; never overwrite in place |
+
+**What NOT to do:**
+- Never copy test counts from ROADMAP (it doesn't have them)
+- Never edit past entries in the state machine report
+- Never create a 4th tracking doc that duplicates these three
+- Never update axis percentages in task.md or state machine report
 
 ## Project Structure
 

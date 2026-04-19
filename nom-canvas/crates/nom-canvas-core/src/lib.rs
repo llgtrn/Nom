@@ -68,9 +68,9 @@ pub use frosted_glass::{BlurLayer, FrostedGlassEffect, LayerBlend, LayerComposit
 pub mod frosted_pipeline;
 pub use frosted_pipeline::{FrostedLayerConfig, FrostedPassInput, FrostedPassOutput, FrostedPipelineRunner, PipelineStats};
 
-/// AFFiNE design tokens: categories, token set, resolver, and applier.
-pub mod affine_tokens;
-pub use affine_tokens::{AffineToken, AffineTokenSet, DesignTokenApplier, TokenCategory, TokenResolver};
+/// Design tokens: categories, token set, resolver, and applier.
+pub mod design_tokens;
+pub use design_tokens::{DesignToken, DesignTokenSet, DesignTokenApplier, TokenCategory, TokenResolver};
 
 /// Dark and light theme toggle: mode enum, token map, and toggle with history.
 pub mod theme;

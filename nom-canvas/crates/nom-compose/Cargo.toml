@@ -3,12 +3,25 @@ name = "nom-compose"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = ["data-engine"]
+data-engine = ["polars", "dep:opendal", "dep:rusqlite"]
+polars = ["dep:polars"]
+ai-orchestration = ["dep:nom-concept"]
+ffmpeg = []
+
 [dependencies]
 nom-blocks = { path = "../nom-blocks" }
-nom-intent = { path = "../nom-intent" }
-nom-graph = { path = "../nom-graph" }
+nom-canvas-intent = { path = "../nom-canvas-intent" }
+nom-canvas-graph = { path = "../nom-canvas-graph" }
+serde = { workspace = true }
 serde_json = { workspace = true }
+reqwest = { version = "0.12", features = ["blocking", "json"] }
 sha2 = "0.10"
+nom-concept = { path = "../../../nom-compiler/crates/nom-concept", optional = true }
+polars = { version = "0.41", optional = true, default-features = false, features = ["lazy", "csv", "json", "parquet", "sql", "strings"] }
+opendal = { version = "0.50", optional = true, default-features = false, features = ["services-fs", "services-s3", "services-gcs", "services-azblob"] }
+rusqlite = { workspace = true, optional = true }
 
 [lints]
 workspace = true

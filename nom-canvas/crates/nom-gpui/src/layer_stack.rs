@@ -106,7 +106,7 @@ pub struct LayerCompositor;
 
 impl LayerCompositor {
     /// Returns the top-most visible layer (highest effective z), if any.
-    pub fn top_visible<'a>(stack: &'a LayerStack) -> Option<&'a Layer> {
+    pub fn top_visible(stack: &LayerStack) -> Option<&Layer> {
         stack
             .layers
             .iter()

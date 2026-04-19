@@ -1,7 +1,7 @@
 #![deny(unsafe_code)]
 
 use crate::progress::{ComposeEvent, ProgressSink};
-use nom_intent::{classify_with_react, react_chain};
+use nom_canvas_intent::{classify_with_react, react_chain};
 
 /// One step in a chain-of-thought pipeline.
 #[derive(Debug, Clone, PartialEq)]

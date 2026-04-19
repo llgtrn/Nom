@@ -127,9 +127,7 @@ impl CardTimeline {
     /// keyframe has been reached yet.
     pub fn keyframe_at(&self, time_ms: u64) -> Option<&CardKeyframe> {
         self.keyframes
-            .iter()
-            .filter(|kf| kf.time_ms <= time_ms)
-            .last()
+            .iter().rfind(|kf| kf.time_ms <= time_ms)
     }
 }
 

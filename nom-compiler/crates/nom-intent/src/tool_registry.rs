@@ -1,5 +1,5 @@
 //! Tool metadata registry for ReAct agents.
-//! Pattern: LlamaIndex tools/ — structured metadata enabling MCP tool export.
+//! Structured metadata enabling MCP tool export.
 
 use crate::prompt::ToolMetadata;
 use serde::{Deserialize, Serialize};

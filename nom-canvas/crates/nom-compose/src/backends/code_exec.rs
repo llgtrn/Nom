@@ -95,7 +95,7 @@ impl CodeExecBackend {
     /// Evaluate a code string through the sandbox evaluator.
     /// Handles the `eval:` prefix for integer literals; passes other input through unchanged.
     fn eval_code(input: &str) -> String {
-        use nom_graph::{eval_expr, sanitize, EvalContext, Expr, SandboxValue};
+        use nom_canvas_graph::{eval_expr, sanitize, EvalContext, Expr, SandboxValue};
 
         if input.trim().starts_with("eval:") {
             let code = input.trim().trim_start_matches("eval:").trim();

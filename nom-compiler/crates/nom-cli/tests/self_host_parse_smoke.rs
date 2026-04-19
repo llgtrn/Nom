@@ -31,6 +31,8 @@ fn self_host_nom_files_exist_and_contain_keywords() {
         nom_compiler.join("stdlib/self_host/ast.nom"),
         nom_compiler.join("stdlib/self_host/lexer.nom"),
         nom_compiler.join("stdlib/self_host/parser.nom"),
+        nom_compiler.join("stdlib/self_host/resolver.nom"),
+        nom_compiler.join("stdlib/self_host/typechecker.nom"),
         nom_compiler.join("stdlib/self_host/planner.nom"),
         nom_compiler.join("stdlib/self_host/codegen.nom"),
         nom_compiler.join("stdlib/self_host/verifier.nom"),

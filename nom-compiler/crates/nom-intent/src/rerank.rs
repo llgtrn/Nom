@@ -1,5 +1,5 @@
 //! Query result reranking for nom-intent.
-//! Pattern: LlamaIndex postprocessor/llm_rerank — BM25 + score fusion.
+//! BM25 + score fusion.
 
 use std::collections::HashMap;
 

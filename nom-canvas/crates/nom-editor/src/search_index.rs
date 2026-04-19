@@ -42,6 +42,12 @@ pub struct SearchIndex {
     pub tokens: Vec<SearchToken>,
 }
 
+impl Default for SearchIndex {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SearchIndex {
     pub fn new() -> Self {
         Self { tokens: Vec::new() }

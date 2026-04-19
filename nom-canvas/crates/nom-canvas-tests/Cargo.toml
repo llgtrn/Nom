@@ -11,13 +11,13 @@ path = "tests/golden_paths.rs"
 nom-compiler-bridge = { path = "../nom-compiler-bridge", default-features = false }
 nom-canvas-core = { path = "../nom-canvas-core" }
 nom-compose = { path = "../nom-compose" }
-nom-intent = { path = "../nom-intent" }
+nom-canvas-intent = { path = "../nom-canvas-intent" }
 nom-editor = { path = "../nom-editor" }
 nom-blocks = { path = "../nom-blocks" }
-nom-graph = { path = "../nom-graph" }
+nom-canvas-graph = { path = "../nom-canvas-graph" }
 nom-panels = { path = "../nom-panels" }
 nom-theme = { path = "../nom-theme" }
-nom-cli = { path = "../nom-cli" }
+nom-canvas-cli = { path = "../nom-canvas-cli" }
 nom-telemetry = { path = "../nom-telemetry" }
 nom-collab = { path = "../nom-collab" }
 

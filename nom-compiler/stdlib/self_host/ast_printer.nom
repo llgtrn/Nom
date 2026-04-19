@@ -1,0 +1,57 @@
+# Nom Self-Host: AST printer (support scaffold for parser/AST work)
+#
+# This file is the Nom-in-Nom placeholder for rendering self-host AST
+# shapes back into text. It stays intentionally small until the parser
+# can emit real declaration lists and statement trees.
+#
+# Shared with:
+#   parser.nom (Phase 2): provides SourceFile classifier/name counts
+#   ast.nom (Phase 3): defines declaration-shape vocabulary
+#
+# Status: SCAFFOLD. Shape-only printable structs + text helpers.
+
+nom self_host_ast_printer
+
+struct PrintableDecl {
+  kind: text
+  name: text
+}
+
+struct PrintableSourceFile {
+  classifier: text
+  name: text
+  declaration_count: integer
+}
+
+# Canonical separator used between declaration renderings. Keeping this
+# as a helper lets the Rust-side parity checks pin formatting choices
+# once the printer starts emitting multi-line output.
+fn decl_separator() -> text {
+  return "\n"
+}
+
+fn empty_printable_source_file() -> PrintableSourceFile {
+  return PrintableSourceFile {
+    classifier: "",
+    name: "",
+    declaration_count: 0,
+  }
+}
+
+# Shape-level source rendering. Today this only preserves the module
+# header and uses a stable placeholder when the scaffold is empty.
+fn render_source_file(sf: PrintableSourceFile) -> text {
+  if sf.classifier == "" {
+    return "nom empty"
+  }
+  return sf.classifier
+}
+
+# Shape-level declaration rendering. Full signature/body emission lands
+# once the self-host subset can represent parameter lists and bodies.
+fn render_decl(d: PrintableDecl) -> text {
+  if d.kind == "" {
+    return d.name
+  }
+  return d.kind
+}

@@ -14,6 +14,7 @@ mod types;
 
 use inkwell::context::Context;
 use inkwell::memory_buffer::MemoryBuffer;
+use inkwell::targets::TargetMachine;
 use nom_planner::CompositionPlan;
 use thiserror::Error;
 
@@ -40,7 +41,8 @@ pub struct LlvmOutput {
 /// Compile a CompositionPlan to LLVM IR.
 pub fn compile(plan: &CompositionPlan) -> Result<LlvmOutput, LlvmError> {
     let compiler = context::NomCompiler::new();
-    compiler.compile_plan(plan)
+    let output = compiler.compile_plan(plan)?;
+    normalize_output_module(output, "compiled_module")
 }
 
 /// Link multiple bitcode blobs into a single LLVM module.
@@ -70,12 +72,31 @@ pub fn link_bitcodes(bitcode_blobs: &[Vec<u8>]) -> Result<LlvmOutput, LlvmError>
             .map_err(|e| LlvmError::Compilation(format!("link blob {}: {}", i + 1, e)))?;
     }
 
-    base_module
+    normalize_module(base_module)
+}
+
+fn set_host_target_triple(module: &inkwell::module::Module<'_>) {
+    let triple = TargetMachine::get_default_triple();
+    module.set_triple(&triple);
+}
+
+fn normalize_output_module(output: LlvmOutput, module_name: &str) -> Result<LlvmOutput, LlvmError> {
+    let context = Context::create();
+    let buffer = MemoryBuffer::create_from_memory_range_copy(&output.bitcode, module_name);
+    let module = inkwell::module::Module::parse_bitcode_from_buffer(&buffer, &context)
+        .map_err(|e| LlvmError::Compilation(format!("parse emitted bitcode: {}", e)))?;
+    normalize_module(module)
+}
+
+fn normalize_module(module: inkwell::module::Module<'_>) -> Result<LlvmOutput, LlvmError> {
+    set_host_target_triple(&module);
+
+    module
         .verify()
         .map_err(|e| LlvmError::Verification(e.to_string()))?;
 
-    let ir_text = base_module.print_to_string().to_string();
-    let bitcode = base_module.write_bitcode_to_memory().as_slice().to_vec();
+    let ir_text = module.print_to_string().to_string();
+    let bitcode = module.write_bitcode_to_memory().as_slice().to_vec();
 
     Ok(LlvmOutput { ir_text, bitcode })
 }
@@ -220,6 +241,23 @@ mod linking_tests {
         let result = compile_plans(&[]);
         assert!(result.is_err());
     }
+
+    #[test]
+    fn link_bitcodes_sets_host_target_triple() {
+        let plan_a = make_plan("mod_a", vec![add_fn_stmt("add_a")]);
+        let plan_b = make_plan("mod_b", vec![add_fn_stmt("add_b")]);
+
+        let out_a = compile(&plan_a).expect("compile plan_a");
+        let out_b = compile(&plan_b).expect("compile plan_b");
+
+        let linked = link_bitcodes(&[out_a.bitcode, out_b.bitcode]).expect("link should succeed");
+
+        assert!(
+            linked.ir_text.contains("target triple = "),
+            "linked IR should record a target triple, got:\n{}",
+            linked.ir_text
+        );
+    }
 }
 
 #[cfg(test)]
@@ -305,6 +343,11 @@ mod tests {
         assert!(
             output.ir_text.contains("fadd"),
             "IR should contain fadd (float addition), got:\n{}",
+            output.ir_text
+        );
+        assert!(
+            output.ir_text.contains("target triple = "),
+            "IR should record a target triple, got:\n{}",
             output.ir_text
         );
         assert!(!output.bitcode.is_empty(), "bitcode should be non-empty");

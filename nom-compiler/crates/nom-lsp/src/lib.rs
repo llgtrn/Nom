@@ -440,9 +440,9 @@ fn handle_completion(id: RequestId, _params: lsp_types::CompletionParams) -> Res
     }
 }
 
-/// Week-1 hover: constant "nom-lsp alive" marker. Later slice replaces
-/// this with a dict lookup (resolve the symbol under the cursor through
-/// nom-resolver + surface glass-box report JSON from cmd_build_report).
+/// Definition resolves the word under the cursor through the dict and
+/// returns a file-backed `Location` when source metadata is available.
+/// Unresolved definition requests return the LSP `null` result.
 fn handle_definition(id: RequestId, params: lsp_types::GotoDefinitionParams) -> Response {
     let Some((token, _range)) = word_at_position(
         &params.text_document_position_params.text_document.uri,
@@ -572,18 +572,7 @@ fn handle_hover(id: RequestId, params: lsp_types::HoverParams) -> Response {
             };
         }
     }
-    let hover = lsp_types::Hover {
-        contents: HoverContents::Markup(MarkupContent {
-            kind: MarkupKind::Markdown,
-            value: format!("**{SERVER_NAME}** v{SERVER_VERSION} — hover stub alive"),
-        }),
-        range: None,
-    };
-    Response {
-        id,
-        result: Some(serde_json::to_value(hover).expect("hover serializes")),
-        error: None,
-    }
+    null_response(id)
 }
 
 /// Metadata extracted by scanning the raw source text of a .nomtu file.
@@ -1054,7 +1043,7 @@ mod tests {
     }
 
     #[test]
-    fn dispatch_hover_returns_markdown_with_server_name() {
+    fn dispatch_hover_returns_null_when_no_symbol_is_resolved() {
         let req = Request::new(
             RequestId::from(1),
             HoverRequest::METHOD.to_string(),
@@ -1073,16 +1062,7 @@ mod tests {
         );
         let resp = dispatch_request(req);
         assert!(resp.error.is_none());
-        let hover: lsp_types::Hover =
-            serde_json::from_value(resp.result.expect("hover result set")).unwrap();
-        let body = match hover.contents {
-            HoverContents::Markup(m) => m.value,
-            _ => panic!("expected markup hover"),
-        };
-        assert!(
-            body.contains(SERVER_NAME),
-            "hover body must name server: {body}"
-        );
+        assert_eq!(resp.result, Some(serde_json::Value::Null));
     }
 
     #[test]

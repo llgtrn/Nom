@@ -1,5 +1,5 @@
 //! Robust LLM output parser for ReAct agent actions.
-//! Pattern: LlamaIndex output_parser.py — JSON schema + regex fallback.
+//! JSON schema + regex fallback.
 
 use serde::{Deserialize, Serialize};
 

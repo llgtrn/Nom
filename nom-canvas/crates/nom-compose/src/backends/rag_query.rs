@@ -3,7 +3,7 @@ use crate::deep_think::{DeepThinkConfig, DeepThinkStream};
 use crate::progress::{ComposeEvent, ProgressSink};
 use crate::store::ArtifactStore;
 use nom_blocks::NomtuRef;
-use nom_graph::{Dag, GraphRagRetriever, QueryVec, RetrievedNode};
+use nom_canvas_graph::{Dag, GraphRagRetriever, QueryVec, RetrievedNode};
 
 pub struct RagChunk {
     pub id: String,
@@ -146,7 +146,7 @@ mod tests {
     use super::*;
     use crate::progress::{LogProgressSink, VecProgressSink};
     use crate::store::InMemoryStore;
-    use nom_graph::{Dag, ExecNode};
+    use nom_canvas_graph::{Dag, ExecNode};
 
     #[test]
     fn rag_top_k_selection() {

@@ -27,6 +27,17 @@ struct SourceFile {
   declaration_count: integer
 }
 
+# Canonical empty value for the Phase-2 scaffold. Keeping this in one
+# helper makes later parser growth easier: once classifier/name parsing
+# lands, callers can keep using a single constructor for the empty case.
+fn empty_source_file() -> SourceFile {
+  return SourceFile {
+    classifier: "",
+    name: "",
+    declaration_count: 0,
+  }
+}
+
 # Entry point. Real implementation does:
 #   1. Consume the `<classifier> <name>` prefix (nom, flow, store, …).
 #   2. Loop: parse one top-level declaration (fn / struct / enum / …)
@@ -35,17 +46,20 @@ struct SourceFile {
 fn nom_parse(tokens: TokenStream) -> SourceFile {
   # Scaffold: return an empty SourceFile so callers can exercise the
   # shape without a null crash. Real implementation replaces this.
-  return SourceFile {
-    classifier: "",
-    name: "",
-    declaration_count: 0,
-  }
+  return empty_source_file()
 }
 
 # Shape-level predicate: true when the SourceFile has no declarations.
 # Callers use this to detect the scaffold / empty-file case.
 fn is_empty_source_file(sf: SourceFile) -> bool {
   return sf.declaration_count == 0
+}
+
+# Parser postcondition helper: once classifier parsing is real, callers
+# can use this to distinguish a parsed module header from the empty
+# scaffold path without needing to know the classifier catalog.
+fn source_file_has_known_classifier(sf: SourceFile) -> bool {
+  return is_known_classifier(sf.classifier)
 }
 
 # Canonical classifier string for a Nom module. Mirrors the tag the

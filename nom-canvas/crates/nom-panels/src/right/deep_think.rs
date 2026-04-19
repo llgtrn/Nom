@@ -3,7 +3,7 @@ use crate::dock::{fill_quad, rgba_to_hsla, DockPosition, Panel};
 use nom_compose::deep_think::DeepThinkStep;
 use nom_gpui::scene::{Quad, Scene};
 use nom_gpui::types::{Bounds, ContentMask, Corners, Edges, Pixels, Point, Size};
-use nom_intent::{classify_with_react, InterruptSignal};
+use nom_canvas_intent::{classify_with_react, InterruptSignal};
 use nom_theme::tokens;
 use nom_theme::tokens::edge_color_for_confidence;
 
@@ -915,7 +915,7 @@ mod tests {
     /// trigger_interrupt transitions a running panel to Interrupted and fires the signal.
     #[test]
     fn deep_think_trigger_interrupt_transitions_state() {
-        let signal = nom_intent::InterruptSignal::new();
+        let signal = nom_canvas_intent::InterruptSignal::new();
         let mut panel = DeepThinkPanel::with_interrupt_signal(signal.clone());
         panel.begin("test interrupt");
         assert!(panel.is_running(), "panel must be running after begin()");
@@ -937,7 +937,7 @@ mod tests {
     /// trigger_interrupt on an idle panel is a no-op — signal stays unset.
     #[test]
     fn deep_think_trigger_interrupt_noop_when_idle() {
-        let signal = nom_intent::InterruptSignal::new();
+        let signal = nom_canvas_intent::InterruptSignal::new();
         let mut panel = DeepThinkPanel::with_interrupt_signal(signal.clone());
         // Do NOT call begin() — panel is Idle
         panel.trigger_interrupt();

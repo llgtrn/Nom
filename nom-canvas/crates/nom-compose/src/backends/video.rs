@@ -202,11 +202,29 @@ impl VideoBackend {
 
         let payload = match (input.container_format, input.codec) {
             (ContainerFormat::Y4m, _) => encode_y4m_manifest(&spec, &input.frames),
-            (ContainerFormat::Mp4Stub, codec) => {
-                encode_stub_container("MP4", &codec.to_string(), &spec)
+            (ContainerFormat::Mp4Stub, _codec) => {
+                #[cfg(feature = "ffmpeg")]
+                {
+                    if let Some(data) = try_encode_mp4_via_ffmpeg(&spec, &input.frames) {
+                        data
+                    } else {
+                        encode_stub_container("MP4", "h264", &spec)
+                    }
+                }
+                #[cfg(not(feature = "ffmpeg"))]
+                encode_stub_container("MP4", &_codec.to_string(), &spec)
             }
-            (ContainerFormat::WebMStub, codec) => {
-                encode_stub_container("WebM", &codec.to_string(), &spec)
+            (ContainerFormat::WebMStub, _codec) => {
+                #[cfg(feature = "ffmpeg")]
+                {
+                    if let Some(data) = try_encode_webm_via_ffmpeg(&spec, &input.frames) {
+                        data
+                    } else {
+                        encode_stub_container("WebM", "vp9", &spec)
+                    }
+                }
+                #[cfg(not(feature = "ffmpeg"))]
+                encode_stub_container("WebM", &_codec.to_string(), &spec)
             }
         };
         let artifact_hash = store.write(&payload);
@@ -252,6 +270,60 @@ fn encode_y4m_manifest(spec: &VideoSpec, frames: &[Vec<u8>]) -> Vec<u8> {
         out.push(b'\n');
     }
     out
+}
+
+#[cfg(feature = "ffmpeg")]
+fn try_encode_mp4_via_ffmpeg(spec: &VideoSpec, frames: &[Vec<u8>]) -> Option<Vec<u8>> {
+    let mut raw_data = Vec::new();
+    for frame in frames {
+        raw_data.extend_from_slice(frame);
+    }
+    let size = format!("{}x{}", spec.width, spec.height);
+    let fps = format!("{}", spec.fps);
+    let args = vec![
+        "-f".to_string(), "rawvideo".to_string(),
+        "-vcodec".to_string(), "rawvideo".to_string(),
+        "-s".to_string(), size,
+        "-r".to_string(), fps,
+        "-pix_fmt".to_string(), "rgba".to_string(),
+        "-i".to_string(), "pipe:0".to_string(),
+        "-c:v".to_string(), "libx264".to_string(),
+        "-pix_fmt".to_string(), "yuv420p".to_string(),
+        "-movflags".to_string(), "+faststart".to_string(),
+        "-f".to_string(), "mp4".to_string(),
+        "pipe:1".to_string(),
+    ];
+    match crate::video_capture::run_command_with_timeout("ffmpeg", &args, Some(&raw_data), 30) {
+        Ok(data) if !data.is_empty() => Some(data),
+        _ => None,
+    }
+}
+
+#[cfg(feature = "ffmpeg")]
+fn try_encode_webm_via_ffmpeg(spec: &VideoSpec, frames: &[Vec<u8>]) -> Option<Vec<u8>> {
+    let mut raw_data = Vec::new();
+    for frame in frames {
+        raw_data.extend_from_slice(frame);
+    }
+    let size = format!("{}x{}", spec.width, spec.height);
+    let fps = format!("{}", spec.fps);
+    let args = vec![
+        "-f".to_string(), "rawvideo".to_string(),
+        "-vcodec".to_string(), "rawvideo".to_string(),
+        "-s".to_string(), size,
+        "-r".to_string(), fps,
+        "-pix_fmt".to_string(), "rgba".to_string(),
+        "-i".to_string(), "pipe:0".to_string(),
+        "-c:v".to_string(), "libvpx-vp9".to_string(),
+        "-deadline".to_string(), "good".to_string(),
+        "-cpu-used".to_string(), "2".to_string(),
+        "-f".to_string(), "webm".to_string(),
+        "pipe:1".to_string(),
+    ];
+    match crate::video_capture::run_command_with_timeout("ffmpeg", &args, Some(&raw_data), 30) {
+        Ok(data) if !data.is_empty() => Some(data),
+        _ => None,
+    }
 }
 
 #[cfg(test)]
@@ -1185,5 +1257,83 @@ mod tests {
             cfg.on_progress.is_none(),
             "default on_progress must be None"
         );
+    }
+
+    // ── FFmpeg fallback tests ────────────────────────────────────────────────
+
+    #[test]
+    fn video_backend_mp4_fallback_to_stub_when_ffmpeg_unavailable() {
+        let mut store = InMemoryStore::new();
+        let input = VideoInput {
+            entity: NomtuRef {
+                id: "mp4-fb".into(),
+                word: "fallback".into(),
+                kind: "media".into(),
+            },
+            frames: vec![vec![0u8; 4]],
+            fps: 24,
+            width: 1280,
+            height: 720,
+            container_format: ContainerFormat::Mp4Stub,
+            codec: VideoCodec::H264Stub,
+        };
+        let block = VideoBackend::compose(input, &mut store, &LogProgressSink);
+        let payload = store.read(&block.artifact_hash).unwrap();
+        // With invalid frame size, ffmpeg will fail and fall back to stub.
+        let text = String::from_utf8_lossy(&payload);
+        let is_stub = text.contains("NOM-STUB-CONTAINER");
+        let is_mp4 = payload.len() > 8 && &payload[4..8] == b"ftyp";
+        assert!(
+            is_stub || is_mp4,
+            "MP4 compose must yield either stub or real MP4"
+        );
+    }
+
+    #[test]
+    fn video_backend_webm_fallback_to_stub_when_ffmpeg_unavailable() {
+        let mut store = InMemoryStore::new();
+        let input = VideoInput {
+            entity: NomtuRef {
+                id: "webm-fb".into(),
+                word: "fallback".into(),
+                kind: "media".into(),
+            },
+            frames: vec![vec![0u8; 4]],
+            fps: 30,
+            width: 854,
+            height: 480,
+            container_format: ContainerFormat::WebMStub,
+            codec: VideoCodec::Vp9Stub,
+        };
+        let block = VideoBackend::compose(input, &mut store, &LogProgressSink);
+        let payload = store.read(&block.artifact_hash).unwrap();
+        let text = String::from_utf8_lossy(&payload);
+        let is_stub = text.contains("NOM-STUB-CONTAINER");
+        let is_webm = payload.starts_with(&[0x1A, 0x45, 0xDF, 0xA3]);
+        assert!(
+            is_stub || is_webm,
+            "WebM compose must yield either stub or real WebM"
+        );
+    }
+
+    #[test]
+    fn video_backend_y4m_never_uses_ffmpeg() {
+        let mut store = InMemoryStore::new();
+        let input = VideoInput {
+            entity: NomtuRef {
+                id: "y4m-no-ff".into(),
+                word: "raw".into(),
+                kind: "media".into(),
+            },
+            frames: vec![vec![0xAAu8; 4]],
+            fps: 24,
+            width: 2,
+            height: 2,
+            container_format: ContainerFormat::Y4m,
+            codec: VideoCodec::Raw,
+        };
+        let block = VideoBackend::compose(input, &mut store, &LogProgressSink);
+        let payload = store.read(&block.artifact_hash).unwrap();
+        assert!(payload.starts_with(b"YUV4MPEG2"));
     }
 }

@@ -48,6 +48,8 @@ fn self_host_parser_structural_check() {
     // Expected function declarations
     for name in &[
         "nom_parse",
+        "empty_source_file",
+        "source_file_has_known_classifier",
         "nom_classifier",
         "flow_classifier",
         "is_known_classifier",

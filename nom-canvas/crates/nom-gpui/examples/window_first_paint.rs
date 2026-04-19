@@ -1,52 +1,42 @@
-use nom_gpui::types::Vec2;
-use nom_gpui::window::{run_application, ApplicationHandler, Window, WindowEvent, WindowOptions};
-use std::time::{Duration, Instant};
+use nom_gpui::scene::{Quad, Scene};
+use nom_gpui::types::{Bounds, Hsla, Pixels, Point, Size};
+use nom_gpui::window::{ApplicationHandler, Window, WindowEvent, run_application};
 
-struct FirstPaintHarness {
-    started: Instant,
-    saw_wait: bool,
-}
+struct FirstPaintApp;
 
-impl FirstPaintHarness {
-    fn new() -> Self {
-        Self {
-            started: Instant::now(),
-            saw_wait: false,
-        }
-    }
-}
-
-impl ApplicationHandler for FirstPaintHarness {
+impl ApplicationHandler for FirstPaintApp {
     fn resumed(&mut self, window: &mut Window) {
         window.request_redraw();
     }
 
     fn window_event(&mut self, window: &mut Window, event: WindowEvent) {
-        if matches!(event, WindowEvent::CloseRequested) {
+        if let WindowEvent::CloseRequested = event {
             window.request_close();
         }
     }
 
     fn about_to_wait(&mut self, window: &mut Window) {
-        if self.saw_wait && self.started.elapsed() >= Duration::from_millis(1200) {
-            window.request_close();
-        } else {
-            self.saw_wait = true;
+        if !window.close_requested() {
             window.request_redraw();
         }
+    }
+
+    fn draw(&mut self, _window: &mut Window, scene: &mut Scene) {
+        scene.push_quad(Quad {
+            bounds: Bounds::new(
+                Point::new(Pixels(100.0), Pixels(100.0)),
+                Size::new(Pixels(200.0), Pixels(200.0)),
+            ),
+            background: Some(Hsla::new(0.0, 1.0, 0.5, 1.0)),
+            ..Default::default()
+        });
     }
 }
 
 fn main() {
-    run_application(
-        WindowOptions {
-            title: "NomCanvas Visual QA".into(),
-            size: Vec2::new(640.0, 420.0),
-            min_size: Some(Vec2::new(320.0, 240.0)),
-            decorations: true,
-            transparent: false,
-            resizable: false,
-        },
-        FirstPaintHarness::new(),
-    );
+    let options = nom_gpui::window::WindowOptions {
+        title: "AD-RENDER-DEMO — First Paint".to_string(),
+        ..nom_gpui::window::WindowOptions::default()
+    };
+    run_application(options, FirstPaintApp);
 }

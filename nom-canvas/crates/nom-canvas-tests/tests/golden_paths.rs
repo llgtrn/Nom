@@ -41,7 +41,7 @@ fn golden_compose_context_resolves() {
 // Golden path 3: Intent resolver classifies a kind
 #[test]
 fn golden_intent_resolver_classifies_video() {
-    use nom_intent::IntentResolver;
+    use nom_canvas_intent::IntentResolver;
 
     let resolver = IntentResolver::new(vec!["video_compose".into(), "audio_compose".into()]);
     let resolved = resolver.resolve("create a video about mountains");
@@ -152,7 +152,7 @@ fn golden_workspace_add_and_retrieve_block() {
 // Golden path 8: graph DAG — add two nodes, connect with edge, execute
 #[test]
 fn golden_graph_add_nodes_and_execute() {
-    use nom_graph::{Dag, ExecNode, ExecutionEngine, NullCache};
+    use nom_canvas_graph::{Dag, ExecNode, ExecutionEngine, NullCache};
 
     let mut dag = Dag::new();
     dag.add_node(ExecNode::new("n-a", "default"));
@@ -221,7 +221,7 @@ fn golden_deep_think_card_visible() {
 // Golden path 12: convert v1 source → v2 roundtrip
 #[test]
 fn golden_convert_v1_to_v2_roundtrip() {
-    use nom_cli::{convert_source, ConvertDirection};
+    use nom_canvas_cli::{convert_source, ConvertDirection};
 
     let v1_source = "fn add -> a + b";
     let v2 = convert_source(v1_source, ConvertDirection::V1ToV2);
@@ -314,7 +314,7 @@ fn golden_metrics_counter_increments() {
 // Golden path 17: BM25Retriever retrieves top result from two documents
 #[test]
 fn golden_bm25_retriever_retrieve() {
-    use nom_intent::BM25Retriever;
+    use nom_canvas_intent::BM25Retriever;
 
     let mut retriever = BM25Retriever::new();
     retriever.add_document("doc-a", "define greeting that says hello world");
@@ -329,7 +329,7 @@ fn golden_bm25_retriever_retrieve() {
 // Golden path 18: IngestionPipeline ingest emits a Completed event
 #[test]
 fn golden_ingestion_pipeline() {
-    use nom_intent::{IngestionEvent, IngestionPipeline};
+    use nom_canvas_intent::{IngestionEvent, IngestionPipeline};
 
     let mut pipeline = IngestionPipeline::new();
     let events = pipeline.ingest("src-golden", "define concept that holds value");
@@ -372,7 +372,7 @@ fn golden_viewport_snap() {
 // Golden path 20: IntentClassifier classifies a 'define' sentence with high confidence.
 #[test]
 fn golden_intent_classify() {
-    use nom_intent::IntentClassifier;
+    use nom_canvas_intent::IntentClassifier;
 
     let c = IntentClassifier::new();
     let r = c.classify("define a button that shows label");
@@ -455,7 +455,7 @@ fn golden_chat_dispatch() {
 // Golden path 25: WeightedGraph — add two edges, verify edge_count and total_weight.
 #[test]
 fn golden_weighted_graph() {
-    use nom_graph::WeightedGraph;
+    use nom_canvas_graph::WeightedGraph;
     let mut g = WeightedGraph::new();
     g.add_edge(1, 2, 0.5).add_edge(1, 3, 1.5);
     assert_eq!(g.edge_count(), 2);
@@ -489,7 +489,7 @@ fn golden_inspect_panel() {
 // Golden path 28: StrategyExtractor — extract signals from an open-source description.
 #[test]
 fn golden_strategy_extractor() {
-    use nom_intent::StrategyExtractor;
+    use nom_canvas_intent::StrategyExtractor;
     let report = StrategyExtractor::extract("open source developer tools on github");
     assert!(
         report.signal_count() > 0,
@@ -784,5 +784,216 @@ fn test_golden_vision_orchestrator() {
     assert!(
         output.nomx_output.contains("define vision_result_"),
         "nomx output must contain at least one vision_result define clause"
+    );
+}
+
+// Golden path 41: workspace rename preview spans multiple files and can be applied.
+#[test]
+fn golden_workspace_rename_preview_apply_flow() {
+    use nom_editor::{
+        RenameApplier, RenameChange, RenamePreviewKind, RenamePreviewModel, RenameScope, RenameOp,
+        WorkspaceRenamer,
+    };
+
+    let mut renamer = WorkspaceRenamer::new();
+    renamer.add_op(RenameOp::new(
+        "compose_card",
+        "compose_tile",
+        RenameScope::Global,
+    ));
+    renamer.add_op(RenameOp::new(
+        "deep_think",
+        "reasoning_stream",
+        RenameScope::FileScoped("src/panels/right.nom".into()),
+    ));
+    assert!(
+        renamer.validate().is_ok(),
+        "rename workflow must validate when old names are unique"
+    );
+
+    let preview = renamer.preview();
+    assert!(preview.has_changes(), "rename preview must report pending changes");
+    assert_eq!(preview.op_count(), 2, "two rename ops must be staged");
+
+    let model = RenamePreviewModel {
+        symbol_name: "compose_card".into(),
+        new_name: "compose_tile".into(),
+        changes: vec![
+            RenameChange {
+                file_path: "src/panels/right.nom".into(),
+                byte_start: 12,
+                byte_end: 24,
+                old_text: "compose_card".into(),
+                new_text: "compose_tile".into(),
+            },
+            RenameChange {
+                file_path: "src/flows/compose.nomx".into(),
+                byte_start: 41,
+                byte_end: 53,
+                old_text: "compose_card".into(),
+                new_text: "compose_tile".into(),
+            },
+        ],
+        kind: RenamePreviewKind::SideBySide,
+    };
+    assert!(
+        model.has_cross_file_changes(),
+        "rename preview must show cross-file edits for a workspace rename"
+    );
+
+    let mut applier = RenameApplier::default();
+    applier.set_preview(model.clone());
+    assert!(applier.can_apply(), "rename applier must accept a conflict-free preview");
+
+    let applied = applier
+        .apply()
+        .expect("rename preview must apply when no conflicts are present");
+    assert_eq!(applied.total_changes(), 2);
+    assert_eq!(
+        applied.files_affected(),
+        vec!["src/panels/right.nom", "src/flows/compose.nomx"]
+    );
+    assert_eq!(
+        renamer.apply().len(),
+        2,
+        "workspace renamer must produce two human-readable apply results"
+    );
+}
+
+// Golden path 42: visible canvas nodes snap to active alignment guides.
+#[test]
+fn golden_canvas_visibility_snap_flow() {
+    use nom_canvas_core::{
+        AlignAxis, AlignGuide, AlignmentEngine, SnapTarget, ViewportElementBounds, ViewportMap,
+        VisibilityQuery,
+    };
+
+    let mut map = ViewportMap::new();
+    map.insert(ViewportElementBounds::new(10, 92.0, 92.0, 16.0, 16.0));
+    map.insert(ViewportElementBounds::new(11, 420.0, 420.0, 32.0, 32.0));
+
+    let query = VisibilityQuery::new(0.0, 0.0, 200.0, 200.0);
+    let visible_ids = query.query_ids(&map);
+    assert_eq!(
+        visible_ids,
+        vec![10],
+        "only the near-center element should be visible in the current viewport"
+    );
+
+    let target = SnapTarget {
+        element_id: 10,
+        x: 92.0,
+        y: 92.0,
+        width: 16.0,
+        height: 16.0,
+    };
+    let mut engine = AlignmentEngine::new(4.0);
+    engine.add_guide(AlignGuide {
+        position: 100.0,
+        axis: AlignAxis::Vertical,
+        label: "canvas-center-x".into(),
+    });
+    engine.add_guide(AlignGuide {
+        position: 100.0,
+        axis: AlignAxis::Horizontal,
+        label: "canvas-center-y".into(),
+    });
+
+    let result = engine.snap(&target);
+    assert!(result.is_snapped(), "target must snap to both active center guides");
+    assert_eq!(result.snapped_x, Some(100.0));
+    assert_eq!(result.snapped_y, Some(100.0));
+    assert_eq!(result.guide_count(), 2);
+}
+
+// Golden path 43: branched compose workflow executes in dependency order.
+#[test]
+fn golden_compose_workflow_runner_branch_flow() {
+    use nom_compose::{NodeStatus, WorkflowGraph, WorkflowNode, WorkflowRunner};
+
+    let mut graph = WorkflowGraph::new();
+    graph.add_node(WorkflowNode::new(1, "ingest"));
+    graph.add_node(WorkflowNode::new(2, "analyze"));
+    graph.add_node(WorkflowNode::new(3, "storyboard"));
+    graph.add_node(WorkflowNode::new(4, "render"));
+    graph.add_edge(1, 2);
+    graph.add_edge(1, 3);
+    graph.add_edge(2, 4);
+    graph.add_edge(3, 4);
+
+    assert_eq!(
+        graph.dependencies_of(4),
+        vec![2, 3],
+        "render must depend on both analyze and storyboard branches"
+    );
+
+    let mut runner = WorkflowRunner::new(graph);
+    runner.run_all();
+
+    assert_eq!(runner.success_count(), 4, "all workflow nodes must complete successfully");
+    assert_eq!(
+        runner.execution_log,
+        vec![
+            "executed: ingest",
+            "executed: analyze",
+            "executed: storyboard",
+            "executed: render",
+        ]
+    );
+    assert!(
+        runner
+            .graph
+            .nodes
+            .iter()
+            .all(|node| node.status == NodeStatus::Success),
+        "runner must mark every node as Success after run_all"
+    );
+}
+
+// Golden path 44: widget search plus chat dispatch drives compose mode from the UI shell.
+#[test]
+fn golden_ui_palette_to_compose_dispatch_flow() {
+    use nom_panels::{
+        CanvasMode, ChatDispatch, ChatPanelMessage, HeaderAction, HeaderPanel, Toolbar,
+        WidgetCategory, WidgetKind, WidgetRegistry,
+    };
+
+    let registry = WidgetRegistry::with_all();
+    let custom_widgets = registry.by_category(&WidgetCategory::Custom);
+    assert!(
+        custom_widgets.iter().any(|widget| **widget == WidgetKind::NomCompose),
+        "custom widget registry must expose the Nom Compose entry"
+    );
+    let search_hits = registry.search("compose");
+    assert!(
+        search_hits.iter().any(|widget| **widget == WidgetKind::NomCompose),
+        "palette search for 'compose' must surface the Nom Compose widget"
+    );
+
+    let mut toolbar = Toolbar::new();
+    toolbar.add_button("Compose", "compose");
+    toolbar.add_button("Inspect", "inspect");
+    toolbar.set_active("compose");
+    assert!(
+        toolbar.buttons[0].active && !toolbar.buttons[1].active,
+        "compose mode must become the active toolbar button"
+    );
+
+    let header = HeaderPanel::new("Workspace / demo.nomx")
+        .push_left(HeaderAction::Icon {
+            name: "back".into(),
+        })
+        .push_right(HeaderAction::Button {
+            label: "Run Compose".into(),
+        });
+    assert_eq!(header.center, "Workspace / demo.nomx");
+    assert_eq!(header.left.len(), 1);
+    assert_eq!(header.right.len(), 1);
+
+    let msg = ChatPanelMessage::new_user("compose a storyboard from my notes", vec![]);
+    let (mode, _response) = ChatDispatch::dispatch(msg);
+    assert!(
+        matches!(mode, CanvasMode::Compose),
+        "compose chat intent must route the shell into CanvasMode::Compose"
     );
 }

@@ -6,6 +6,9 @@ edition = "2021"
 [features]
 default = ["compiler"]
 compiler = ["nom-concept", "nom-dict", "nom-grammar", "nom-score", "nom-types", "nom-search", "rusqlite", "nom-planner"]
+candle-cpu = []
+candle-cuda = ["candle-core/cuda", "candle-nn/cuda"]
+candle-metal = ["candle-core/metal", "candle-nn/metal"]
 
 [dependencies]
 nom-blocks = { path = "../nom-blocks" }
@@ -23,6 +26,8 @@ nom-search   = { path = "../../../nom-compiler/crates/nom-search",   optional = 
 nom-planner  = { path = "../../../nom-compiler/crates/nom-planner",  optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+candle-core = { version = "0.10", default-features = false }
+candle-nn = { version = "0.10", default-features = false }
 
 [lints]
 workspace = true

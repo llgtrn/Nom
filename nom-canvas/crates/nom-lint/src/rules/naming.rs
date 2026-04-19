@@ -8,7 +8,14 @@ pub struct NamingViolation {
 }
 
 /// Banned brand-name prefixes that must not appear in identifiers.
-const BANNED_PREFIXES: &[&str] = &["affine", "figma", "notion", "linear"];
+const BANNED_PREFIXES: &[&str] = &[
+    "affine", "figma", "notion", "linear",
+    "n8n", "sherlock", "haystack", "llamaindex", "llama_index",
+    "refly", "comfy", "dify", "openai", "anthropic", "claude",
+    "zed", "remotion", "tooljet", "rowboat", "bolt", "higgsfield",
+    "ffmpeg", "yt_dlp", "surreal", "greptime", "datafusion",
+    "temporal", "ollama", "vllm", "spider",
+];
 
 /// Stateless linter for Nom naming conventions.
 pub struct NamingLinter;
@@ -96,6 +103,41 @@ mod tests {
         assert!(v.is_some());
         let v = v.unwrap();
         assert!(v.reason.contains("affine"));
+    }
+
+    #[test]
+    fn no_foreign_brand_n8n() {
+        let v = NamingLinter::check_no_foreign_brand("n8n_workflow");
+        assert!(v.is_some());
+        assert!(v.unwrap().reason.contains("n8n"));
+    }
+
+    #[test]
+    fn no_foreign_brand_sherlock() {
+        let v = NamingLinter::check_no_foreign_brand("sherlock_adapter");
+        assert!(v.is_some());
+        assert!(v.unwrap().reason.contains("sherlock"));
+    }
+
+    #[test]
+    fn no_foreign_brand_haystack() {
+        let v = NamingLinter::check_no_foreign_brand("haystack_component");
+        assert!(v.is_some());
+        assert!(v.unwrap().reason.contains("haystack"));
+    }
+
+    #[test]
+    fn no_foreign_brand_ffmpeg() {
+        let v = NamingLinter::check_no_foreign_brand("ffmpeg_config");
+        assert!(v.is_some());
+        assert!(v.unwrap().reason.contains("ffmpeg"));
+    }
+
+    #[test]
+    fn no_foreign_brand_tooljet() {
+        let v = NamingLinter::check_no_foreign_brand("tooljet_source");
+        assert!(v.is_some());
+        assert!(v.unwrap().reason.contains("tooljet"));
     }
 
     #[test]

@@ -130,7 +130,7 @@ pub struct SpanAnalyzer;
 
 impl SpanAnalyzer {
     /// Returns every span whose `duration_us` exceeds 100 000 µs.
-    pub fn slow_spans<'a>(tree: &'a SpanTree) -> Vec<&'a Span> {
+    pub fn slow_spans(tree: &SpanTree) -> Vec<&Span> {
         tree.spans.iter().filter(|s| s.is_slow()).collect()
     }
 

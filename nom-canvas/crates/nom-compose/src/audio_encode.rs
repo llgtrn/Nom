@@ -85,6 +85,68 @@ impl AudioEncoder {
         header
     }
 
+    /// Encode the buffer into the target format bytes.
+    /// For WAV, returns a valid RIFF WAV. For other formats, delegates to ffmpeg when available.
+    pub fn encode(&self, buf: &AudioBuffer) -> Result<Vec<u8>, String> {
+        let wav = self.encode_wav(buf);
+        match self.format {
+            AudioFormat::Wav => Ok(wav),
+            #[cfg(feature = "ffmpeg")]
+            _ => {
+                let codec_args = match self.format {
+                    AudioFormat::Mp3 => vec![
+                        "-c:a".to_string(), "libmp3lame".to_string(),
+                        "-q:a".to_string(), "2".to_string(),
+                    ],
+                    AudioFormat::Ogg => vec![
+                        "-c:a".to_string(), "libvorbis".to_string(),
+                        "-q:a".to_string(), "4".to_string(),
+                    ],
+                    AudioFormat::Flac => vec!["-c:a".to_string(), "flac".to_string()],
+                    AudioFormat::Wav => vec![],
+                };
+                if codec_args.is_empty() {
+                    return Ok(wav);
+                }
+                let args = [
+                    vec!["-f".to_string(), "wav".to_string(), "-i".to_string(), "pipe:0".to_string()],
+                    codec_args,
+                    vec!["-f".to_string(), self.format.file_extension().to_string(), "pipe:1".to_string()],
+                ]
+                .concat();
+                crate::video_capture::run_command_with_timeout("ffmpeg", &args, Some(&wav), 30)
+            }
+            #[cfg(not(feature = "ffmpeg"))]
+            _ => Ok(wav),
+        }
+    }
+
+    /// Build a standard mono/stereo WAV from the buffer.
+    fn encode_wav(&self, buf: &AudioBuffer) -> Vec<u8> {
+        let channels = buf.channels as u32;
+        let sample_rate = buf.sample_rate;
+        let total_samples = buf.samples.len() as u32;
+        let data_len = total_samples * 2; // 16-bit
+        let mut out = Vec::with_capacity(44 + data_len as usize);
+        out.extend_from_slice(b"RIFF");
+        out.extend_from_slice(&(36 + data_len).to_le_bytes());
+        out.extend_from_slice(b"WAVEfmt ");
+        out.extend_from_slice(&16u32.to_le_bytes());
+        out.extend_from_slice(&1u16.to_le_bytes());
+        out.extend_from_slice(&(channels as u16).to_le_bytes());
+        out.extend_from_slice(&sample_rate.to_le_bytes());
+        out.extend_from_slice(&(sample_rate * channels * 2).to_le_bytes());
+        out.extend_from_slice(&(channels as u16 * 2).to_le_bytes());
+        out.extend_from_slice(&16u16.to_le_bytes());
+        out.extend_from_slice(b"data");
+        out.extend_from_slice(&data_len.to_le_bytes());
+        for sample in &buf.samples {
+            let pcm = (sample.clamp(-1.0, 1.0) * i16::MAX as f32) as i16;
+            out.extend_from_slice(&pcm.to_le_bytes());
+        }
+        out
+    }
+
     /// Estimated output size: frame_count * channels * 2 bytes (16-bit PCM).
     pub fn estimated_output_bytes(&self, buf: &AudioBuffer) -> usize {
         buf.frame_count() * buf.channels as usize * 2
@@ -103,9 +165,12 @@ impl RodioBackend {
         Self { encoder }
     }
 
-    /// Stub render: returns the encoded header bytes.
+    /// Render the buffer into encoded bytes, delegating to ffmpeg when available.
     pub fn render(&self, buf: &AudioBuffer) -> Vec<u8> {
-        self.encoder.encode_header(buf)
+        match self.encoder.encode(buf) {
+            Ok(data) => data,
+            Err(_) => self.encoder.encode_wav(buf),
+        }
     }
 
     /// Returns false — this backend is a stub, not a real-time renderer.
@@ -210,5 +275,39 @@ mod audio_encode_tests {
         let encoder = AudioEncoder::new(AudioFormat::Ogg);
         let backend = RodioBackend::new(encoder);
         assert!(!backend.is_realtime(), "stub backend must not be realtime");
+    }
+
+    #[test]
+    fn audio_encoder_encode_wav_starts_with_riff() {
+        let mut buf = AudioBuffer::new(44100, 1);
+        buf.push_sample(0.5);
+        buf.push_sample(-0.5);
+        let encoder = AudioEncoder::new(AudioFormat::Wav);
+        let wav = encoder.encode_wav(&buf);
+        assert_eq!(&wav[0..4], b"RIFF");
+        assert_eq!(&wav[8..12], b"WAVE");
+    }
+
+    #[test]
+    fn audio_encoder_encode_returns_wav_for_wav_format() {
+        let mut buf = AudioBuffer::new(48000, 2);
+        buf.push_sample(0.1);
+        buf.push_sample(0.2);
+        let encoder = AudioEncoder::new(AudioFormat::Wav);
+        let result = encoder.encode(&buf);
+        assert!(result.is_ok());
+        let data = result.unwrap();
+        assert_eq!(&data[0..4], b"RIFF");
+    }
+
+    #[test]
+    fn rodio_backend_render_returns_riff_wav() {
+        let mut buf = AudioBuffer::new(22050, 1);
+        buf.push_sample(0.5);
+        let encoder = AudioEncoder::new(AudioFormat::Wav);
+        let backend = RodioBackend::new(encoder);
+        let bytes = backend.render(&buf);
+        assert!(!bytes.is_empty());
+        assert_eq!(&bytes[0..4], b"RIFF");
     }
 }

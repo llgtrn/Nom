@@ -7,7 +7,7 @@ pub struct ComponentOutput {
     pub value: String,
 }
 
-/// A self-contained processing unit in a Haystack-style pipeline.
+/// A self-contained processing unit in a component pipeline.
 /// Components declare their output port names and transform a list of
 /// string inputs into a list of [`ComponentOutput`] values.
 pub trait PipelineComponent: Send + Sync {
@@ -82,8 +82,7 @@ impl PipelineComponent for DocumentRetriever {
 // ---------------------------------------------------------------------------
 
 /// A sequential pipeline that threads outputs of one component into the next.
-/// Follows the Haystack-pattern: each component receives the previous
-/// component's output values as its inputs.
+/// Each component receives the previous component's output values as its inputs.
 pub struct ComponentPipeline {
     pub components: Vec<Box<dyn PipelineComponent>>,
 }

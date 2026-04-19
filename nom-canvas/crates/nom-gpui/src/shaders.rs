@@ -6,7 +6,9 @@
 /// A global uniform provides the viewport dimensions for pixel→clip transform.
 pub const QUAD_VERT_WGSL: &str = r#"
 struct GlobalUniforms {
-    viewport: vec4<f32>,  // x, y, width, height
+    projection: mat4x4<f32>,
+    viewport_size: vec2<f32>,
+    _pad: vec2<f32>,
 }
 @group(0) @binding(0) var<uniform> globals: GlobalUniforms;
 
@@ -33,12 +35,8 @@ fn vs_main(@builtin(vertex_index) vi: u32, quad: QuadIn) -> VertOut {
     let local = corners[vi];
     let world_x = quad.pos_size.x + local.x * quad.pos_size.z;
     let world_y = quad.pos_size.y + local.y * quad.pos_size.w;
-    let vw = globals.viewport.z;
-    let vh = globals.viewport.w;
-    let clip_x = (world_x / vw) * 2.0 - 1.0;
-    let clip_y = 1.0 - (world_y / vh) * 2.0;
     var out: VertOut;
-    out.clip_pos = vec4<f32>(clip_x, clip_y, 0.0, 1.0);
+    out.clip_pos = globals.projection * vec4<f32>(world_x, world_y, 0.0, 1.0);
     out.color = quad.color;
     return out;
 }
@@ -123,6 +121,157 @@ pub const UNDERLINE_FRAG_WGSL: &str = r#"
 @fragment
 fn fs_main() -> @location(0) vec4<f32> {
     return vec4<f32>(1.0, 1.0, 0.0, 1.0);
+}
+"#;
+
+/// WGSL fullscreen vertex shader for texture blit / blur passes.
+pub const BLIT_VERT_WGSL: &str = r#"
+struct VertOut {
+    @builtin(position) clip_pos: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+}
+
+@vertex
+fn vs_main(@builtin(vertex_index) vi: u32) -> VertOut {
+    let pos = array<vec2<f32>, 6>(
+        vec2(-1.0, -1.0), vec2(1.0, -1.0), vec2(1.0, 1.0),
+        vec2(-1.0, -1.0), vec2(1.0, 1.0), vec2(-1.0, 1.0),
+    );
+    let uv = array<vec2<f32>, 6>(
+        vec2(0.0, 1.0), vec2(1.0, 1.0), vec2(1.0, 0.0),
+        vec2(0.0, 1.0), vec2(1.0, 0.0), vec2(0.0, 0.0),
+    );
+    var out: VertOut;
+    out.clip_pos = vec4<f32>(pos[vi], 0.0, 1.0);
+    out.uv = uv[vi];
+    return out;
+}
+"#;
+
+/// WGSL fragment shader for blitting a texture.
+pub const BLIT_FRAG_WGSL: &str = r#"
+@group(0) @binding(0) var src: texture_2d<f32>;
+@group(0) @binding(1) var sam: sampler;
+
+struct VertOut {
+    @builtin(position) clip_pos: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+};
+
+@fragment
+fn fs_main(in: VertOut) -> @location(0) vec4<f32> {
+    return textureSample(src, sam, in.uv);
+}
+"#;
+
+/// WGSL horizontal Gaussian blur fragment shader.
+pub const BLUR_HORIZ_WGSL: &str = r#"
+@group(0) @binding(0) var src: texture_2d<f32>;
+@group(0) @binding(1) var sam: sampler;
+
+struct VertOut {
+    @builtin(position) clip_pos: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+};
+
+@fragment
+fn fs_main(in: VertOut) -> @location(0) vec4<f32> {
+    let texel = 1.0 / vec2<f32>(textureDimensions(src));
+    var sum = textureSample(src, sam, in.uv) * 0.227027;
+    sum = sum + textureSample(src, sam, in.uv + vec2<f32>(texel.x, 0.0)) * 0.1945946;
+    sum = sum + textureSample(src, sam, in.uv - vec2<f32>(texel.x, 0.0)) * 0.1945946;
+    sum = sum + textureSample(src, sam, in.uv + vec2<f32>(texel.x * 2.0, 0.0)) * 0.1216216;
+    sum = sum + textureSample(src, sam, in.uv - vec2<f32>(texel.x * 2.0, 0.0)) * 0.1216216;
+    sum = sum + textureSample(src, sam, in.uv + vec2<f32>(texel.x * 3.0, 0.0)) * 0.054054;
+    sum = sum + textureSample(src, sam, in.uv - vec2<f32>(texel.x * 3.0, 0.0)) * 0.054054;
+    sum = sum + textureSample(src, sam, in.uv + vec2<f32>(texel.x * 4.0, 0.0)) * 0.016216;
+    sum = sum + textureSample(src, sam, in.uv - vec2<f32>(texel.x * 4.0, 0.0)) * 0.016216;
+    return sum;
+}
+"#;
+
+/// WGSL vertical Gaussian blur fragment shader.
+pub const BLUR_VERT_PASS_WGSL: &str = r#"
+@group(0) @binding(0) var src: texture_2d<f32>;
+@group(0) @binding(1) var sam: sampler;
+
+struct VertOut {
+    @builtin(position) clip_pos: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+};
+
+@fragment
+fn fs_main(in: VertOut) -> @location(0) vec4<f32> {
+    let texel = 1.0 / vec2<f32>(textureDimensions(src));
+    var sum = textureSample(src, sam, in.uv) * 0.227027;
+    sum = sum + textureSample(src, sam, in.uv + vec2<f32>(0.0, texel.y)) * 0.1945946;
+    sum = sum + textureSample(src, sam, in.uv - vec2<f32>(0.0, texel.y)) * 0.1945946;
+    sum = sum + textureSample(src, sam, in.uv + vec2<f32>(0.0, texel.y * 2.0)) * 0.1216216;
+    sum = sum + textureSample(src, sam, in.uv - vec2<f32>(0.0, texel.y * 2.0)) * 0.1216216;
+    sum = sum + textureSample(src, sam, in.uv + vec2<f32>(0.0, texel.y * 3.0)) * 0.054054;
+    sum = sum + textureSample(src, sam, in.uv - vec2<f32>(0.0, texel.y * 3.0)) * 0.054054;
+    sum = sum + textureSample(src, sam, in.uv + vec2<f32>(0.0, texel.y * 4.0)) * 0.016216;
+    sum = sum + textureSample(src, sam, in.uv - vec2<f32>(0.0, texel.y * 4.0)) * 0.016216;
+    return sum;
+}
+"#;
+
+/// WGSL frosted-glass vertex shader (same instance layout as quad).
+pub const FROSTED_VERT_WGSL: &str = r#"
+struct GlobalUniforms {
+    projection: mat4x4<f32>,
+    viewport_size: vec2<f32>,
+    _pad: vec2<f32>,
+}
+@group(0) @binding(0) var<uniform> globals: GlobalUniforms;
+
+struct FrostedIn {
+    @location(0) pos_size: vec4<f32>,
+    @location(1) color: vec4<f32>,
+    @location(2) border_color: vec4<f32>,
+    @location(3) corner_radius: vec4<f32>,
+    @location(4) border_thickness: vec4<f32>,
+}
+
+struct VertOut {
+    @builtin(position) clip_pos: vec4<f32>,
+    @location(0) color: vec4<f32>,
+    @location(1) uv: vec2<f32>,
+}
+
+@vertex
+fn vs_main(@builtin(vertex_index) vi: u32, frosted: FrostedIn) -> VertOut {
+    let corners = array<vec2<f32>, 6>(
+        vec2(0.0, 0.0), vec2(1.0, 0.0), vec2(1.0, 1.0),
+        vec2(0.0, 0.0), vec2(1.0, 1.0), vec2(0.0, 1.0),
+    );
+    let local = corners[vi];
+    let world_x = frosted.pos_size.x + local.x * frosted.pos_size.z;
+    let world_y = frosted.pos_size.y + local.y * frosted.pos_size.w;
+    var out: VertOut;
+    out.clip_pos = globals.projection * vec4<f32>(world_x, world_y, 0.0, 1.0);
+    out.color = frosted.color;
+    out.uv = vec2<f32>(world_x / globals.viewport_size.x, 1.0 - world_y / globals.viewport_size.y);
+    return out;
+}
+"#;
+
+/// WGSL frosted-glass fragment shader — samples blurred background texture.
+pub const FROSTED_FRAG_WGSL: &str = r#"
+@group(1) @binding(0) var blurred: texture_2d<f32>;
+@group(1) @binding(1) var sam: sampler;
+
+struct VertOut {
+    @builtin(position) clip_pos: vec4<f32>,
+    @location(0) color: vec4<f32>,
+    @location(1) uv: vec2<f32>,
+};
+
+@fragment
+fn fs_main(in: VertOut) -> @location(0) vec4<f32> {
+    let bg = textureSample(blurred, sam, in.uv);
+    let tint = in.color;
+    return vec4<f32>(bg.rgb * (1.0 - tint.a) + tint.rgb * tint.a, bg.a);
 }
 "#;
 

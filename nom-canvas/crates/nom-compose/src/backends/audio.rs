@@ -15,6 +15,8 @@ pub enum AudioContainer {
     FlacStub,
     /// Ogg stub — writes a header marker; external libogg/libopus required.
     OggStub,
+    /// MP3 — uses libmp3lame via ffmpeg when available.
+    Mp3,
 }
 
 impl fmt::Display for AudioContainer {
@@ -23,6 +25,7 @@ impl fmt::Display for AudioContainer {
             AudioContainer::Wav => write!(f, "audio/wav"),
             AudioContainer::FlacStub => write!(f, "audio/flac"),
             AudioContainer::OggStub => write!(f, "audio/ogg"),
+            AudioContainer::Mp3 => write!(f, "audio/mp3"),
         }
     }
 }
@@ -109,12 +112,43 @@ impl AudioBackend {
 
         let payload = match input.container {
             AudioContainer::Wav => encode_wav_mono_f32le(&input.pcm_samples, spec.sample_rate),
-            AudioContainer::FlacStub => {
-                encode_audio_stub_container("FLAC", &input.audio_codec.to_string(), &spec)
-            }
-            AudioContainer::OggStub => {
-                encode_audio_stub_container("Ogg", &input.audio_codec.to_string(), &spec)
-            }
+            AudioContainer::FlacStub => encode_audio_with_ffmpeg_fallback(
+                "FLAC",
+                &input.audio_codec.to_string(),
+                &spec,
+                &input.pcm_samples,
+                spec.sample_rate,
+                &["-c:a".to_string(), "flac".to_string()],
+                "flac",
+            ),
+            AudioContainer::OggStub => encode_audio_with_ffmpeg_fallback(
+                "Ogg",
+                &input.audio_codec.to_string(),
+                &spec,
+                &input.pcm_samples,
+                spec.sample_rate,
+                &[
+                    "-c:a".to_string(),
+                    "libvorbis".to_string(),
+                    "-q:a".to_string(),
+                    "4".to_string(),
+                ],
+                "ogg",
+            ),
+            AudioContainer::Mp3 => encode_audio_with_ffmpeg_fallback(
+                "MP3",
+                "libmp3lame",
+                &spec,
+                &input.pcm_samples,
+                spec.sample_rate,
+                &[
+                    "-c:a".to_string(),
+                    "libmp3lame".to_string(),
+                    "-q:a".to_string(),
+                    "2".to_string(),
+                ],
+                "mp3",
+            ),
         };
 
         let artifact_hash = store.write(&payload);
@@ -165,6 +199,41 @@ fn encode_wav_mono_f32le(samples: &[f32], sample_rate: u32) -> Vec<u8> {
         out.extend_from_slice(&pcm.to_le_bytes());
     }
     out
+}
+
+/// Encode audio via ffmpeg if the feature is enabled; otherwise fall back to stub.
+#[allow(unused_variables)]
+fn encode_audio_with_ffmpeg_fallback(
+    container_name: &str,
+    codec_name: &str,
+    spec: &AudioSpec,
+    samples: &[f32],
+    sample_rate: u32,
+    codec_args: &[String],
+    format: &str,
+) -> Vec<u8> {
+    #[cfg(feature = "ffmpeg")]
+    {
+        let wav = encode_wav_mono_f32le(samples, sample_rate);
+        let mut args = vec![
+            "-f".to_string(),
+            "wav".to_string(),
+            "-i".to_string(),
+            "pipe:0".to_string(),
+        ];
+        args.extend_from_slice(codec_args);
+        args.extend_from_slice(&[
+            "-f".to_string(),
+            format.to_string(),
+            "pipe:1".to_string(),
+        ]);
+        if let Ok(data) = crate::video_capture::run_command_with_timeout("ffmpeg", &args, Some(&wav), 30) {
+            if !data.is_empty() {
+                return data;
+            }
+        }
+    }
+    encode_audio_stub_container(container_name, codec_name, spec)
 }
 
 #[cfg(test)]
@@ -308,9 +377,16 @@ mod tests {
         let block = AudioBackend::compose(input, &mut store, &LogProgressSink);
         let payload = store.read(&block.artifact_hash).unwrap();
         let text = String::from_utf8_lossy(&payload);
-        assert!(text.contains("NOM-STUB-AUDIO-CONTAINER: FLAC"));
-        assert!(text.contains("codec=flac"));
-        assert!(text.contains("External encoder required"));
+        let is_stub = text.contains("NOM-STUB-AUDIO-CONTAINER: FLAC");
+        let is_flac = payload.starts_with(b"fLaC");
+        assert!(
+            is_stub || is_flac,
+            "must be FLAC stub or real FLAC data"
+        );
+        if is_stub {
+            assert!(text.contains("codec=flac"));
+            assert!(text.contains("External encoder required"));
+        }
     }
 
     #[test]
@@ -331,8 +407,15 @@ mod tests {
         let block = AudioBackend::compose(input, &mut store, &LogProgressSink);
         let payload = store.read(&block.artifact_hash).unwrap();
         let text = String::from_utf8_lossy(&payload);
-        assert!(text.contains("NOM-STUB-AUDIO-CONTAINER: Ogg"));
-        assert!(text.contains("codec=opus"));
+        let is_stub = text.contains("NOM-STUB-AUDIO-CONTAINER: Ogg");
+        let is_ogg = payload.starts_with(b"OggS");
+        assert!(
+            is_stub || is_ogg,
+            "must be Ogg stub or real Ogg data"
+        );
+        if is_stub {
+            assert!(text.contains("codec=opus"));
+        }
     }
 
     #[test]
@@ -484,7 +567,12 @@ mod tests {
         assert!(store.exists(&block.artifact_hash));
         let payload = store.read(&block.artifact_hash).unwrap();
         let text = String::from_utf8_lossy(&payload);
-        assert!(text.contains("FLAC"));
+        let is_stub = text.contains("FLAC");
+        let is_flac = payload.starts_with(b"fLaC");
+        assert!(
+            is_stub || is_flac,
+            "must be FLAC stub or real FLAC data"
+        );
     }
 
     #[test]
@@ -613,7 +701,12 @@ mod tests {
         assert!(store.exists(&block.artifact_hash));
         let payload = store.read(&block.artifact_hash).unwrap();
         let text = String::from_utf8_lossy(&payload);
-        assert!(text.contains("FLAC"), "FLAC stub payload must mention FLAC");
+        let is_stub = text.contains("FLAC");
+        let is_flac = payload.starts_with(b"fLaC");
+        assert!(
+            is_stub || is_flac,
+            "must be FLAC stub or real FLAC data"
+        );
     }
 
     #[test]
@@ -845,9 +938,11 @@ mod tests {
         let block = AudioBackend::compose(input, &mut store, &LogProgressSink);
         let payload = store.read(&block.artifact_hash).unwrap();
         let text = String::from_utf8_lossy(&payload);
+        let is_stub = text.contains("FLAC");
+        let is_flac = payload.starts_with(b"fLaC");
         assert!(
-            text.contains("FLAC"),
-            "WAV->FLAC stub payload must mention FLAC"
+            is_stub || is_flac,
+            "must be FLAC stub or real FLAC data"
         );
     }
 
@@ -982,6 +1077,93 @@ mod tests {
         let name = AudioCodec::FlacStub.to_string();
         assert_eq!(name, "flac");
         assert_eq!(AudioCodec::FlacStub.to_string(), name);
+    }
+
+    // ── FFmpeg fallback tests ────────────────────────────────────────────────
+
+    #[test]
+    fn audio_container_mp3_display() {
+        assert_eq!(AudioContainer::Mp3.to_string(), "audio/mp3");
+    }
+
+    #[test]
+    fn audio_backend_mp3_compose_stores_artifact() {
+        let mut store = InMemoryStore::new();
+        let input = AudioInput {
+            entity: NomtuRef {
+                id: "mp3-test".into(),
+                word: "track".into(),
+                kind: "media".into(),
+            },
+            pcm_samples: vec![0.2f32; 2000],
+            sample_rate: 44100,
+            codec: "mp3".into(),
+            container: AudioContainer::Mp3,
+            audio_codec: AudioCodec::Pcm,
+        };
+        let block = AudioBackend::compose(input, &mut store, &LogProgressSink);
+        assert!(store.exists(&block.artifact_hash));
+        let payload = store.read(&block.artifact_hash).unwrap();
+        // Either a stub or real MP3 (ID3 or MPEG sync word).
+        let text = String::from_utf8_lossy(&payload);
+        let is_stub = text.contains("NOM-STUB-AUDIO-CONTAINER: MP3");
+        let is_mp3 = payload.starts_with(b"ID3") || payload.starts_with(&[0xFF, 0xFB]);
+        assert!(
+            is_stub || is_mp3,
+            "MP3 compose must yield either stub or real MP3"
+        );
+    }
+
+    #[test]
+    fn audio_backend_flac_fallback_when_ffmpeg_missing() {
+        let mut store = InMemoryStore::new();
+        let input = AudioInput {
+            entity: NomtuRef {
+                id: "flac-fb".into(),
+                word: "fallback".into(),
+                kind: "media".into(),
+            },
+            pcm_samples: vec![0.0f32; 8000],
+            sample_rate: 44100,
+            codec: "flac".into(),
+            container: AudioContainer::FlacStub,
+            audio_codec: AudioCodec::FlacStub,
+        };
+        let block = AudioBackend::compose(input, &mut store, &LogProgressSink);
+        let payload = store.read(&block.artifact_hash).unwrap();
+        let text = String::from_utf8_lossy(&payload);
+        let is_stub = text.contains("NOM-STUB-AUDIO-CONTAINER");
+        let is_flac = payload.starts_with(b"fLaC");
+        assert!(
+            is_stub || is_flac,
+            "FLAC compose must yield either stub or real FLAC"
+        );
+    }
+
+    #[test]
+    fn audio_backend_ogg_fallback_when_ffmpeg_missing() {
+        let mut store = InMemoryStore::new();
+        let input = AudioInput {
+            entity: NomtuRef {
+                id: "ogg-fb".into(),
+                word: "fallback".into(),
+                kind: "media".into(),
+            },
+            pcm_samples: vec![0.0f32; 8000],
+            sample_rate: 48000,
+            codec: "opus".into(),
+            container: AudioContainer::OggStub,
+            audio_codec: AudioCodec::OpusStub,
+        };
+        let block = AudioBackend::compose(input, &mut store, &LogProgressSink);
+        let payload = store.read(&block.artifact_hash).unwrap();
+        let text = String::from_utf8_lossy(&payload);
+        let is_stub = text.contains("NOM-STUB-AUDIO-CONTAINER");
+        let is_ogg = payload.starts_with(b"OggS");
+        assert!(
+            is_stub || is_ogg,
+            "Ogg compose must yield either stub or real Ogg"
+        );
     }
 }
 

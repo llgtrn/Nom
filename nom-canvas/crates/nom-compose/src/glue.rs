@@ -1,6 +1,9 @@
 #![deny(unsafe_code)]
 
+use std::sync::Arc;
+use crate::chain::{Chain, DispatchRunnable, IntentRunnable, LlmRunnable, RagRunnable, Runnable, ValidateRunnable};
 use crate::context::ComposeContext;
+use crate::dispatch::BackendRegistry;
 
 /// Trait for LLM adapters — 4 concrete implementations are provided.
 pub trait ReActLlmFn: Send + Sync {
@@ -14,8 +17,16 @@ pub struct StubLlmFn {
 }
 
 impl ReActLlmFn for StubLlmFn {
-    fn complete(&self, _prompt: &str) -> Result<String, String> {
-        Ok(self.response.clone())
+    fn complete(&self, prompt: &str) -> Result<String, String> {
+        if !self.response.is_empty() {
+            return Ok(self.response.clone());
+        }
+        // Generate a simple .nomx template when no hardcoded response is set.
+        let task = prompt.split_whitespace().last().unwrap_or("task");
+        Ok(format!(
+            "define compose_{} that generates output\n  input -> process -> output\nend",
+            task
+        ))
     }
 
     fn name(&self) -> &str {
@@ -83,12 +94,38 @@ pub struct GlueBlueprint {
 
 /// Orchestrator that generates .nomx glue for unknown kinds via ReAct loop.
 pub struct AiGlueOrchestrator {
-    llm: Box<dyn ReActLlmFn>,
+    llm: Arc<dyn ReActLlmFn>,
+    registry: Option<Arc<BackendRegistry>>,
+    resolver: Option<nom_canvas_intent::IntentResolver>,
+    dag: Option<Arc<nom_canvas_graph::Dag>>
 }
 
 impl AiGlueOrchestrator {
     pub fn new(llm: Box<dyn ReActLlmFn>) -> Self {
-        Self { llm }
+        Self {
+            llm: Arc::from(llm),
+            registry: None,
+            resolver: None,
+            dag: None,
+        }
+    }
+
+    /// Attach a backend registry for dispatch.
+    pub fn with_registry(mut self, registry: BackendRegistry) -> Self {
+        self.registry = Some(Arc::new(registry));
+        self
+    }
+
+    /// Attach an intent resolver.
+    pub fn with_resolver(mut self, resolver: nom_canvas_intent::IntentResolver) -> Self {
+        self.resolver = Some(resolver);
+        self
+    }
+
+    /// Attach a DAG for RAG retrieval.
+    pub fn with_dag(mut self, dag: nom_canvas_graph::Dag) -> Self {
+        self.dag = Some(Arc::new(dag));
+        self
     }
 
     /// Generate a .nomx glue blueprint for the given compose context.
@@ -103,9 +140,29 @@ impl AiGlueOrchestrator {
         })
     }
 
-    /// Execute a blueprint and return the artifact string (stub).
+    /// Execute a blueprint by building and running a chain of Intent → RAG → LLM → Validate → Dispatch.
     pub fn execute_blueprint(&self, blueprint: &GlueBlueprint) -> Result<String, String> {
-        Ok(format!("artifact:{}", blueprint.kind))
+        let mut chain = Chain::new();
+
+        if let Some(resolver) = &self.resolver {
+            chain = chain.add_step(Box::new(IntentRunnable::new(resolver.grammar_kinds.clone())));
+        }
+
+        if let Some(dag) = &self.dag {
+            chain = chain.add_step(Box::new(RagRunnable::new(Arc::clone(dag), 3, 2)));
+        }
+
+        chain = chain.add_step(Box::new(LlmRunnable::new(Arc::clone(&self.llm))));
+        chain = chain.add_step(Box::new(ValidateRunnable::new()));
+
+        if let Some(registry) = &self.registry {
+            chain = chain.add_step(Box::new(
+                DispatchRunnable::new(Arc::clone(registry)).with_kind(blueprint.kind.clone()),
+            ));
+        }
+
+        let result = chain.run(blueprint.nomx_source.clone());
+        Ok(result)
     }
 }
 
@@ -180,7 +237,7 @@ mod tests {
     }
 
     #[test]
-    fn test_execute_blueprint_returns_artifact_kind() {
+    fn test_execute_blueprint_returns_chain_result() {
         let llm = StubLlmFn {
             response: "code".to_string(),
         };
@@ -192,6 +249,47 @@ mod tests {
             llm_name: "stub".to_string(),
         };
         let artifact = orchestrator.execute_blueprint(&blueprint).unwrap();
-        assert_eq!(artifact, "artifact:image");
+        // Chain runs LLM → Validate with no registry/resolver/dag.
+        assert_eq!(artifact, "code");
+    }
+
+    #[test]
+    fn test_execute_blueprint_with_registry() {
+        let llm = StubLlmFn {
+            response: "processed".to_string(),
+        };
+        let mut registry = BackendRegistry::new();
+        registry.register(Box::new(crate::dispatch::NoopBackend::new("image")));
+        let orchestrator = AiGlueOrchestrator::new(Box::new(llm)).with_registry(registry);
+        let blueprint = GlueBlueprint {
+            kind: "image".to_string(),
+            nomx_source: "scene".to_string(),
+            confidence: 0.8,
+            llm_name: "stub".to_string(),
+        };
+        let artifact = orchestrator.execute_blueprint(&blueprint).unwrap();
+        // Chain: LLM → Validate → Dispatch
+        // LLM returns "processed", Validate passes it, Dispatch routes to image backend.
+        assert_eq!(artifact, "image:processed");
+    }
+
+    #[test]
+    fn test_execute_blueprint_with_resolver() {
+        let llm = StubLlmFn {
+            response: "result".to_string(),
+        };
+        let resolver =
+            nom_canvas_intent::IntentResolver::new(vec!["video".to_string(), "image".to_string()]);
+        let orchestrator = AiGlueOrchestrator::new(Box::new(llm)).with_resolver(resolver);
+        let blueprint = GlueBlueprint {
+            kind: "video".to_string(),
+            nomx_source: "render a video".to_string(),
+            confidence: 0.8,
+            llm_name: "stub".to_string(),
+        };
+        let artifact = orchestrator.execute_blueprint(&blueprint).unwrap();
+        // Chain: Intent → LLM → Validate
+        // Intent resolves "render a video" → "video", LLM completes "video" → "result".
+        assert_eq!(artifact, "result");
     }
 }

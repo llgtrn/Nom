@@ -6,7 +6,7 @@ pub use nom_blocks::shared_types::RunEvent;
 use nom_blocks::shared_types::{CompositionPlan, DeepThinkEvent, PlanStep};
 use std::sync::Arc;
 
-/// Background job variants (Refly BullMQ pattern ported to Rust crossbeam channels)
+/// Background job variants (ported to Rust crossbeam channels)
 pub enum BackgroundJob {
     /// Compile source text through full nom-compiler pipeline
     Compile {

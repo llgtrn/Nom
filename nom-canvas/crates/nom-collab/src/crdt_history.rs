@@ -104,7 +104,7 @@ impl ConflictResolver {
     }
 
     /// For each actor, retains only the op with the highest clock (last-write-wins).
-    pub fn resolve_last_write_wins<'a>(ops: &'a [CrdtOp]) -> Vec<&'a CrdtOp> {
+    pub fn resolve_last_write_wins(ops: &[CrdtOp]) -> Vec<&CrdtOp> {
         use std::collections::HashMap;
         let mut best: HashMap<&str, &CrdtOp> = HashMap::new();
         for op in ops {

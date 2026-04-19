@@ -5725,7 +5725,7 @@ mod tests {
 
     #[test]
     fn color_set_dark_bg_is_dark() {
-        use crate::ThemeMode;
+        
         let cs = ColorSet::dark();
         assert_eq!(cs.bg, "#0d1117");
     }

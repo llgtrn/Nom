@@ -200,7 +200,7 @@ mod tests {
 
     #[test]
     fn renderer_frosted_pass_ticks_on_frame() {
-        use crate::frosted_pass::FrostedPassState;
+        
         let cfg = WebGpuConfig::new("canvas", 800, 600);
         let pass = FrostedRenderPass::new(FrostedPassConfig::new(8.0, 0.75))
             .enable()

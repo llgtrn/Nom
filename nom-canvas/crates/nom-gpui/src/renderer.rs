@@ -243,6 +243,17 @@ pub struct GlobalUniforms {
     pub _pad: [f32; 2],
 }
 
+impl GlobalUniforms {
+    /// Build global uniforms for the given viewport dimensions.
+    pub fn new(width: f32, height: f32) -> Self {
+        Self {
+            projection: ortho_projection(width, height),
+            viewport_size: [width, height],
+            _pad: [0.0; 2],
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // PipelineKind — discriminant for the 8 render pipelines
 // ---------------------------------------------------------------------------
@@ -307,6 +318,9 @@ pub struct Renderer {
     /// `end_frame`. Always present; in CPU-only mode the buffer still
     /// absorbs queued instances so callers can inspect them in tests.
     pending_quads: Vec<QuadInstance>,
+    /// Frosted-glass quads queued during the current frame; drawn after
+    /// the blur pre-pass so they sample the blurred background.
+    pending_frosted_quads: Vec<QuadInstance>,
     /// True between `begin_frame` and `end_frame`.
     in_frame: bool,
 }
@@ -396,6 +410,30 @@ pub struct GpuResources {
     pub state: GpuState,
     /// The request configuration used to create this device.
     pub device_request: DeviceRequest,
+    /// Uniform buffer for `GlobalUniforms` (group 0, binding 0).
+    pub globals_buffer: wgpu::Buffer,
+    /// Bind group for global uniforms.
+    pub globals_bind_group: wgpu::BindGroup,
+    /// Ping-pong blur textures and views.
+    pub blur_texture_h: wgpu::Texture,
+    pub blur_texture_h_view: wgpu::TextureView,
+    pub blur_texture_v: wgpu::Texture,
+    pub blur_texture_v_view: wgpu::TextureView,
+    /// Current blur texture dimensions (recreated on resize).
+    pub blur_width: u32,
+    pub blur_height: u32,
+    /// Shared sampler for blur passes.
+    pub blur_sampler: wgpu::Sampler,
+    /// Blit pipeline (fullscreen texture copy).
+    pub blit_pipeline: wgpu::RenderPipeline,
+    /// Horizontal blur pipeline.
+    pub blur_pipeline_h: wgpu::RenderPipeline,
+    /// Vertical blur pipeline.
+    pub blur_pipeline_v: wgpu::RenderPipeline,
+    /// Frosted-glass pipeline (samples blurred texture).
+    pub frosted_pipeline: wgpu::RenderPipeline,
+    /// Bind group layout for texture+sampler bindings (group 1).
+    pub texture_bgl: wgpu::BindGroupLayout,
 }
 
 impl GpuResources {
@@ -412,6 +450,74 @@ impl GpuResources {
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+
+        // Global uniforms buffer + bind group.
+        let globals_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("nom-gpui globals"),
+            size: std::mem::size_of::<GlobalUniforms>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let globals_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("nom-gpui globals-bgl"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
+        let globals_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("nom-gpui globals-bg"),
+            layout: &globals_bgl,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: globals_buffer.as_entire_binding(),
+            }],
+        });
+
+        // Texture bind group layout (used by blit, blur, frosted).
+        let texture_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("nom-gpui texture-bgl"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        });
+
+        let blur_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("nom-gpui blur-sampler"),
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            ..Default::default()
+        });
+
+        let blit_pipeline = build_blit_pipeline(&device, surface_format, &texture_bgl);
+        let blur_pipeline_h = build_blur_pipeline(&device, &texture_bgl, true);
+        let blur_pipeline_v = build_blur_pipeline(&device, &texture_bgl, false);
+        let frosted_pipeline = build_frosted_pipeline(&device, surface_format, &globals_bgl, &texture_bgl);
+
+        let (blur_texture_h, blur_texture_h_view, blur_texture_v, blur_texture_v_view) =
+            create_blur_textures(&device, 1, 1);
+
         Self {
             device,
             queue,
@@ -421,6 +527,20 @@ impl GpuResources {
             instance_buffer_capacity,
             state: GpuState::Ready { surface_format },
             device_request: DeviceRequest::default(),
+            globals_buffer,
+            globals_bind_group,
+            blur_texture_h,
+            blur_texture_h_view,
+            blur_texture_v,
+            blur_texture_v_view,
+            blur_width: 1,
+            blur_height: 1,
+            blur_sampler,
+            blit_pipeline,
+            blur_pipeline_h,
+            blur_pipeline_v,
+            frosted_pipeline,
+            texture_bgl,
         }
     }
 
@@ -442,6 +562,49 @@ impl GpuResources {
         });
         self.instance_buffer_capacity = new_cap;
     }
+
+    /// Recreate blur textures to match the given dimensions.
+    fn ensure_blur_textures(&mut self, width: u32, height: u32) {
+        if width == self.blur_width && height == self.blur_height {
+            return;
+        }
+        let (h_tex, h_view, v_tex, v_view) = create_blur_textures(&self.device, width, height);
+        self.blur_texture_h = h_tex;
+        self.blur_texture_h_view = h_view;
+        self.blur_texture_v = v_tex;
+        self.blur_texture_v_view = v_view;
+        self.blur_width = width;
+        self.blur_height = height;
+    }
+}
+
+/// Create a pair of RGBA8 blur textures for ping-pong rendering.
+fn create_blur_textures(
+    device: &wgpu::Device,
+    width: u32,
+    height: u32,
+) -> (wgpu::Texture, wgpu::TextureView, wgpu::Texture, wgpu::TextureView) {
+    let create = |label: &str| {
+        let tex = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some(label),
+            size: wgpu::Extent3d {
+                width: width.max(1),
+                height: height.max(1),
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
+        (tex, view)
+    };
+    let (h_tex, h_view) = create("nom-gpui blur-h");
+    let (v_tex, v_view) = create("nom-gpui blur-v");
+    (h_tex, h_view, v_tex, v_view)
 }
 
 /// Build the minimal quad render pipeline from the WGSL stubs in
@@ -532,6 +695,176 @@ fn build_quad_pipeline(
     })
 }
 
+/// Build a fullscreen blit pipeline (texture → surface).
+fn build_blit_pipeline(
+    device: &wgpu::Device,
+    surface_format: wgpu::TextureFormat,
+    texture_bgl: &wgpu::BindGroupLayout,
+) -> wgpu::RenderPipeline {
+    let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("nom-gpui blit-shader"),
+        source: wgpu::ShaderSource::Wgsl(crate::shaders::BLIT_VERT_WGSL.into()),
+    });
+    let fs_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("nom-gpui blit-frag"),
+        source: wgpu::ShaderSource::Wgsl(crate::shaders::BLIT_FRAG_WGSL.into()),
+    });
+    let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("nom-gpui blit-layout"),
+        bind_group_layouts: &[texture_bgl],
+        push_constant_ranges: &[],
+    });
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("nom-gpui blit-pipeline"),
+        layout: Some(&layout),
+        vertex: wgpu::VertexState {
+            module: &module,
+            entry_point: "vs_main",
+            buffers: &[],
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &fs_module,
+            entry_point: "fs_main",
+            targets: &[Some(wgpu::ColorTargetState {
+                format: surface_format,
+                blend: Some(wgpu::BlendState::REPLACE),
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+        }),
+        primitive: wgpu::PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState::default(),
+        multiview: None,
+    })
+}
+
+/// Build a separable Gaussian blur pipeline (horizontal or vertical).
+fn build_blur_pipeline(
+    device: &wgpu::Device,
+    texture_bgl: &wgpu::BindGroupLayout,
+    horizontal: bool,
+) -> wgpu::RenderPipeline {
+    let label = if horizontal {
+        "nom-gpui blur-h"
+    } else {
+        "nom-gpui blur-v"
+    };
+    let vert = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some(&format!("{label}-vert")),
+        source: wgpu::ShaderSource::Wgsl(crate::shaders::BLIT_VERT_WGSL.into()),
+    });
+    let frag_src = if horizontal {
+        crate::shaders::BLUR_HORIZ_WGSL
+    } else {
+        crate::shaders::BLUR_VERT_PASS_WGSL
+    };
+    let frag = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some(&format!("{label}-frag")),
+        source: wgpu::ShaderSource::Wgsl(frag_src.into()),
+    });
+    let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some(&format!("{label}-layout")),
+        bind_group_layouts: &[texture_bgl],
+        push_constant_ranges: &[],
+    });
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some(&format!("{label}-pipeline")),
+        layout: Some(&layout),
+        vertex: wgpu::VertexState {
+            module: &vert,
+            entry_point: "vs_main",
+            buffers: &[],
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &frag,
+            entry_point: "fs_main",
+            targets: &[Some(wgpu::ColorTargetState {
+                format: wgpu::TextureFormat::Rgba8Unorm,
+                blend: Some(wgpu::BlendState::REPLACE),
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+        }),
+        primitive: wgpu::PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState::default(),
+        multiview: None,
+    })
+}
+
+/// Build the frosted-glass pipeline that samples a blurred background texture.
+fn build_frosted_pipeline(
+    device: &wgpu::Device,
+    surface_format: wgpu::TextureFormat,
+    globals_bgl: &wgpu::BindGroupLayout,
+    texture_bgl: &wgpu::BindGroupLayout,
+) -> wgpu::RenderPipeline {
+    let vert = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("nom-gpui frosted-vert"),
+        source: wgpu::ShaderSource::Wgsl(crate::shaders::FROSTED_VERT_WGSL.into()),
+    });
+    let frag = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("nom-gpui frosted-frag"),
+        source: wgpu::ShaderSource::Wgsl(crate::shaders::FROSTED_FRAG_WGSL.into()),
+    });
+    let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("nom-gpui frosted-layout"),
+        bind_group_layouts: &[globals_bgl, texture_bgl],
+        push_constant_ranges: &[],
+    });
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("nom-gpui frosted-pipeline"),
+        layout: Some(&layout),
+        vertex: wgpu::VertexState {
+            module: &vert,
+            entry_point: "vs_main",
+            buffers: &[wgpu::VertexBufferLayout {
+                array_stride: 80,
+                step_mode: wgpu::VertexStepMode::Instance,
+                attributes: &[
+                    wgpu::VertexAttribute {
+                        format: wgpu::VertexFormat::Float32x4,
+                        offset: 0,
+                        shader_location: 0,
+                    },
+                    wgpu::VertexAttribute {
+                        format: wgpu::VertexFormat::Float32x4,
+                        offset: 16,
+                        shader_location: 1,
+                    },
+                    wgpu::VertexAttribute {
+                        format: wgpu::VertexFormat::Float32x4,
+                        offset: 32,
+                        shader_location: 2,
+                    },
+                    wgpu::VertexAttribute {
+                        format: wgpu::VertexFormat::Float32x4,
+                        offset: 48,
+                        shader_location: 3,
+                    },
+                    wgpu::VertexAttribute {
+                        format: wgpu::VertexFormat::Float32x4,
+                        offset: 64,
+                        shader_location: 4,
+                    },
+                ],
+            }],
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &frag,
+            entry_point: "fs_main",
+            targets: &[Some(wgpu::ColorTargetState {
+                format: surface_format,
+                blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+        }),
+        primitive: wgpu::PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState::default(),
+        multiview: None,
+    })
+}
+
 impl Renderer {
     pub fn new() -> Self {
         Self {
@@ -540,6 +873,7 @@ impl Renderer {
             frame_stats: FrameStats::default(),
             gpu: None,
             pending_quads: Vec::new(),
+            pending_frosted_quads: Vec::new(),
             in_frame: false,
         }
     }
@@ -558,6 +892,7 @@ impl Renderer {
             frame_stats: FrameStats::default(),
             gpu: Some(GpuResources::new(device, queue, surface_format)),
             pending_quads: Vec::with_capacity(QUAD_INSTANCE_INITIAL_CAPACITY),
+            pending_frosted_quads: Vec::new(),
             in_frame: false,
         }
     }
@@ -568,6 +903,7 @@ impl Renderer {
             return Err(FrameError::AlreadyInFrame);
         }
         self.pending_quads.clear();
+        self.pending_frosted_quads.clear();
         self.in_frame = true;
         Ok(())
     }
@@ -774,9 +1110,18 @@ impl Renderer {
     /// Calls `Scene::sort_and_batch` to establish painter's order, then
     /// dispatches each primitive bucket to its dedicated pipeline.
     pub fn draw(&mut self, scene: &mut Scene) {
+        let was_in_frame = self.in_frame;
+        if !was_in_frame {
+            let _ = self.begin_frame();
+        }
+
         scene.sort_and_batch();
-        self.frame_count += 1;
-        self.frame_stats.frames += 1;
+
+        // Only increment counters when we're managing our own frame lifecycle.
+        if !was_in_frame {
+            self.frame_count += 1;
+            self.frame_stats.frames += 1;
+        }
 
         // Shadow pass must come before the main pass so shadows appear
         // beneath all other content.
@@ -794,7 +1139,19 @@ impl Renderer {
         // Frosted-glass pass — software approximation via two quads per rect.
         // A real implementation would execute a Gaussian-blur pre-pass here.
         if !scene.frosted_rects.is_empty() {
-            self.draw_frosted_rects(&scene.frosted_rects.clone());
+            let _ = self.draw_frosted_rects(&scene.frosted_rects.clone());
+        }
+
+        // Upload pending quads to GPU vertex buffer when attached.
+        if let Some(gpu) = self.gpu.as_ref() {
+            if !self.pending_quads.is_empty() {
+                let bytes = bytemuck::cast_slice(self.pending_quads.as_slice());
+                gpu.queue.write_buffer(&gpu.instance_buffer, 0, bytes);
+            }
+        }
+
+        if !was_in_frame {
+            self.in_frame = false;
         }
     }
 
@@ -806,7 +1163,37 @@ impl Renderer {
 
     /// Quad pipeline — instanced draw with one `QuadInstance` per quad.
     fn draw_quads(&mut self, scene: &Scene) {
-        self.frame_stats.quads_drawn += scene.quads.len();
+        if scene.quads.is_empty() {
+            return;
+        }
+        let instances: Vec<QuadInstance> = scene.quads.iter().map(|quad| {
+            let bg = quad.background.map(hsla_to_rgba).unwrap_or([0.0; 4]);
+            let border = quad.border_color.map(hsla_to_rgba).unwrap_or([0.0; 4]);
+            QuadInstance {
+                bounds: [
+                    quad.bounds.origin.x.0,
+                    quad.bounds.origin.y.0,
+                    quad.bounds.size.width.0,
+                    quad.bounds.size.height.0,
+                ],
+                bg_color: bg,
+                border_color: border,
+                border_widths: [
+                    quad.border_widths.top.0,
+                    quad.border_widths.right.0,
+                    quad.border_widths.bottom.0,
+                    quad.border_widths.left.0,
+                ],
+                corner_radii: [
+                    quad.corner_radii.top_left.0,
+                    quad.corner_radii.top_right.0,
+                    quad.corner_radii.bottom_right.0,
+                    quad.corner_radii.bottom_left.0,
+                ],
+            }
+        }).collect();
+
+        let _ = self.draw_quads_gpu(&instances);
         self.pipeline_count = self.pipeline_count.max(1);
     }
 
@@ -1128,6 +1515,47 @@ mod tests {
         assert_eq!(renderer.frame_count, 1);
         renderer.draw(&mut scene);
         assert_eq!(renderer.frame_count, 2);
+    }
+
+    #[test]
+    fn draw_populates_pending_quads_from_scene() {
+        use crate::scene::Quad;
+        use crate::types::{Bounds, Hsla, Pixels, Point, Size};
+
+        let mut renderer = Renderer::new();
+        let mut scene = Scene::new();
+        scene.push_quad(Quad {
+            bounds: Bounds {
+                origin: Point {
+                    x: Pixels(10.0),
+                    y: Pixels(20.0),
+                },
+                size: Size {
+                    width: Pixels(100.0),
+                    height: Pixels(50.0),
+                },
+            },
+            background: Some(Hsla::new(0.0, 1.0, 0.5, 1.0)),
+            border_color: Some(Hsla::new(120.0, 1.0, 0.5, 1.0)),
+            ..Default::default()
+        });
+
+        renderer.draw(&mut scene);
+
+        assert_eq!(
+            renderer.pending_quads().len(),
+            1,
+            "draw must convert scene quad to pending quad instance"
+        );
+        let q = &renderer.pending_quads()[0];
+        assert_eq!(q.bounds, [10.0, 20.0, 100.0, 50.0]);
+        let expected_bg = hsla_to_rgba(Hsla::new(0.0, 1.0, 0.5, 1.0));
+        assert_eq!(q.bg_color, expected_bg);
+        let expected_border = hsla_to_rgba(Hsla::new(120.0, 1.0, 0.5, 1.0));
+        assert_eq!(q.border_color, expected_border);
+        assert_eq!(q.border_widths, [0.0; 4]);
+        assert_eq!(q.corner_radii, [0.0; 4]);
+        assert_eq!(renderer.stats().quads_drawn, 1);
     }
 
     #[test]

@@ -93,7 +93,7 @@ impl BatchSorter {
     }
 
     /// Returns the first call per unique `vertex_offset`, preserving input order.
-    pub fn deduplicate_offsets<'a>(calls: &'a [DrawCall]) -> Vec<&'a DrawCall> {
+    pub fn deduplicate_offsets(calls: &[DrawCall]) -> Vec<&DrawCall> {
         let mut seen = std::collections::HashSet::new();
         calls
             .iter()
