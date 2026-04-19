@@ -423,11 +423,18 @@ fn golden_ancestry_cache() {
 // Golden path 23: RenderPipelineCoordinator — begin frame, push one Clear command, end frame.
 #[test]
 fn golden_render_pipeline() {
-    use nom_canvas_core::{DrawCommand, FrameGraph, RenderPhase, RenderPipelineCoordinator, RenderQueue};
+    use nom_canvas_core::{
+        DrawCommand, FrameGraph, RenderPhase, RenderPipelineCoordinator, RenderQueue,
+    };
     let mut coord = RenderPipelineCoordinator::new();
     let mut graph = coord.begin_frame();
     let mut q = RenderQueue::new(RenderPhase::Geometry);
-    q.push(DrawCommand::Clear { r: 0.0, g: 0.0, b: 0.0, a: 1.0 });
+    q.push(DrawCommand::Clear {
+        r: 0.0,
+        g: 0.0,
+        b: 0.0,
+        a: 1.0,
+    });
     graph.add_queue(q);
     let n = coord.end_frame(graph);
     assert_eq!(n, 1);
@@ -509,10 +516,20 @@ fn golden_content_hash() {
     let (h1, _) = store.dedup_insert("define hello that world");
     let (h2, is_new) = store.dedup_insert("define hello that world");
     // Same content must produce the same hash (content-addressed)
-    assert_eq!(h1, h2, "identical content must hash to the same ContentHash");
+    assert_eq!(
+        h1, h2,
+        "identical content must hash to the same ContentHash"
+    );
     // Second insert must not create a new entry
-    assert!(!is_new, "dedup_insert must report is_new=false for duplicate content");
-    assert_eq!(store.count(), 1, "store must hold exactly one entry after dedup");
+    assert!(
+        !is_new,
+        "dedup_insert must report is_new=false for duplicate content"
+    );
+    assert_eq!(
+        store.count(),
+        1,
+        "store must hold exactly one entry after dedup"
+    );
     // Suppress unused-import lint on ContentHash
     let _: fn(&str) -> ContentHash = ContentHash::new;
 }
@@ -547,7 +564,10 @@ fn test_golden_inspect_pipeline() {
 fn test_golden_quality_gate_flow() {
     use nom_compose::inspector::{LlmQualityGate, QualityGateConfig};
 
-    let config = QualityGateConfig { min_score: 75, max_retries: 3 };
+    let config = QualityGateConfig {
+        min_score: 75,
+        max_retries: 3,
+    };
     let gate = LlmQualityGate::new(config);
     let result = gate.inspect_with_quality("https://github.com/nom-lang/nom");
     assert!(
@@ -562,6 +582,20 @@ fn test_golden_quality_gate_flow() {
     assert!(
         result.finding_count > 0,
         "LlmQualityGate result must report at least one finding"
+    );
+    assert!(
+        result
+            .nomx_entry
+            .starts_with("the function reverse_web_url_to_nomx is"),
+        "LlmQualityGate must now return reverse-engineered Nomx function output"
+    );
+    assert!(
+        result.nomx_entry.contains("intended to reverse engineer"),
+        "Nomx function output must declare an intended purpose"
+    );
+    assert!(
+        result.nomx_entry.contains("returns nomx_component_tree"),
+        "Nomx function output must declare the reverse-engineered component tree"
     );
 }
 
@@ -642,8 +676,8 @@ fn test_golden_bbox_detector() {
 
     let detector = BBoxDetector::new(0.6);
     let raw = vec![
-        BBox::new(0.0, 0.0, 100.0, 50.0, 0.9),  // above threshold
-        BBox::new(10.0, 10.0, 40.0, 40.0, 0.4), // below threshold — filtered
+        BBox::new(0.0, 0.0, 100.0, 50.0, 0.9),   // above threshold
+        BBox::new(10.0, 10.0, 40.0, 40.0, 0.4),  // below threshold — filtered
         BBox::new(20.0, 20.0, 30.0, 30.0, 0.75), // above threshold
     ];
     let result = detector.postprocess(raw);
@@ -684,9 +718,15 @@ fn test_golden_layout_analysis() {
 
     let analyzer = LayoutAnalyzer::new();
     let tokens = vec![
-        DocToken::new("define greeting that says hello", BBox::new(0.0, 0.0, 200.0, 20.0, 1.0)),
+        DocToken::new(
+            "define greeting that says hello",
+            BBox::new(0.0, 0.0, 200.0, 20.0, 1.0),
+        ),
         DocToken::new("world", BBox::new(0.0, 30.0, 60.0, 20.0, 1.0)),
-        DocToken::new("define farewell that says goodbye", BBox::new(0.0, 60.0, 200.0, 20.0, 1.0)),
+        DocToken::new(
+            "define farewell that says goodbye",
+            BBox::new(0.0, 60.0, 200.0, 20.0, 1.0),
+        ),
     ];
     let result = analyzer.analyze(tokens);
     assert_eq!(
@@ -734,8 +774,7 @@ fn test_golden_vision_orchestrator() {
     ];
     let output = orchestrator.process(raw_boxes);
     assert_eq!(
-        output.processed_boxes,
-        2,
+        output.processed_boxes, 2,
         "VisionOrchestrator must process all 2 boxes that pass the threshold"
     );
     assert!(

@@ -155,48 +155,23 @@ impl NomInspector {
                     "define repo that language(rust) pattern(modular) build(cargo)".to_string();
             }
             InspectTarget::Website { .. } => {
-                report.add_finding(InspectFinding::new(
-                    "tech_stack",
-                    "framework",
-                    "react",
-                    0.8,
-                ));
+                report.add_finding(InspectFinding::new("tech_stack", "framework", "react", 0.8));
                 report.add_finding(InspectFinding::new("design", "layout", "sidebar", 0.7));
                 report.add_finding(InspectFinding::new("content", "purpose", "saas", 0.75));
                 report.nomx_entry =
                     "define website that framework(react) layout(sidebar) type(saas)".to_string();
             }
             InspectTarget::PersonUsername { .. } => {
-                report.add_finding(InspectFinding::new(
-                    "profile",
-                    "platform",
-                    "github",
-                    0.9,
-                ));
+                report.add_finding(InspectFinding::new("profile", "platform", "github", 0.9));
                 report.add_finding(InspectFinding::new("profile", "activity", "active", 0.8));
-                report.add_finding(InspectFinding::new(
-                    "profile",
-                    "focus",
-                    "engineering",
-                    0.85,
-                ));
+                report.add_finding(InspectFinding::new("profile", "focus", "engineering", 0.85));
                 report.nomx_entry =
                     "define person that platform(github) activity(active) focus(engineering)"
                         .to_string();
             }
             InspectTarget::CompanyDomain { .. } => {
-                report.add_finding(InspectFinding::new(
-                    "strategy",
-                    "model",
-                    "b2b_saas",
-                    0.85,
-                ));
-                report.add_finding(InspectFinding::new(
-                    "tech_stack",
-                    "backend",
-                    "node",
-                    0.7,
-                ));
+                report.add_finding(InspectFinding::new("strategy", "model", "b2b_saas", 0.85));
+                report.add_finding(InspectFinding::new("tech_stack", "backend", "node", 0.7));
                 report.add_finding(InspectFinding::new(
                     "strategy",
                     "market",
@@ -239,10 +214,7 @@ impl NomInspector {
             InspectTarget::VideoFile {
                 path: input.to_string(),
             }
-        } else if lower.ends_with(".jpg")
-            || lower.ends_with(".png")
-            || lower.ends_with(".gif")
-        {
+        } else if lower.ends_with(".jpg") || lower.ends_with(".png") || lower.ends_with(".gif") {
             InspectTarget::ImageFile {
                 path: input.to_string(),
             }
@@ -266,6 +238,30 @@ impl NomInspector {
         let target = Self::detect_target(input);
         Self::inspect(target)
     }
+
+    /// Full pipeline that emits reverse-engineering output as a Nomx function.
+    pub fn inspect_as_nomx_function(input: &str) -> InspectReport {
+        let target = Self::detect_target(input);
+        let reverse_input = match &target {
+            InspectTarget::YoutubeChannel { url }
+            | InspectTarget::GithubRepo { url }
+            | InspectTarget::Website { url } => crate::reverse::ReverseInput::WebUrl(url.clone()),
+            InspectTarget::VideoFile { path } | InspectTarget::ImageFile { path } => {
+                crate::reverse::ReverseInput::ScreenshotPath(path.clone())
+            }
+            InspectTarget::PersonUsername { username } => {
+                crate::reverse::ReverseInput::WebUrl(username.clone())
+            }
+            InspectTarget::CompanyDomain { domain } => {
+                crate::reverse::ReverseInput::WebUrl(domain.clone())
+            }
+        };
+        let mut report = Self::inspect(target);
+        let components = crate::reverse::ReverseOrchestrator::detect_components(&reverse_input);
+        report.nomx_entry =
+            crate::reverse::ReverseOrchestrator::to_nomx_function(&reverse_input, &components);
+        report
+    }
 }
 
 /// Quality gate: LLM scores each inspection step; retry until DreamScore >=95.
@@ -277,7 +273,10 @@ pub struct QualityGateConfig {
 
 impl Default for QualityGateConfig {
     fn default() -> Self {
-        Self { min_score: 95, max_retries: 3 }
+        Self {
+            min_score: 95,
+            max_retries: 3,
+        }
     }
 }
 
@@ -296,9 +295,15 @@ pub struct LlmQualityGate {
 }
 
 impl LlmQualityGate {
-    pub fn new(config: QualityGateConfig) -> Self { Self { config } }
+    pub fn new(config: QualityGateConfig) -> Self {
+        Self { config }
+    }
 
-    pub fn with_defaults() -> Self { Self { config: QualityGateConfig::default() } }
+    pub fn with_defaults() -> Self {
+        Self {
+            config: QualityGateConfig::default(),
+        }
+    }
 
     /// Score a report using an LLM fn (stub: counts findings as proxy for quality).
     pub fn score_report(&self, report: &InspectReport) -> u8 {
@@ -308,14 +313,11 @@ impl LlmQualityGate {
     }
 
     /// Run inspect_url with quality gate; retry up to max_retries.
-    pub fn inspect_with_quality(
-        &self,
-        url: &str,
-    ) -> QualityGateResult {
+    pub fn inspect_with_quality(&self, url: &str) -> QualityGateResult {
         let mut attempts = 0u8;
         loop {
             attempts += 1;
-            let report = NomInspector::inspect_url(url);
+            let report = NomInspector::inspect_as_nomx_function(url);
             let score = self.score_report(&report);
             if score >= self.config.min_score || attempts >= self.config.max_retries {
                 return QualityGateResult {
@@ -352,10 +354,17 @@ mod quality_gate_tests {
     #[test]
     fn test_score_report_with_findings() {
         let gate = LlmQualityGate::with_defaults();
-        let target = InspectTarget::GithubRepo { url: "https://github.com/nom/nom".into() };
+        let target = InspectTarget::GithubRepo {
+            url: "https://github.com/nom/nom".into(),
+        };
         let mut report = InspectReport::new(target);
         for i in 0..8 {
-            report.add_finding(InspectFinding::new("test", &format!("key{}", i), &format!("val{}", i), 0.9));
+            report.add_finding(InspectFinding::new(
+                "test",
+                &format!("key{}", i),
+                &format!("val{}", i),
+                0.9,
+            ));
         }
         let score = gate.score_report(&report);
         assert!(score >= 95);
@@ -367,11 +376,20 @@ mod quality_gate_tests {
         let result = gate.inspect_with_quality("https://github.com/nom/nom");
         assert!(result.attempts >= 1);
         assert!(result.attempts <= 3);
+        assert!(result
+            .nomx_entry
+            .starts_with("the function reverse_web_url_to_nomx is"));
     }
 
     #[test]
     fn test_quality_gate_result_fields() {
-        let r = QualityGateResult { score: 80, passed: false, attempts: 2, finding_count: 0, nomx_entry: "empty".into() };
+        let r = QualityGateResult {
+            score: 80,
+            passed: false,
+            attempts: 2,
+            finding_count: 0,
+            nomx_entry: "empty".into(),
+        };
         assert_eq!(r.score, 80);
         assert!(!r.passed);
         assert_eq!(r.attempts, 2);
@@ -379,10 +397,24 @@ mod quality_gate_tests {
 
     #[test]
     fn test_custom_config() {
-        let config = QualityGateConfig { min_score: 80, max_retries: 5 };
+        let config = QualityGateConfig {
+            min_score: 80,
+            max_retries: 5,
+        };
         let gate = LlmQualityGate::new(config);
         assert_eq!(gate.config.min_score, 80);
         assert_eq!(gate.config.max_retries, 5);
+    }
+
+    #[test]
+    fn test_inspect_as_nomx_function_returns_function_entry() {
+        let report = NomInspector::inspect_as_nomx_function("https://github.com/nom/nom");
+        assert!(report
+            .nomx_entry
+            .starts_with("the function reverse_web_url_to_nomx is"));
+        assert!(report.nomx_entry.contains("intended to reverse engineer"));
+        assert!(report.nomx_entry.contains("returns nomx_component_tree"));
+        assert!(report.finding_count() >= 3);
     }
 }
 
