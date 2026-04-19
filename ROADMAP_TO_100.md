@@ -308,6 +308,7 @@
 - [x] Data-extract: DataLoader stub (DataSourceKind/LoadStrategy/DataBatch — Wave ABA)
 - [ ] Data-extract: opendataloader XY-Cut++ 0.015s/page (real impl open)
 - [ ] Image backend: model dispatch with 200+ model registry
+- [ ] Reverse-engineered Nomx validation backed by the real prose-English `.nomx` parser (current reverse validation checks function-shape only)
 - [x] Storyboard: 5-phase orchestration — StoryboardPhase×5+StoryboardPlan (Wave ABV)
 - [x] Native_screen: platform-specific codegen capture — ScreenCapture+NativeScreenBackend (Wave ABAF)
 - [ ] Mobile_screen: iOS/Android target integration

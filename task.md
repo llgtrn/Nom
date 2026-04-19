@@ -507,7 +507,9 @@
 
 - ❌ Bootstrap fixpoint proof
 - ❌ Real LLVM parser/resolver/codegen.nom path
+- ❌ Parser-backed Nomx validation for reverse-engineered function output (current validation checks prose-English function shape only)
 - ✅ Full `nom-canvas` workspace verification after ABAO tracking update (`cargo test --workspace`)
+- ✅ Full `nom-canvas` workspace verification after upstream cleanup / reverse Nomx function commit (`cargo test --workspace`)
 
 ---
 
